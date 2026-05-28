@@ -1,0 +1,21 @@
+# IntelliJ
+.idea/
+*.iml
+
+# Java
+target/
+out/
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+
+# Maven Wrapper
+.mvn/wrapper/maven-wrapper.jar
