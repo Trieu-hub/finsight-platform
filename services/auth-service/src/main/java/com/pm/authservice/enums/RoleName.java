@@ -1,7 +1,7 @@
 package com.pm.authservice.enums;
 
 public enum RoleName {
-    USER,
-    PREMIUM,
-    ADMIN
+    ROLE_USER,
+    ROLE_ADMIN,
+    ROLE_ANALYST
 }
