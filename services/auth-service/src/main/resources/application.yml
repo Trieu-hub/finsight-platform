@@ -20,8 +20,13 @@ spring:
     enabled: true
     baseline-on-migrate: true
 
-  management:
-    health:
-      redis:
-        enabled: false
+management:
+  health:
+    redis:
+      enabled: false
+
+jwt:
+  secret: finSight-auth-service-dev-secret-key-must-be-at-least-256-bits-long
+  access-token-expiration: 900000
+  refresh-token-expiration: 604800000
 
