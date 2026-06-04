@@ -6,20 +6,23 @@ spring:
     name: auth-service
 
   datasource:
-    url: jdbc:mysql://localhost:3306/auth_db
-    username: root
-    password: 123456
+    url: ${DB_URL:jdbc:mysql://localhost:3306/auth_db}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   data:
     redis:
-      host: localhost
-      port: 6379
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      # Fail fast instead of blocking a login thread indefinitely when Redis is unreachable.
+      timeout: 2s
+      connect-timeout: 2s
 
   jpa:
     hibernate:
       ddl-auto: validate
-    show-sql: true
+    show-sql: false
 
   flyway:
     enabled: true
@@ -44,10 +47,24 @@ management:
       enabled: false
   health:
     redis:
-      enabled: false
+      # Redis backs refresh-token issuance; surface its outage in readiness so an
+      # orchestrator stops routing login traffic to a node that cannot issue tokens.
+      enabled: true
 
 jwt:
-  secret: finSight-auth-service-dev-secret-key-must-be-at-least-256-bits-long
-  access-token-expiration: 900000
-  refresh-token-expiration: 604800000
+  # No default: the app must be given a secret (shared with the other services).
+  secret: ${JWT_SECRET}
+  access-token-expiration: ${JWT_ACCESS_TOKEN_EXPIRATION:900000}
+  refresh-token-expiration: ${JWT_REFRESH_TOKEN_EXPIRATION:604800000}
+  # Emitted into issued tokens and logged on validation, but NOT enforced yet.
+  issuer: ${JWT_ISSUER:finsight-auth}
+  audience: ${JWT_AUDIENCE:finsight-api}
+
+security:
+  login:
+    # Per-account brute-force guard (LoginAttemptService). Edge/IP throttling is
+    # intentionally left to the future API Gateway, not duplicated here.
+    max-attempts: ${LOGIN_MAX_ATTEMPTS:5}
+    attempt-window: ${LOGIN_ATTEMPT_WINDOW:15m}
+    lock-duration: ${LOGIN_LOCK_DURATION:15m}
 

@@ -7,6 +7,8 @@ import com.pm.authservice.dto.auth.RegisterRequest;
 import com.pm.authservice.entity.Role;
 import com.pm.authservice.entity.User;
 import com.pm.authservice.enums.RoleName;
+import com.pm.authservice.exception.AccountLockedException;
+import com.pm.authservice.exception.DisabledAccountException;
 import com.pm.authservice.exception.DuplicateResourceException;
 import com.pm.authservice.exception.InvalidCredentialsException;
 import com.pm.authservice.exception.ResourceNotFoundException;
@@ -14,12 +16,11 @@ import com.pm.authservice.repository.RoleRepository;
 import com.pm.authservice.repository.UserRepository;
 import com.pm.authservice.security.jwt.JwtService;
 import com.pm.authservice.service.AuthService;
+import com.pm.authservice.service.LoginAttemptService;
 import com.pm.authservice.service.RefreshTokenService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.time.LocalDateTime;
 
 @Service
 public class AuthServiceImpl implements AuthService {
@@ -27,17 +28,20 @@ public class AuthServiceImpl implements AuthService {
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final RefreshTokenService refreshTokenService;
+    private final LoginAttemptService loginAttemptService;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
 
     public AuthServiceImpl(UserRepository userRepository,
                            RoleRepository roleRepository,
                            RefreshTokenService refreshTokenService,
+                           LoginAttemptService loginAttemptService,
                            PasswordEncoder passwordEncoder,
                            JwtService jwtService) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.refreshTokenService = refreshTokenService;
+        this.loginAttemptService = loginAttemptService;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
     }
@@ -62,7 +66,6 @@ public class AuthServiceImpl implements AuthService {
                 .password(passwordEncoder.encode(request.getPassword()))
                 .enabled(true)
                 .role(userRole)
-                .createdAt(LocalDateTime.now())
                 .build();
 
         userRepository.save(user);
@@ -73,12 +76,29 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public AuthResponse login(LoginRequest request) {
-        User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new InvalidCredentialsException("Invalid email or password"));
+        String email = request.getEmail();
 
-        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
+        // Short-circuit locked accounts before touching the DB or hashing a password.
+        if (loginAttemptService.isLocked(email)) {
+            throw new AccountLockedException(
+                    "Account temporarily locked due to too many failed login attempts");
+        }
+
+        // Unknown user and wrong password are treated identically (no user enumeration);
+        // both count as a failed attempt toward lockout.
+        User user = userRepository.findByEmail(email).orElse(null);
+        if (user == null || !passwordEncoder.matches(request.getPassword(), user.getPassword())) {
+            loginAttemptService.recordFailure(email);
             throw new InvalidCredentialsException("Invalid email or password");
         }
+
+        // Checked only after the password verifies, so a disabled state is never
+        // revealed to someone who does not already hold the correct credentials.
+        if (!Boolean.TRUE.equals(user.getEnabled())) {
+            throw new DisabledAccountException("Account is disabled");
+        }
+
+        loginAttemptService.reset(email);
 
         String accessToken = jwtService.generateAccessToken(user);
         String refreshToken = refreshTokenService.issue(user);
