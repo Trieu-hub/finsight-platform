@@ -1,0 +1,193 @@
+package com.pm.gateway.proxy;
+
+import com.pm.gateway.config.GatewayProperties;
+import jakarta.servlet.http.HttpServletRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.util.StreamUtils;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.client.RestClient;
+
+import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.SocketTimeoutException;
+import java.nio.charset.StandardCharsets;
+import java.util.Locale;
+import java.util.Set;
+
+/**
+ * Phase 1 routing-only reverse proxy.
+ *
+ * <p>Catch-all controller: matches every request, resolves the target service by
+ * path prefix, forwards method + headers + body unchanged, and relays the
+ * downstream status/headers/body back to the caller. No authentication, no header
+ * injection, no rate limiting — those are added in later phases. Actuator endpoints
+ * are served by their own higher-precedence handler mapping and never reach here.
+ */
+@RestController
+public class GatewayProxyController {
+
+    private static final Logger log = LoggerFactory.getLogger(GatewayProxyController.class);
+
+    /**
+     * Hop-by-hop headers must not be forwarded (RFC 7230 §6.1). Content-Length and
+     * Transfer-Encoding are also dropped so the servlet container recomputes them
+     * for the relayed body.
+     */
+    private static final Set<String> HOP_BY_HOP = Set.of(
+            "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
+            "te", "trailer", "transfer-encoding", "upgrade",
+            "content-length", "host");
+
+    private final GatewayProperties properties;
+    private final RestClient client;
+
+    public GatewayProxyController(GatewayProperties properties, RestClient client) {
+        this.properties = properties;
+        this.client = client;
+    }
+
+    @RequestMapping("/**")
+    public ResponseEntity<byte[]> proxy(HttpServletRequest request) throws IOException {
+        String path = request.getRequestURI();
+
+        GatewayProperties.Route route = resolve(path);
+        if (route == null) {
+            return error(HttpStatus.NOT_FOUND, "ROUTE_NOT_FOUND",
+                    "No route matches " + path);
+        }
+
+        URI target = buildTargetUri(route, path, request.getQueryString());
+        HttpMethod method = HttpMethod.valueOf(request.getMethod());
+        byte[] body = StreamUtils.copyToByteArray(request.getInputStream());
+
+        RestClient.RequestBodySpec spec = client.method(method).uri(target);
+        copyRequestHeaders(request, spec);
+        if (body.length > 0) {
+            spec.body(body);
+        }
+
+        try {
+            // exchange() gives raw access and does NOT throw on 4xx/5xx, so downstream
+            // error responses are relayed verbatim rather than swallowed.
+            return spec.exchange((req, res) -> {
+                byte[] responseBody = StreamUtils.copyToByteArray(res.getBody());
+                ResponseEntity.BodyBuilder builder = ResponseEntity.status(res.getStatusCode());
+                copyResponseHeaders(res.getHeaders(), builder);
+                return builder.body(responseBody);
+            }, false);
+        } catch (ResourceAccessException e) {
+            // Connectivity / timeout failures to the downstream service.
+            if (isTimeout(e)) {
+                log.warn("Downstream timeout: {} {} -> {}", method, path, target, e);
+                return error(HttpStatus.GATEWAY_TIMEOUT, "SERVICE_TIMEOUT",
+                        "Downstream service did not respond in time");
+            }
+            log.warn("Downstream unreachable: {} {} -> {}", method, path, target, e);
+            return error(HttpStatus.SERVICE_UNAVAILABLE, "SERVICE_UNAVAILABLE",
+                    "Downstream service is unavailable");
+        }
+    }
+
+    /** First matching prefix wins. */
+    private GatewayProperties.Route resolve(String path) {
+        for (GatewayProperties.Route route : properties.getRoutes()) {
+            String prefix = route.getPrefix();
+            if (path.equals(prefix) || path.startsWith(prefix + "/")) {
+                return route;
+            }
+        }
+        return null;
+    }
+
+    private URI buildTargetUri(GatewayProperties.Route route, String path, String query) {
+        String base = route.getUri();
+        if (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        String url = base + path + (query != null ? "?" + query : "");
+        try {
+            return new URI(url);
+        } catch (URISyntaxException e) {
+            throw new IllegalStateException("Invalid target URI: " + url, e);
+        }
+    }
+
+    private void copyRequestHeaders(HttpServletRequest request, RestClient.RequestBodySpec spec) {
+        var names = request.getHeaderNames();
+        while (names.hasMoreElements()) {
+            String name = names.nextElement();
+            if (HOP_BY_HOP.contains(name.toLowerCase(Locale.ROOT))) {
+                continue;
+            }
+            var values = request.getHeaders(name);
+            while (values.hasMoreElements()) {
+                spec.header(name, values.nextElement());
+            }
+        }
+    }
+
+    private void copyResponseHeaders(HttpHeaders downstream, ResponseEntity.BodyBuilder builder) {
+        downstream.forEach((name, values) -> {
+            if (HOP_BY_HOP.contains(name.toLowerCase(Locale.ROOT))) {
+                return;
+            }
+            for (String value : values) {
+                builder.header(name, value);
+            }
+        });
+    }
+
+    private boolean isTimeout(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof SocketTimeoutException
+                    || t instanceof java.net.http.HttpTimeoutException) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Builds the gateway error envelope by hand. Jackson is not on the routing-phase
+     * classpath, and the values here are gateway-controlled, so a tiny JSON string
+     * (with conservative escaping) is sufficient and dependency-free.
+     */
+    private ResponseEntity<byte[]> error(HttpStatus status, String code, String message) {
+        String json = "{\"success\":false,\"error\":{\"code\":\"" + escape(code)
+                + "\",\"message\":\"" + escape(message) + "\"}}";
+        return ResponseEntity.status(status)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(json.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static String escape(String s) {
+        StringBuilder sb = new StringBuilder(s.length() + 8);
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '"' -> sb.append("\\\"");
+                case '\\' -> sb.append("\\\\");
+                case '\n' -> sb.append("\\n");
+                case '\r' -> sb.append("\\r");
+                case '\t' -> sb.append("\\t");
+                default -> {
+                    if (c < 0x20) {
+                        sb.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        sb.append(c);
+                    }
+                }
+            }
+        }
+        return sb.toString();
+    }
+}
