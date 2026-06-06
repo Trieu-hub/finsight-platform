@@ -8,7 +8,7 @@ own database; services do **not** call each other at runtime.
 ## Tech Stack
 
 - Java 21, Spring Boot 4.0.6
-- MySQL 8 (auth, transaction, budget) and PostgreSQL 16 (user)
+- MySQL 8 (auth, user, transaction, budget — one shared instance)
 - Redis (auth — wired, not yet used)
 - Flyway (schema ownership, `ddl-auto: validate`)
 - Docker / Docker Compose
@@ -19,13 +19,13 @@ own database; services do **not** call each other at runtime.
 | Service               | Port | Database                | Engine      | Key responsibility                                   |
 |-----------------------|------|-------------------------|-------------|------------------------------------------------------|
 | `auth-service`        | 8081 | `auth_db`               | MySQL       | Registration, login, JWT issuance (+ Redis)          |
-| `user-service`        | 8082 | `user_db`               | PostgreSQL  | User profile data (consumes JWTs)                    |
+| `user-service`        | 8082 | `user_db`               | MySQL       | User profile data (consumes JWTs)                    |
 | `transaction-service` | 8083 | `transaction_db`        | MySQL       | Transactions + categories, summaries                 |
 | `budget-service`      | 8084 | `budget_db`             | MySQL       | Budget definitions (spending limit per category)     |
 
-Shared infrastructure: a single **MySQL 8** instance hosts `auth_db`,
-`transaction_db` and `budget_db`; a separate **PostgreSQL 16** instance hosts
-`user_db`; **Redis** is available for auth-service.
+Shared infrastructure: a single **MySQL 8** instance hosts `auth_db`, `user_db`,
+`transaction_db` and `budget_db` (each service owns its own logical database);
+**Redis** is available for auth-service.
 
 ## Architecture
 
@@ -42,7 +42,7 @@ Shared infrastructure: a single **MySQL 8** instance hosts `auth_db`,
    │   :8082        │ │   :8083            │ │   :8084        │
    └───────┬────────┘ └─────────┬──────────┘ └───────┬────────┘
            ▼                    ▼                     ▼
-     PostgreSQL              MySQL                  MySQL
+       MySQL                  MySQL                  MySQL
       user_db          transaction_db             budget_db
 ```
 
@@ -65,18 +65,19 @@ Key design rules (consistent across all services):
 ## Running the platform (Docker Compose)
 
 The root `docker-compose.yml` builds all four services from source (multi-stage
-Dockerfiles) and starts MySQL, PostgreSQL and Redis. All services share one
-`JWT_SECRET` so tokens issued by auth-service validate everywhere.
+Dockerfiles) and starts MySQL and Redis. All services share one `JWT_SECRET` so
+tokens issued by auth-service validate everywhere.
 
 ```bash
 docker compose up --build        # build images + start the full stack
-docker compose up -d mysql postgres redis   # start just the datastores
+docker compose up -d mysql redis # start just the datastores
 docker compose down              # stop (add -v to also drop the DB volumes)
 ```
 
 Service health: `GET http://localhost:<port>/actuator/health` (public on every
-service). Databases are created automatically — MySQL via
-`docker/mysql/init/01-create-databases.sql`, PostgreSQL via `POSTGRES_DB`.
+service). All four logical databases (`auth_db`, `user_db`, `transaction_db`,
+`budget_db`) are created automatically on first MySQL start via
+`docker/mysql/init/01-create-databases.sql`.
 
 ## Running a single service locally
 

@@ -17,9 +17,24 @@ gateway:
       uri: ${TRANSACTION_SERVICE_URI:http://localhost:8083}
     - prefix: /api/v1/budgets
       uri: ${BUDGET_SERVICE_URI:http://localhost:8084}
+  # Routes that bypass edge authentication. Frozen in docs/ADR-0002 §4: the auth entry
+  # points that mint/rotate tokens (caller has no access token, or it may be expired).
+  # Everything else under /api/v1/** requires a valid token. Matched by exact method+path.
+  public-routes:
+    - { method: POST, path: /api/v1/auth/register }
+    - { method: POST, path: /api/v1/auth/login }
+    - { method: POST, path: /api/v1/auth/refresh }
+    - { method: POST, path: /api/v1/auth/logout }
   timeouts:
     connect-ms: ${GATEWAY_CONNECT_TIMEOUT_MS:2000}
     read-ms: ${GATEWAY_READ_TIMEOUT_MS:10000}
+
+# Edge JWT validation contract (Phase 2). Frozen in docs/ADR-0002 §1-§3. The secret is
+# the same one auth-service signs with; issuer/audience default to the minted values.
+jwt:
+  secret: ${JWT_SECRET}
+  issuer: ${JWT_ISSUER:finsight-auth}
+  audience: ${JWT_AUDIENCE:finsight-api}
 
 management:
   endpoints:

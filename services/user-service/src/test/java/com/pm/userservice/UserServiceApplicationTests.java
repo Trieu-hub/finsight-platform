@@ -1,20 +1,13 @@
 package com.pm.userservice;
 
+import com.pm.userservice.integration.AbstractMySqlIntegrationTest;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.TestPropertySource;
 
-@SpringBootTest
-@TestPropertySource(properties = {
-    "spring.datasource.url=jdbc:h2:mem:testdb",
-    "spring.datasource.driver-class-name=org.h2.Driver",
-    "spring.datasource.username=sa",
-    "spring.datasource.password=",
-    "spring.jpa.hibernate.ddl-auto=create-drop",
-    "spring.flyway.enabled=false",
-    "jwt.secret=test-secret-key-must-be-at-least-256-bits-long-for-testing-purposes"
-})
-class UserServiceApplicationTests {
+/**
+ * Smoke test: the full application context boots against a real MySQL 8 container
+ * (with Flyway running the migrations), the same way it runs in Docker Compose.
+ */
+class UserServiceApplicationTests extends AbstractMySqlIntegrationTest {
 
     @Test
     void contextLoads() {
