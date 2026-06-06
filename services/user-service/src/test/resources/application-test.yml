@@ -1,0 +1,16 @@
+# Test profile. The datasource is injected dynamically from the MySQL Testcontainer
+# (see AbstractMySqlIntegrationTest), so only non-datasource settings live here.
+spring:
+  jpa:
+    hibernate:
+      # Schema is owned by Flyway; Hibernate only validates it against the entities.
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+  flyway:
+    enabled: true
+
+# Dummy HMAC secret (>= 256 bits) so JwtService can build a signing key in tests.
+jwt:
+  secret: test-secret-test-secret-test-secret-test-secret-0123456789abcdef

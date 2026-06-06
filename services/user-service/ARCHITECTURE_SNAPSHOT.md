@@ -8,7 +8,7 @@
 | Spring Boot | 4.0.6 |
 | Java | 21 |
 | Port | 8082 |
-| Database | PostgreSQL (`user_db`) |
+| Database | MySQL 8 (`user_db`, on the shared instance) |
 | Cache | Không có |
 | Base package | `com.pm.userservice` |
 
@@ -53,8 +53,8 @@ com.pm.userservice/
 
 ## Database Schema
 
-**Database:** PostgreSQL `user_db`  
-**Migration engine:** Flyway (1 migration)
+**Database:** MySQL 8 `user_db` (shared instance)  
+**Migration engine:** Flyway (1 migration; needs the `flyway-mysql` module on Flyway 10+)
 
 ### `user_profiles`
 
@@ -67,10 +67,10 @@ CREATE TABLE user_profiles (
     avatar_url    VARCHAR(255),
     occupation    VARCHAR(100),
     bio           VARCHAR(500),
-    created_at    TIMESTAMP,               -- tự set bởi JPA Auditing (@CreatedDate)
-    updated_at    TIMESTAMP,               -- tự set bởi JPA Auditing (@LastModifiedDate)
+    created_at    DATETIME(6),             -- tự set bởi JPA Auditing (@CreatedDate)
+    updated_at    DATETIME(6),             -- tự set bởi JPA Auditing (@LastModifiedDate)
     CONSTRAINT pk_user_profiles PRIMARY KEY (user_id)
-);
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 ```
 
 **Không có FK** tới `auth_db.users` — hai service dùng database hoàn toàn độc lập.
@@ -244,9 +244,9 @@ Cần `@EntityListeners(AuditingEntityListener.class)` trên entity.
 | `spring-boot-starter-data-jpa` | 4.0.6 | Hibernate ORM, JPA Auditing |
 | `spring-boot-starter-validation` | 4.0.6 | Bean Validation |
 | `spring-boot-starter-actuator` | 4.0.6 | Health/info endpoints |
-| `spring-boot-starter-flyway` | 4.0.6 | DB migration (PostgreSQL) |
+| `spring-boot-starter-flyway` + `flyway-mysql` | 4.0.6 | DB migration (MySQL) |
 | `jjwt-api` / `jjwt-impl` / `jjwt-jackson` | 0.12.6 | JWT parse + validate |
-| `postgresql` | (managed) | JDBC driver |
+| `mysql-connector-j` | (managed) | JDBC driver |
 | `lombok` | (managed) | Code generation |
 
 ### Test
@@ -255,7 +255,8 @@ Cần `@EntityListeners(AuditingEntityListener.class)` trên entity.
 |---|---|
 | `spring-boot-starter-test` | JUnit 6, Mockito 5, AssertJ |
 | `spring-security-test` | `SecurityMockMvcRequestPostProcessors`, `SecurityMockMvcConfigurers` |
-| `h2` | In-memory DB cho integration test |
+| `spring-boot-webmvc-test` | MockMvc autoconfiguration (Boot 4) |
+| `testcontainers` (`junit-jupiter`, `mysql`) | Integration tests chạy trên MySQL 8 thật (giống các service khác) |
 
 ---
 
@@ -265,12 +266,14 @@ Cần `@EntityListeners(AuditingEntityListener.class)` trên entity.
 server.port: 8082
 
 spring.datasource:
-  url: ${DB_URL:jdbc:postgresql://localhost:5432/user_db}
-  username: ${DB_USERNAME:postgres}
+  url: ${DB_URL:jdbc:mysql://localhost:3306/user_db}
+  username: ${DB_USERNAME:root}
   password: ${DB_PASSWORD:}           # mặc định empty nếu không set env var
+  driver-class-name: com.mysql.cj.jdbc.Driver
 
 spring.jpa.hibernate.ddl-auto: validate
 spring.jpa.open-in-view: false
+spring.jpa.properties.hibernate.dialect: org.hibernate.dialect.MySQLDialect
 
 spring.flyway.enabled: true           # baseline-on-migrate không set (mặc định false)
 
@@ -287,7 +290,7 @@ management:
 | Biến | Mô tả |
 |---|---|
 | `JWT_SECRET` | Phải trùng với auth-service, min 256-bit |
-| `DB_URL` | PostgreSQL JDBC URL |
+| `DB_URL` | MySQL JDBC URL |
 | `DB_USERNAME` | DB user |
 | `DB_PASSWORD` | DB password |
 
@@ -313,4 +316,4 @@ management:
 | `userId` claim | auth-service phát ra `userId` (Long), user-service đọc làm PK của `user_profiles` |
 | `role` claim | auth-service phát ra `"ROLE_USER"` (với prefix), user-service đọc làm authority |
 | Không có HTTP call | user-service không gọi HTTP đến auth-service trong bất kỳ flow nào hiện tại |
-| Không có shared DB | `auth_db` (MySQL) và `user_db` (PostgreSQL) hoàn toàn độc lập |
+| Không có shared DB | `auth_db` và `user_db` là hai logical database độc lập trên cùng instance MySQL 8 |

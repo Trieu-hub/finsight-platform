@@ -5,16 +5,15 @@ import com.pm.userservice.dto.CreateProfileRequest;
 import com.pm.userservice.dto.UpdateProfileRequest;
 import com.pm.userservice.dto.UserProfileResponse;
 import com.pm.userservice.exception.ProfileNotFoundException;
+import com.pm.userservice.integration.AbstractMySqlIntegrationTest;
 import com.pm.userservice.security.JwtUserPrincipal;
 import com.pm.userservice.service.UserProfileService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
-import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -33,17 +32,12 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
-@TestPropertySource(properties = {
-    "spring.datasource.url=jdbc:h2:mem:controllertest",
-    "spring.datasource.driver-class-name=org.h2.Driver",
-    "spring.datasource.username=sa",
-    "spring.datasource.password=",
-    "spring.jpa.hibernate.ddl-auto=create-drop",
-    "spring.flyway.enabled=false",
-    "jwt.secret=test-secret-key-must-be-at-least-256-bits-long-for-testing-purposes"
-})
-class UserProfileControllerTest {
+/**
+ * Web-layer test: boots the full context (on the shared MySQL container, via the base
+ * class) but mocks the service so it can assert controller behaviour — validation,
+ * status codes, and the security filter — independently of persistence.
+ */
+class UserProfileControllerTest extends AbstractMySqlIntegrationTest {
 
     @Autowired
     private WebApplicationContext webApplicationContext;
