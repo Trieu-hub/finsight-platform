@@ -108,6 +108,26 @@ services:
       - "8084:8084"
     restart: unless-stopped
 
+  # Dashboard Service — read-only aggregation layer / BFF.
+  # Owns NO database. It calls user/transaction/budget directly over the compose
+  # network and relays the caller's JWT (each upstream validates it). It validates the
+  # JWT locally too (service-level validation is never removed). See docs/ADR-0003.
+  dashboard-service:
+    build: ./services/dashboard-service
+    container_name: finsight-dashboard-service
+    depends_on:
+      - user-service
+      - transaction-service
+      - budget-service
+    environment:
+      USER_SERVICE_URI: http://user-service:8082
+      TRANSACTION_SERVICE_URI: http://transaction-service:8083
+      BUDGET_SERVICE_URI: http://budget-service:8084
+      JWT_SECRET: *jwt-secret
+    ports:
+      - "8085:8085"
+    restart: unless-stopped
+
   # API Gateway — V1 Phase 2 (routing + edge JWT authentication).
   # Forwards by path prefix to the four services over the compose network, and now
   # validates the access token at the edge (signature/HS512/issuer/audience) on every
@@ -122,11 +142,13 @@ services:
       - user-service
       - transaction-service
       - budget-service
+      - dashboard-service
     environment:
       AUTH_SERVICE_URI: http://auth-service:8081
       USER_SERVICE_URI: http://user-service:8082
       TRANSACTION_SERVICE_URI: http://transaction-service:8083
       BUDGET_SERVICE_URI: http://budget-service:8084
+      DASHBOARD_SERVICE_URI: http://dashboard-service:8085
       # Phase 2: the gateway validates the access token at the edge with the same
       # shared HMAC secret auth-service signs with (issuer/audience default to the
       # minted values). See docs/ADR-0002.

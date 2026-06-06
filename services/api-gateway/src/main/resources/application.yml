@@ -17,6 +17,8 @@ gateway:
       uri: ${TRANSACTION_SERVICE_URI:http://localhost:8083}
     - prefix: /api/v1/budgets
       uri: ${BUDGET_SERVICE_URI:http://localhost:8084}
+    - prefix: /api/v1/dashboard
+      uri: ${DASHBOARD_SERVICE_URI:http://localhost:8085}
   # Routes that bypass edge authentication. Frozen in docs/ADR-0002 §4: the auth entry
   # points that mint/rotate tokens (caller has no access token, or it may be expired).
   # Everything else under /api/v1/** requires a valid token. Matched by exact method+path.

@@ -22,6 +22,8 @@ own database; services do **not** call each other at runtime.
 | `user-service`        | 8082 | `user_db`               | MySQL       | User profile data (consumes JWTs)                    |
 | `transaction-service` | 8083 | `transaction_db`        | MySQL       | Transactions + categories, summaries                 |
 | `budget-service`      | 8084 | `budget_db`             | MySQL       | Budget definitions (spending limit per category)     |
+| `dashboard-service`   | 8085 | _(none)_                | —           | Read-only aggregation / BFF (no DB; calls the others)|
+| `api-gateway`         | 8080 | _(none)_                | —           | Edge routing + JWT validation (Phase 2)              |
 
 Shared infrastructure: a single **MySQL 8** instance hosts `auth_db`, `user_db`,
 `transaction_db` and `budget_db` (each service owns its own logical database);
@@ -48,9 +50,11 @@ Shared infrastructure: a single **MySQL 8** instance hosts `auth_db`, `user_db`,
 
 Key design rules (consistent across all services):
 
-- **No runtime cross-service calls.** The only coupling is the shared HMAC
-  `JWT_SECRET`: auth-service issues tokens; the others validate them locally.
-  Each service therefore depends only on its own datastore.
+- **No runtime cross-service calls** between the core business services. The only
+  coupling is the shared HMAC `JWT_SECRET`: auth-service issues tokens; the others
+  validate them locally. Each owns only its own datastore. **Exception:**
+  `dashboard-service` is a read-only BFF that *does* call the others over HTTP,
+  relaying the caller's JWT (see `docs/ADR-0003`); it owns no data of its own.
 - **`userId` is sacred** — read only from the JWT `userId` claim (`BIGINT`/`Long`),
   never from the request body or URL.
 - **Identifier contract.** Cross-service identifiers are uniformly `Long`/`BIGINT`:
