@@ -23,8 +23,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Environment variables required before running:
 ```
-DB_URL=jdbc:postgresql://localhost:5432/user_db
-DB_USERNAME=postgres
+DB_URL=jdbc:mysql://localhost:3306/user_db
+DB_USERNAME=root
 DB_PASSWORD=<secret>
 JWT_SECRET=<same secret as auth-service>
 ```
@@ -39,7 +39,7 @@ This is a Spring Boot 4 / Java 21 microservice within the `finsight-platform`. I
 
 - **No `UserDetailsService`.** Authentication is entirely JWT-based. `JwtAuthenticationFilter` validates the token, extracts `userId` / `email` / `role` claims, and sets a `JwtUserPrincipal` into the `SecurityContextHolder`. No database lookup happens in the security layer.
 - **`userId` comes only from the JWT**, never from request body or URL path. The controller always calls `(JwtUserPrincipal) authentication.getPrincipal()` to get the caller's identity. This means controllers must receive `Authentication authentication` as a parameter.
-- **Separate database from auth-service.** `user_db` stores only profile data (`user_profiles` table). Identity fields (`email`, `username`, `password`, `role`, `enabled`) live exclusively in the auth-service DB. There is no FK constraint between the two databases.
+- **Separate database from auth-service.** `user_db` stores only profile data (`user_profiles` table). Identity fields (`email`, `username`, `password`, `role`, `enabled`) live exclusively in the auth-service DB. There is no FK constraint between the two databases. Both run on the shared **MySQL 8** instance (separate logical databases), consistent with the rest of the platform — Flyway requires the `flyway-mysql` module on Flyway 10+.
 - **Flyway manages schema.** `ddl-auto: validate` — Hibernate validates against the schema but never modifies it. New schema changes require a new `V{n}__description.sql` migration file under `src/main/resources/db/migration/`.
 - **JPA Auditing** populates `createdAt` / `updatedAt` automatically via `@EnableJpaAuditing` (in `AuditingConfig`) and `@CreatedDate` / `@LastModifiedDate` on the entity.
 
@@ -52,7 +52,7 @@ HTTP Request
   → UserProfileService          (interface)
   → UserProfileServiceImpl      (business logic + repo calls)
   → UserProfileRepository       (Spring Data JPA)
-  → PostgreSQL user_db
+  → MySQL user_db
 ```
 
 **Package layout** (`com.pm.userservice`):

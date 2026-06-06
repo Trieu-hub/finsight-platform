@@ -1,6 +1,7 @@
 package com.pm.gateway.proxy;
 
 import com.pm.gateway.config.GatewayProperties;
+import com.pm.gateway.security.JwtAuthenticator;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,15 +28,19 @@ import java.util.Set;
  * Phase 1 routing-only reverse proxy.
  *
  * <p>Catch-all controller: matches every request, resolves the target service by
- * path prefix, forwards method + headers + body unchanged, and relays the
- * downstream status/headers/body back to the caller. No authentication, no header
- * injection, no rate limiting — those are added in later phases. Actuator endpoints
- * are served by their own higher-precedence handler mapping and never reach here.
+ * path prefix, enforces edge authentication on non-public routes (Phase 2), then
+ * forwards method + headers + body unchanged and relays the downstream status/headers/
+ * body back to the caller. The bearer token is forwarded downstream (services still
+ * validate it themselves). No header injection, no rate limiting — those are added in
+ * later phases. Actuator endpoints are served by their own higher-precedence handler
+ * mapping and never reach here.
  */
 @RestController
 public class GatewayProxyController {
 
     private static final Logger log = LoggerFactory.getLogger(GatewayProxyController.class);
+
+    private static final String AUTHORIZATION = "Authorization";
 
     /**
      * Hop-by-hop headers must not be forwarded (RFC 7230 §6.1). Content-Length and
@@ -49,10 +54,13 @@ public class GatewayProxyController {
 
     private final GatewayProperties properties;
     private final RestClient client;
+    private final JwtAuthenticator authenticator;
 
-    public GatewayProxyController(GatewayProperties properties, RestClient client) {
+    public GatewayProxyController(GatewayProperties properties, RestClient client,
+                                  JwtAuthenticator authenticator) {
         this.properties = properties;
         this.client = client;
+        this.authenticator = authenticator;
     }
 
     @RequestMapping("/**")
@@ -63,6 +71,15 @@ public class GatewayProxyController {
         if (route == null) {
             return error(HttpStatus.NOT_FOUND, "ROUTE_NOT_FOUND",
                     "No route matches " + path);
+        }
+
+        // Phase 2: enforce edge authentication on every non-public route. The token is
+        // still forwarded downstream below (services keep validating it themselves).
+        if (!isPublic(request.getMethod(), path)) {
+            ResponseEntity<byte[]> authError = authenticate(request);
+            if (authError != null) {
+                return authError;
+            }
         }
 
         URI target = buildTargetUri(route, path, request.getQueryString());
@@ -95,6 +112,34 @@ public class GatewayProxyController {
             return error(HttpStatus.SERVICE_UNAVAILABLE, "SERVICE_UNAVAILABLE",
                     "Downstream service is unavailable");
         }
+    }
+
+    /**
+     * Validates the bearer token and maps a failure to the frozen auth error contract
+     * (docs/ADR-0002 §5). Returns {@code null} when the request is authenticated and may
+     * proceed.
+     */
+    private ResponseEntity<byte[]> authenticate(HttpServletRequest request) {
+        JwtAuthenticator.Outcome outcome = authenticator.authenticate(request.getHeader(AUTHORIZATION));
+        return switch (outcome) {
+            case AUTHENTICATED -> null;
+            case MISSING -> error(HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED",
+                    "Authentication required");
+            case EXPIRED -> error(HttpStatus.UNAUTHORIZED, "TOKEN_EXPIRED",
+                    "Access token has expired");
+            case INVALID -> error(HttpStatus.UNAUTHORIZED, "TOKEN_INVALID",
+                    "Access token is invalid");
+        };
+    }
+
+    /** True if the (method, path) pair is on the frozen public allow-list (exact match). */
+    private boolean isPublic(String method, String path) {
+        for (GatewayProperties.PublicRoute pr : properties.getPublicRoutes()) {
+            if (pr.getMethod().equalsIgnoreCase(method) && pr.getPath().equals(path)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** First matching prefix wins. */

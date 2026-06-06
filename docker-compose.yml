@@ -1,8 +1,9 @@
 # FinSight platform stack.
 #
 # Topology notes (derived from the services' actual config):
-#   * Three services are MySQL-backed (auth_db, transaction_db, budget_db) and one
-#     (user-service) is PostgreSQL-backed (user_db) — so the stack runs BOTH engines.
+#   * All four services are MySQL-backed (auth_db, user_db, transaction_db, budget_db)
+#     on a single shared MySQL 8 instance. (user-service was consolidated off its own
+#     PostgreSQL instance onto MySQL to match the rest of the platform.)
 #   * Services do NOT call each other at runtime. The only coupling is the shared
 #     HMAC JWT secret: auth-service issues tokens; user/transaction/budget validate
 #     them locally with the same secret. Hence every service depends only on its own
@@ -32,23 +33,6 @@ services:
       timeout: 5s
       retries: 10
       start_period: 30s
-
-  postgres:
-    image: postgres:16
-    container_name: finsight-postgres
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: user_db
-    # Not published to the host (see mysql note); add `ports: ["15432:5432"]` to inspect.
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d user_db"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 15s
 
   redis:
     image: redis:7-alpine
@@ -83,12 +67,12 @@ services:
     build: ./services/user-service
     container_name: finsight-user-service
     depends_on:
-      postgres:
+      mysql:
         condition: service_healthy
     environment:
-      DB_URL: jdbc:postgresql://postgres:5432/user_db
-      DB_USERNAME: postgres
-      DB_PASSWORD: postgres
+      DB_URL: jdbc:mysql://mysql:3306/user_db
+      DB_USERNAME: root
+      DB_PASSWORD: "123456"
       JWT_SECRET: *jwt-secret
     ports:
       - "8082:8082"
@@ -124,11 +108,32 @@ services:
       - "8084:8084"
     restart: unless-stopped
 
-  # API Gateway — V1 Phase 1 (routing-only edge).
-  # Forwards by path prefix to the four services over the compose network. It does
-  # NOT authenticate yet (added in a later phase). The backend services still publish
-  # their host ports in this phase; the perimeter cutover (un-publishing them) is a
-  # later phase, keeping the gateway removable without service changes for now.
+  # Dashboard Service — read-only aggregation layer / BFF.
+  # Owns NO database. It calls user/transaction/budget directly over the compose
+  # network and relays the caller's JWT (each upstream validates it). It validates the
+  # JWT locally too (service-level validation is never removed). See docs/ADR-0003.
+  dashboard-service:
+    build: ./services/dashboard-service
+    container_name: finsight-dashboard-service
+    depends_on:
+      - user-service
+      - transaction-service
+      - budget-service
+    environment:
+      USER_SERVICE_URI: http://user-service:8082
+      TRANSACTION_SERVICE_URI: http://transaction-service:8083
+      BUDGET_SERVICE_URI: http://budget-service:8084
+      JWT_SECRET: *jwt-secret
+    ports:
+      - "8085:8085"
+    restart: unless-stopped
+
+  # API Gateway — V1 Phase 2 (routing + edge JWT authentication).
+  # Forwards by path prefix to the four services over the compose network, and now
+  # validates the access token at the edge (signature/HS512/issuer/audience) on every
+  # non-public route, forwarding the bearer token downstream. The backend services
+  # still publish their host ports and still validate tokens themselves; the perimeter
+  # cutover (un-publishing them) is a later phase, keeping the gateway removable.
   api-gateway:
     build: ./services/api-gateway
     container_name: finsight-api-gateway
@@ -137,15 +142,20 @@ services:
       - user-service
       - transaction-service
       - budget-service
+      - dashboard-service
     environment:
       AUTH_SERVICE_URI: http://auth-service:8081
       USER_SERVICE_URI: http://user-service:8082
       TRANSACTION_SERVICE_URI: http://transaction-service:8083
       BUDGET_SERVICE_URI: http://budget-service:8084
+      DASHBOARD_SERVICE_URI: http://dashboard-service:8085
+      # Phase 2: the gateway validates the access token at the edge with the same
+      # shared HMAC secret auth-service signs with (issuer/audience default to the
+      # minted values). See docs/ADR-0002.
+      JWT_SECRET: *jwt-secret
     ports:
       - "8080:8080"
     restart: unless-stopped
 
 volumes:
   mysql_data:
-  postgres_data:

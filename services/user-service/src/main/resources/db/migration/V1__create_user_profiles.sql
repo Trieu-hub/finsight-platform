@@ -6,7 +6,7 @@ CREATE TABLE user_profiles (
     avatar_url    VARCHAR(255),
     occupation    VARCHAR(100),
     bio           VARCHAR(500),
-    created_at    TIMESTAMP,
-    updated_at    TIMESTAMP,
+    created_at    DATETIME(6),
+    updated_at    DATETIME(6),
     CONSTRAINT pk_user_profiles PRIMARY KEY (user_id)
-);
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
