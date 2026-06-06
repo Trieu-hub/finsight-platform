@@ -124,6 +124,28 @@ services:
       - "8084:8084"
     restart: unless-stopped
 
+  # API Gateway — V1 Phase 1 (routing-only edge).
+  # Forwards by path prefix to the four services over the compose network. It does
+  # NOT authenticate yet (added in a later phase). The backend services still publish
+  # their host ports in this phase; the perimeter cutover (un-publishing them) is a
+  # later phase, keeping the gateway removable without service changes for now.
+  api-gateway:
+    build: ./services/api-gateway
+    container_name: finsight-api-gateway
+    depends_on:
+      - auth-service
+      - user-service
+      - transaction-service
+      - budget-service
+    environment:
+      AUTH_SERVICE_URI: http://auth-service:8081
+      USER_SERVICE_URI: http://user-service:8082
+      TRANSACTION_SERVICE_URI: http://transaction-service:8083
+      BUDGET_SERVICE_URI: http://budget-service:8084
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
 volumes:
   mysql_data:
   postgres_data:

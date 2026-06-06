@@ -1,0 +1,33 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+
+# Routing-only edge (Phase 1). Targets default to localhost for local runs and are
+# overridden to compose service hostnames via env vars in docker-compose.yml.
+gateway:
+  routes:
+    - prefix: /api/v1/auth
+      uri: ${AUTH_SERVICE_URI:http://localhost:8081}
+    - prefix: /api/v1/users
+      uri: ${USER_SERVICE_URI:http://localhost:8082}
+    - prefix: /api/v1/transactions
+      uri: ${TRANSACTION_SERVICE_URI:http://localhost:8083}
+    - prefix: /api/v1/budgets
+      uri: ${BUDGET_SERVICE_URI:http://localhost:8084}
+  timeouts:
+    connect-ms: ${GATEWAY_CONNECT_TIMEOUT_MS:2000}
+    read-ms: ${GATEWAY_READ_TIMEOUT_MS:10000}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+  # Gateway readiness must NOT depend on any external datastore. No Redis health
+  # contributor exists in this phase; keep it that way.
