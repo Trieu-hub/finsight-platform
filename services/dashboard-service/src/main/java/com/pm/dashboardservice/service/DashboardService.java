@@ -7,25 +7,30 @@ import com.pm.dashboardservice.client.dto.BudgetDto;
 import com.pm.dashboardservice.client.dto.CategorySummaryDto;
 import com.pm.dashboardservice.client.dto.MonthlySummaryDto;
 import com.pm.dashboardservice.client.dto.TransactionDto;
+import com.pm.dashboardservice.client.dto.TrendPointDto;
 import com.pm.dashboardservice.client.dto.UserProfileDto;
 import com.pm.dashboardservice.dto.BudgetProgressItem;
 import com.pm.dashboardservice.dto.BudgetProgressResponse;
 import com.pm.dashboardservice.dto.BudgetUtilization;
+import com.pm.dashboardservice.dto.DashboardResponse;
 import com.pm.dashboardservice.dto.DashboardSummaryResponse;
 import com.pm.dashboardservice.dto.OverviewResponse;
 import com.pm.dashboardservice.dto.RecentTransactionResponse;
 import com.pm.dashboardservice.dto.TopCategoryResponse;
+import com.pm.dashboardservice.dto.TrendPointResponse;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.stream.Collectors;
 
 /**
@@ -64,13 +69,15 @@ public class DashboardService {
         List<BudgetDto> budgets = budgetClient.listBudgets(authorization);
         List<CategorySummaryDto> summaries = transactionClient.categorySummary(authorization, from, to);
 
-        Map<Long, BigDecimal> expenseByCategory = expenseByCategory(summaries);
+        return new BudgetProgressResponse(from, to, buildBudgetItems(budgets, summaries));
+    }
 
-        List<BudgetProgressItem> items = budgets.stream()
+    /** Per-budget limit vs EXPENSE spend join (compute only; data already fetched). */
+    private List<BudgetProgressItem> buildBudgetItems(List<BudgetDto> budgets, List<CategorySummaryDto> summaries) {
+        Map<Long, BigDecimal> expenseByCategory = expenseByCategory(summaries);
+        return budgets.stream()
                 .map(b -> toProgressItem(b, expenseByCategory.getOrDefault(b.categoryId(), BigDecimal.ZERO)))
                 .toList();
-
-        return new BudgetProgressResponse(from, to, items);
     }
 
     private BudgetProgressItem toProgressItem(BudgetDto b, BigDecimal spent) {
@@ -97,6 +104,12 @@ public class DashboardService {
         List<BudgetDto> budgets = budgetClient.listBudgets(authorization);
         List<CategorySummaryDto> summaries = transactionClient.categorySummary(authorization, from, to);
 
+        return buildSummary(budgets, summaries, from, to);
+    }
+
+    /** Headline KPIs + budget utilization (compute only; data already fetched). */
+    private DashboardSummaryResponse buildSummary(List<BudgetDto> budgets, List<CategorySummaryDto> summaries,
+                                                  LocalDate from, LocalDate to) {
         BigDecimal totalIncome = sumByType(summaries, "INCOME");
         BigDecimal totalExpense = sumByType(summaries, "EXPENSE");
         BigDecimal remainingBalance = totalIncome.subtract(totalExpense);
@@ -128,9 +141,12 @@ public class DashboardService {
      */
     public List<RecentTransactionResponse> recentTransactions(String authorization, int limit) {
         int clampedLimit = Math.min(100, Math.max(1, limit));
-        return transactionClient.recentTransactions(authorization, clampedLimit).stream()
-                .map(this::toRecentTransaction)
-                .toList();
+        return buildRecentTransactions(transactionClient.recentTransactions(authorization, clampedLimit));
+    }
+
+    /** Map upstream transactions to the recent-transaction view (compute only). */
+    private List<RecentTransactionResponse> buildRecentTransactions(List<TransactionDto> txns) {
+        return txns.stream().map(this::toRecentTransaction).toList();
     }
 
     private RecentTransactionResponse toRecentTransaction(TransactionDto t) {
@@ -148,7 +164,11 @@ public class DashboardService {
         YearMonth currentMonth = YearMonth.now();
         List<CategorySummaryDto> summaries = transactionClient.categorySummary(
                 authorization, currentMonth.atDay(1), currentMonth.atEndOfMonth());
+        return buildTopCategories(summaries, limit);
+    }
 
+    /** Top EXPENSE categories from already-fetched summaries, highest first, top {@code limit}. */
+    private List<TopCategoryResponse> buildTopCategories(List<CategorySummaryDto> summaries, int limit) {
         Map<Long, BigDecimal> amountByCategory = expenseByCategory(summaries);
         // categoryId -> name, from the same EXPENSE rows (first name wins on the rare dup).
         Map<Long, String> nameByCategory = summaries.stream()
@@ -179,6 +199,85 @@ public class DashboardService {
                 .filter(s -> type.equalsIgnoreCase(s.type()))
                 .map(s -> s.total() != null ? s.total() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    /**
+     * Income/expense trend over the window (defaults to the current month). Reuses
+     * transaction-service's DAILY {@code summary/trend} via a single upstream call;
+     * {@code granularity=month} (default) buckets those daily points into calendar months
+     * (summing income/expense, balance = income - expense), {@code granularity=day} passes
+     * them through. Output is chronological; any value other than "day" means month.
+     */
+    public List<TrendPointResponse> trend(String authorization, LocalDate fromDate, LocalDate toDate,
+                                          String granularity) {
+        YearMonth currentMonth = YearMonth.now();
+        LocalDate from = fromDate != null ? fromDate : currentMonth.atDay(1);
+        LocalDate to = toDate != null ? toDate : currentMonth.atEndOfMonth();
+
+        List<TrendPointDto> daily = transactionClient.trend(authorization, from, to);
+        return bucketTrend(daily, granularity);
+    }
+
+    /** Convert daily upstream points into the trend series (compute only; data already fetched). */
+    private List<TrendPointResponse> bucketTrend(List<TrendPointDto> daily, String granularity) {
+        if ("day".equalsIgnoreCase(granularity)) {
+            return daily.stream().map(p -> {
+                BigDecimal income = nullToZero(p.income());
+                BigDecimal expense = nullToZero(p.expense());
+                return new TrendPointResponse(p.date().toString(), income, expense, income.subtract(expense));
+            }).toList();
+        }
+
+        // Bucket daily points into calendar months. TreeMap keeps the series chronological
+        // regardless of the order upstream returns the points in.
+        Map<YearMonth, BigDecimal[]> byMonth = new TreeMap<>();
+        for (TrendPointDto p : daily) {
+            BigDecimal[] incomeExpense = byMonth.computeIfAbsent(
+                    YearMonth.from(p.date()), m -> new BigDecimal[]{BigDecimal.ZERO, BigDecimal.ZERO});
+            incomeExpense[0] = incomeExpense[0].add(nullToZero(p.income()));
+            incomeExpense[1] = incomeExpense[1].add(nullToZero(p.expense()));
+        }
+
+        List<TrendPointResponse> trend = new ArrayList<>(byMonth.size());
+        byMonth.forEach((month, ie) ->
+                trend.add(new TrendPointResponse(month.toString(), ie[0], ie[1], ie[0].subtract(ie[1]))));
+        return trend;
+    }
+
+    private static BigDecimal nullToZero(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value;
+    }
+
+    /**
+     * Composite BFF view: profile + all five feature blocks for the window (defaults to the
+     * current month). Each upstream dataset is fetched EXACTLY ONCE and shared across blocks
+     * (budgets feed summary + budget-overview; the category summary feeds summary + budget-
+     * overview + top-categories), so there are no duplicate upstream calls. Calls run
+     * sequentially and fail-fast — the first upstream error propagates as an UpstreamException
+     * → 502. {@code limit} bounds both the recent-transactions block (clamped to 1..100 for
+     * the upstream fetch) and the top-categories block; {@code profile} is null if none exists.
+     */
+    public DashboardResponse composite(String authorization, LocalDate fromDate, LocalDate toDate, int limit) {
+        YearMonth currentMonth = YearMonth.now();
+        LocalDate from = fromDate != null ? fromDate : currentMonth.atDay(1);
+        LocalDate to = toDate != null ? toDate : currentMonth.atEndOfMonth();
+        int clampedLimit = Math.min(100, Math.max(1, limit));
+
+        // Fetch-once: five upstream datasets, sequential, fail-fast.
+        List<BudgetDto> budgets = budgetClient.listBudgets(authorization);
+        List<CategorySummaryDto> summaries = transactionClient.categorySummary(authorization, from, to);
+        List<TrendPointDto> daily = transactionClient.trend(authorization, from, to);
+        List<TransactionDto> recent = transactionClient.recentTransactions(authorization, clampedLimit);
+        UserProfileDto profile = userClient.me(authorization);
+
+        // Assemble from already-fetched data — no further upstream calls.
+        return new DashboardResponse(
+                profile,
+                buildSummary(budgets, summaries, from, to),
+                buildBudgetItems(budgets, summaries),
+                buildTopCategories(summaries, limit),
+                buildRecentTransactions(recent),
+                bucketTrend(daily, "month"));
     }
 
     /** Landing view: profile + current-month summary + budgets. */
