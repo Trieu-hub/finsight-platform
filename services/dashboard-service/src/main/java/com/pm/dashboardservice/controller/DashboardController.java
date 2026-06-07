@@ -2,10 +2,12 @@ package com.pm.dashboardservice.controller;
 
 import com.pm.dashboardservice.dto.ApiResponse;
 import com.pm.dashboardservice.dto.BudgetProgressResponse;
+import com.pm.dashboardservice.dto.DashboardResponse;
 import com.pm.dashboardservice.dto.DashboardSummaryResponse;
 import com.pm.dashboardservice.dto.OverviewResponse;
 import com.pm.dashboardservice.dto.RecentTransactionResponse;
 import com.pm.dashboardservice.dto.TopCategoryResponse;
+import com.pm.dashboardservice.dto.TrendPointResponse;
 import com.pm.dashboardservice.service.DashboardService;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
@@ -32,6 +34,16 @@ public class DashboardController {
 
     public DashboardController(DashboardService dashboardService) {
         this.dashboardService = dashboardService;
+    }
+
+    @GetMapping
+    public ResponseEntity<ApiResponse<DashboardResponse>> dashboard(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @RequestParam(defaultValue = "5") int limit,
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authorization) {
+        return ResponseEntity.ok(ApiResponse.of(
+                dashboardService.composite(authorization, fromDate, toDate, limit)));
     }
 
     @GetMapping("/summary")
@@ -75,6 +87,16 @@ public class DashboardController {
             @RequestParam(defaultValue = "5") int limit,
             @RequestHeader(HttpHeaders.AUTHORIZATION) String authorization) {
         return ResponseEntity.ok(ApiResponse.of(dashboardService.topCategories(authorization, limit)));
+    }
+
+    @GetMapping("/trend")
+    public ResponseEntity<ApiResponse<List<TrendPointResponse>>> trend(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @RequestParam(defaultValue = "month") String granularity,
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authorization) {
+        return ResponseEntity.ok(ApiResponse.of(
+                dashboardService.trend(authorization, fromDate, toDate, granularity)));
     }
 
     @GetMapping("/overview")

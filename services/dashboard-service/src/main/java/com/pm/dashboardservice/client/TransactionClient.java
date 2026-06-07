@@ -3,6 +3,7 @@ package com.pm.dashboardservice.client;
 import com.pm.dashboardservice.client.dto.CategorySummaryDto;
 import com.pm.dashboardservice.client.dto.MonthlySummaryDto;
 import com.pm.dashboardservice.client.dto.TransactionDto;
+import com.pm.dashboardservice.client.dto.TrendPointDto;
 import com.pm.dashboardservice.config.DashboardProperties;
 import com.pm.dashboardservice.exception.UpstreamException;
 import org.springframework.core.ParameterizedTypeReference;
@@ -23,6 +24,8 @@ public class TransactionClient {
     private static final ParameterizedTypeReference<UpstreamApiResponse<MonthlySummaryDto>> MONTHLY =
             new ParameterizedTypeReference<>() {};
     private static final ParameterizedTypeReference<UpstreamApiResponse<List<TransactionDto>>> TRANSACTION_LIST =
+            new ParameterizedTypeReference<>() {};
+    private static final ParameterizedTypeReference<UpstreamApiResponse<List<TrendPointDto>>> TREND_LIST =
             new ParameterizedTypeReference<>() {};
 
     private final RestClient client;
@@ -59,6 +62,23 @@ public class TransactionClient {
                     .header(HttpHeaders.AUTHORIZATION, authorization)
                     .retrieve()
                     .body(TRANSACTION_LIST);
+            return (body == null || body.data() == null) ? List.of() : body.data();
+        } catch (RestClientException e) {
+            throw new UpstreamException("transaction-service", e);
+        }
+    }
+
+    /** DAILY income/expense/balance series for the inclusive [fromDate, toDate] window. */
+    public List<TrendPointDto> trend(String authorization, LocalDate fromDate, LocalDate toDate) {
+        try {
+            UpstreamApiResponse<List<TrendPointDto>> body = client.get()
+                    .uri(uri -> uri.path("/api/v1/transactions/summary/trend")
+                            .queryParam("fromDate", fromDate)
+                            .queryParam("toDate", toDate)
+                            .build())
+                    .header(HttpHeaders.AUTHORIZATION, authorization)
+                    .retrieve()
+                    .body(TREND_LIST);
             return (body == null || body.data() == null) ? List.of() : body.data();
         } catch (RestClientException e) {
             throw new UpstreamException("transaction-service", e);
