@@ -35,6 +35,17 @@ management:
     health:
       show-details: never
       show-components: never
+      # Expose /actuator/health/liveness and /actuator/health/readiness (generic
+      # Spring Boot probe support, not Kubernetes-specific).
+      probes:
+        enabled: true
+      group:
+        # Liveness must not depend on the DB (a DB blip should not restart us).
+        liveness:
+          include: livenessState
+        # Readiness is DOWN until the database is reachable.
+        readiness:
+          include: readinessState,db
     info:
       enabled: true
   info:
@@ -43,3 +54,6 @@ management:
 
 jwt:
   secret: ${JWT_SECRET}
+  # Enforced on validation (parity with the gateway and the minting auth-service).
+  issuer: ${JWT_ISSUER:finsight-auth}
+  audience: ${JWT_AUDIENCE:finsight-api}

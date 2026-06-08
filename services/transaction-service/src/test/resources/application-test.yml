@@ -14,3 +14,6 @@ spring:
 # Dummy HMAC secret (>= 256 bits) so JwtService can build a signing key in tests.
 jwt:
   secret: test-secret-test-secret-test-secret-test-secret-0123456789abcdef
+  # Enforced on validation; integration test tokens must carry these.
+  issuer: finsight-auth
+  audience: finsight-api

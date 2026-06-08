@@ -29,6 +29,12 @@ management:
     health:
       show-details: never
       show-components: never
+      # Expose /actuator/health/liveness and /actuator/health/readiness (generic
+      # Spring Boot probe support, not Kubernetes-specific). The BFF owns no
+      # datastore; readiness uses the default readinessState and is intentionally
+      # decoupled from upstream service health (request-time fail-fast handles that).
+      probes:
+        enabled: true
     info:
       enabled: true
   info:
@@ -38,3 +44,6 @@ management:
 # Same shared HMAC secret auth-service signs with; validated locally on every request.
 jwt:
   secret: ${JWT_SECRET}
+  # Enforced on validation (parity with the gateway and the minting auth-service).
+  issuer: ${JWT_ISSUER:finsight-auth}
+  audience: ${JWT_AUDIENCE:finsight-api}

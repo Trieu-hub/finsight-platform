@@ -33,6 +33,8 @@ public final class JwtTestTokens {
                 .claim("userId", userId)
                 .claim("email", email)
                 .claim("role", role)
+                .issuer("finsight-auth")
+                .audience().add("finsight-api").and()
                 .issuedAt(new Date(now))
                 .expiration(new Date(now + ttlMillis))
                 .signWith(key)
