@@ -11,15 +11,22 @@
 #   * All four services read the same externalized config contract
 #     (${DB_URL}/${DB_USERNAME}/${DB_PASSWORD}, ${REDIS_HOST}/${REDIS_PORT}, ${JWT_SECRET}),
 #     so each is configured purely through environment variables here.
-
-x-jwt-secret: &jwt-secret "finSight-auth-service-dev-secret-key-must-be-at-least-256-bits-long"
+#   * Secrets are NOT in this file. They are interpolated from a gitignored `.env`
+#     (copy `.env.example` -> `.env`). Each service authenticates to MySQL as its own
+#     least-privilege user (auth_user/user_user/transaction_user/budget_user), never root.
 
 services:
   mysql:
     image: mysql:8.4
     container_name: finsight-mysql
     environment:
-      MYSQL_ROOT_PASSWORD: "123456"
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env}
+      # Passed through so 02-create-app-users.sh can provision per-service users at
+      # first init. Root itself is used only for admin/init, never by the services.
+      AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:?set AUTH_DB_PASSWORD in .env}
+      USER_DB_PASSWORD: ${USER_DB_PASSWORD:?set USER_DB_PASSWORD in .env}
+      TRANSACTION_DB_PASSWORD: ${TRANSACTION_DB_PASSWORD:?set TRANSACTION_DB_PASSWORD in .env}
+      BUDGET_DB_PASSWORD: ${BUDGET_DB_PASSWORD:?set BUDGET_DB_PASSWORD in .env}
     # DB ports are intentionally NOT published to the host: the services reach the
     # database over the compose network, and publishing 3306 collides with a
     # locally-run MySQL (which the services' own localhost defaults assume exists).
@@ -28,7 +35,7 @@ services:
       - mysql_data:/var/lib/mysql
       - ./docker/mysql/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p123456"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD}"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -54,14 +61,21 @@ services:
         condition: service_healthy
     environment:
       DB_URL: jdbc:mysql://mysql:3306/auth_db
-      DB_USERNAME: root
-      DB_PASSWORD: "123456"
+      DB_USERNAME: auth_user
+      DB_PASSWORD: ${AUTH_DB_PASSWORD:?set AUTH_DB_PASSWORD in .env}
       REDIS_HOST: redis
       REDIS_PORT: "6379"
-      JWT_SECRET: *jwt-secret
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
     ports:
       - "8081:8081"
     restart: unless-stopped
+    healthcheck:
+      # "healthy" == Actuator readiness is UP (process up AND DB+Redis reachable).
+      test: ["CMD", "curl", "-fsS", "http://localhost:8081/actuator/health/readiness"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
 
   user-service:
     build: ./services/user-service
@@ -71,12 +85,18 @@ services:
         condition: service_healthy
     environment:
       DB_URL: jdbc:mysql://mysql:3306/user_db
-      DB_USERNAME: root
-      DB_PASSWORD: "123456"
-      JWT_SECRET: *jwt-secret
+      DB_USERNAME: user_user
+      DB_PASSWORD: ${USER_DB_PASSWORD:?set USER_DB_PASSWORD in .env}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
     ports:
       - "8082:8082"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8082/actuator/health/readiness"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
 
   transaction-service:
     build: ./services/transaction-service
@@ -86,12 +106,18 @@ services:
         condition: service_healthy
     environment:
       DB_URL: jdbc:mysql://mysql:3306/transaction_db
-      DB_USERNAME: root
-      DB_PASSWORD: "123456"
-      JWT_SECRET: *jwt-secret
+      DB_USERNAME: transaction_user
+      DB_PASSWORD: ${TRANSACTION_DB_PASSWORD:?set TRANSACTION_DB_PASSWORD in .env}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
     ports:
       - "8083:8083"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8083/actuator/health/readiness"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
 
   budget-service:
     build: ./services/budget-service
@@ -101,12 +127,18 @@ services:
         condition: service_healthy
     environment:
       DB_URL: jdbc:mysql://mysql:3306/budget_db
-      DB_USERNAME: root
-      DB_PASSWORD: "123456"
-      JWT_SECRET: *jwt-secret
+      DB_USERNAME: budget_user
+      DB_PASSWORD: ${BUDGET_DB_PASSWORD:?set BUDGET_DB_PASSWORD in .env}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
     ports:
       - "8084:8084"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8084/actuator/health/readiness"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
 
   # Dashboard Service — read-only aggregation layer / BFF.
   # Owns NO database. It calls user/transaction/budget directly over the compose
@@ -115,18 +147,28 @@ services:
   dashboard-service:
     build: ./services/dashboard-service
     container_name: finsight-dashboard-service
+    # Wait until every upstream it aggregates is actually ready, not merely started.
     depends_on:
-      - user-service
-      - transaction-service
-      - budget-service
+      user-service:
+        condition: service_healthy
+      transaction-service:
+        condition: service_healthy
+      budget-service:
+        condition: service_healthy
     environment:
       USER_SERVICE_URI: http://user-service:8082
       TRANSACTION_SERVICE_URI: http://transaction-service:8083
       BUDGET_SERVICE_URI: http://budget-service:8084
-      JWT_SECRET: *jwt-secret
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
     ports:
       - "8085:8085"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8085/actuator/health/readiness"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
 
   # API Gateway — V1 Phase 2 (routing + edge JWT authentication).
   # Forwards by path prefix to the four services over the compose network, and now
@@ -137,12 +179,19 @@ services:
   api-gateway:
     build: ./services/api-gateway
     container_name: finsight-api-gateway
+    # The edge comes up only after the whole platform behind it is ready, so the
+    # first request through the gateway cannot hit an unready downstream.
     depends_on:
-      - auth-service
-      - user-service
-      - transaction-service
-      - budget-service
-      - dashboard-service
+      auth-service:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+      transaction-service:
+        condition: service_healthy
+      budget-service:
+        condition: service_healthy
+      dashboard-service:
+        condition: service_healthy
     environment:
       AUTH_SERVICE_URI: http://auth-service:8081
       USER_SERVICE_URI: http://user-service:8082
@@ -152,10 +201,16 @@ services:
       # Phase 2: the gateway validates the access token at the edge with the same
       # shared HMAC secret auth-service signs with (issuer/audience default to the
       # minted values). See docs/ADR-0002.
-      JWT_SECRET: *jwt-secret
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
     ports:
       - "8080:8080"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health/readiness"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
 
 volumes:
   mysql_data:

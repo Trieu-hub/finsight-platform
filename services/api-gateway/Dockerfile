@@ -12,6 +12,11 @@ RUN mvn -B -q clean package -DskipTests
 
 # ---- Runtime stage ----
 FROM eclipse-temurin:21-jre-jammy
+# curl is required by the container HEALTHCHECK (compose) to probe the Actuator
+# readiness endpoint; the base JRE image does not ship an HTTP client.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /build/target/*.jar app.jar
 EXPOSE 8080
