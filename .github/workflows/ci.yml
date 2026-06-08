@@ -1,0 +1,67 @@
+name: CI
+
+# Build and test every service on every PR and on pushes to main.
+# A run is green only if all six modules build and all their tests pass
+# (unit + Testcontainers integration tests, which run together via Surefire).
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel a superseded run when new commits land on the same ref.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: build & test (${{ matrix.service }})
+    runs-on: ubuntu-latest # Docker is preinstalled, so Testcontainers works out of the box.
+    strategy:
+      # Don't stop the other services on the first failure — surface every
+      # failing module in a single run. The workflow still fails overall if
+      # any matrix job fails.
+      fail-fast: false
+      matrix:
+        # The repo has no aggregator pom; each service is a standalone Maven
+        # project. The matrix is the single source of build/test steps for all
+        # of them — add a new service here and it is covered automatically.
+        service:
+          - api-gateway
+          - auth-service
+          - budget-service
+          - dashboard-service
+          - transaction-service
+          - user-service
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven # caches ~/.m2 keyed on the poms (requirement: Maven cache).
+
+      # Use the runner's preinstalled Maven rather than ./mvnw: the wrapper jar
+      # (.mvn/wrapper/maven-wrapper.jar) is gitignored and absent from the repo,
+      # the same reason the service Dockerfiles build with `mvn` directly.
+      # `verify` runs the full lifecycle, so unit AND Testcontainers integration
+      # tests (named *IntegrationTest, matched by Surefire) all execute here.
+      - name: Build and test
+        working-directory: services/${{ matrix.service }}
+        run: mvn -B -ntp verify
+
+      # Test reports make a red run actionable. Always upload on failure.
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports-${{ matrix.service }}
+          path: services/${{ matrix.service }}/target/surefire-reports/
+          if-no-files-found: ignore

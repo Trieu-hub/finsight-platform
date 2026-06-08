@@ -72,6 +72,17 @@ The root `docker-compose.yml` builds all four services from source (multi-stage
 Dockerfiles) and starts MySQL and Redis. All services share one `JWT_SECRET` so
 tokens issued by auth-service validate everywhere.
 
+### Secrets (`.env`) — required first step
+
+No secrets live in `docker-compose.yml`. They are interpolated from a **gitignored
+`.env`** file. Compose will refuse to start (with a clear `set X in .env` message) if
+any value is missing.
+
+```bash
+cp .env.example .env     # then fill in JWT_SECRET, MYSQL_ROOT_PASSWORD, and the
+                         # four *_DB_PASSWORD values (generation commands are in the file)
+```
+
 ```bash
 docker compose up --build        # build images + start the full stack
 docker compose up -d mysql redis # start just the datastores
@@ -79,9 +90,53 @@ docker compose down              # stop (add -v to also drop the DB volumes)
 ```
 
 Service health: `GET http://localhost:<port>/actuator/health` (public on every
-service). All four logical databases (`auth_db`, `user_db`, `transaction_db`,
-`budget_db`) are created automatically on first MySQL start via
-`docker/mysql/init/01-create-databases.sql`.
+service). On the **first** MySQL start the init scripts run in order:
+`01-create-databases.sql` creates the four logical databases, then
+`02-create-app-users.sh` creates one **least-privilege user per service**
+(`auth_user`→`auth_db`, `user_user`→`user_db`, `transaction_user`→`transaction_db`,
+`budget_user`→`budget_db`). Each service connects as its own user — **never `root`** —
+so a compromise of one service cannot reach another's data.
+
+> Init scripts only run against an **empty** data directory. If you already have a
+> `mysql_data` volume from before this change, recreate it with `docker compose down -v`
+> (drops local DB data) so the per-service users get provisioned.
+
+### Security model & secret rotation
+
+- **`.env` is the single source of secrets** locally; it is gitignored and must never be
+  committed. `.env.example` is the committed template.
+- **Per-service DB isolation:** dedicated MySQL users hold privileges on only their own
+  database (Flyway runs as that user, so it has DDL on that one schema and nothing else).
+- **JWT secret rotation:** the previously committed secret is compromised and has been
+  replaced. To rotate, see [`docs/security/jwt-secret-rotation.md`](docs/security/jwt-secret-rotation.md).
+
+## Continuous Integration
+
+GitHub Actions (`.github/workflows/ci.yml`) builds and tests every service on each
+`pull_request` and on pushes to `main`. A single matrix job fans out across all six
+modules, so the build/test steps are defined once:
+
+- **JDK 21** (Temurin) with the Maven (`~/.m2`) cache enabled.
+- Each module runs `mvn -B -ntp verify`, which compiles it and runs **all** its tests —
+  unit and Testcontainers integration tests alike (the integration tests are named
+  `*IntegrationTest` and run under Surefire in the same pass; there is no separate
+  integration phase). `auth`, `user`, `transaction` and `budget` spin up a real MySQL 8
+  container via Testcontainers; the `ubuntu-latest` runner ships with Docker, so this
+  needs no extra configuration.
+- The workflow is **red if any module fails to build or any test fails**. `fail-fast`
+  is off, so one run reports every failing service; failing modules also upload their
+  Surefire reports as artifacts.
+
+Reproduce a CI job locally (Docker required for the four MySQL-backed services):
+
+```bash
+cd services/<service>
+mvn -B verify
+```
+
+> No root aggregator pom exists today; the matrix is what builds "all services" in CI.
+> Introducing an aggregator/parent pom would let a single `mvn verify` build everything
+> and is a reasonable future improvement, but it is out of scope for the CI change.
 
 ## Running a single service locally
 

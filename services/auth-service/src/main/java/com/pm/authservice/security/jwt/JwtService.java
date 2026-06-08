@@ -2,11 +2,10 @@ package com.pm.authservice.security.jwt;
 
 import com.pm.authservice.entity.User;
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jws;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
@@ -17,7 +16,8 @@ import java.util.Set;
 @Service
 public class JwtService {
 
-    private static final Logger log = LoggerFactory.getLogger(JwtService.class);
+    /** Pinned signing algorithm; tokens using any other {@code alg} are rejected. */
+    private static final String REQUIRED_ALG = "HS512";
 
     private final SecretKey signingKey;
     private final long accessTokenExpiration;
@@ -33,24 +33,17 @@ public class JwtService {
     }
 
     public String generateAccessToken(User user) {
-        var builder = Jwts.builder()
+        return Jwts.builder()
                 .subject(user.getEmail())
                 .claim("userId", user.getId())
                 .claim("email", user.getEmail())
                 .claim("role", user.getRole().getName().name())
+                .issuer(issuer)
+                .audience().add(audience).and()
                 .issuedAt(new Date())
-                .expiration(new Date(System.currentTimeMillis() + accessTokenExpiration));
-
-        // Issuer/audience are emitted so the token contract is in place ahead of a
-        // gateway. They are NOT yet required on validation (see validateToken).
-        if (issuer != null && !issuer.isBlank()) {
-            builder.issuer(issuer);
-        }
-        if (audience != null && !audience.isBlank()) {
-            builder.audience().add(audience).and();
-        }
-
-        return builder.signWith(signingKey).compact();
+                .expiration(new Date(System.currentTimeMillis() + accessTokenExpiration))
+                .signWith(signingKey)
+                .compact();
     }
 
     public String extractUsername(String token) {
@@ -59,34 +52,39 @@ public class JwtService {
 
     public boolean validateToken(String token) {
         try {
-            Claims claims = parseClaims(token);
-            // Non-enforced observation: surface mismatches/absences for monitoring so we
-            // can confirm tokens carry the expected iss/aud before enforcement is enabled.
-            observeIssuerAudience(claims);
+            parseClaims(token);
             return true;
         } catch (JwtException | IllegalArgumentException e) {
             return false;
         }
     }
 
-    /** Logs the observed issuer/audience against expectations. Never rejects a token. */
-    private void observeIssuerAudience(Claims claims) {
-        if (issuer != null && !issuer.isBlank() && !issuer.equals(claims.getIssuer())) {
-            log.warn("JWT issuer mismatch (not enforced): expected='{}' actual='{}'",
-                    issuer, claims.getIssuer());
-        }
-        Set<String> aud = claims.getAudience();
-        if (audience != null && !audience.isBlank() && (aud == null || !aud.contains(audience))) {
-            log.warn("JWT audience mismatch (not enforced): expected='{}' actual='{}'",
-                    audience, aud);
-        }
-    }
-
+    /**
+     * Parses and fully validates the token, enforcing the frozen contract in one place
+     * (parity with api-gateway / docs/ADR-0002): HMAC signature + expiration (via
+     * {@code parseSignedClaims}), algorithm pinned to HS512, issuer {@code == finsight-auth},
+     * audience contains {@code finsight-api}.
+     */
     private Claims parseClaims(String token) {
-        return Jwts.parser()
+        Jws<Claims> jws = Jwts.parser()
                 .verifyWith(signingKey)
                 .build()
-                .parseSignedClaims(token)
-                .getPayload();
+                .parseSignedClaims(token);
+
+        // verifyWith(SecretKey) alone would also accept HS256/HS384 signed with the
+        // same secret, so pin the algorithm explicitly.
+        if (!REQUIRED_ALG.equals(jws.getHeader().getAlgorithm())) {
+            throw new JwtException("Unexpected JWT algorithm: " + jws.getHeader().getAlgorithm());
+        }
+
+        Claims claims = jws.getPayload();
+        if (!issuer.equals(claims.getIssuer())) {
+            throw new JwtException("Unexpected JWT issuer: " + claims.getIssuer());
+        }
+        Set<String> aud = claims.getAudience();
+        if (aud == null || !aud.contains(audience)) {
+            throw new JwtException("JWT audience does not contain " + audience);
+        }
+        return claims;
     }
 }
