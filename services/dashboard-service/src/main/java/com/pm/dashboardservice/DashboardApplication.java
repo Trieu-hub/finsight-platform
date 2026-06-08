@@ -5,6 +5,7 @@ import com.pm.dashboardservice.security.jwt.JwtProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration;
 
 /**
  * FinSight Dashboard Service — a read-only aggregation layer / backend-for-frontend.
@@ -14,7 +15,9 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
  * upstream authorizes as the same user. The token is also validated locally here
  * (every service validates its own tokens — the gateway does not replace that).
  */
-@SpringBootApplication
+// Exclude UserDetailsServiceAutoConfiguration: auth is entirely JWT-based, so Spring's
+// default in-memory user (and its "Using generated security password" log) is unused noise.
+@SpringBootApplication(exclude = {UserDetailsServiceAutoConfiguration.class})
 @EnableConfigurationProperties({DashboardProperties.class, JwtProperties.class})
 public class DashboardApplication {
 
