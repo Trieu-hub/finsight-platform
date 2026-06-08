@@ -40,6 +40,19 @@ management:
     health:
       show-details: never
       show-components: never
+      # Expose /actuator/health/liveness and /actuator/health/readiness (not
+      # Kubernetes-specific; this is Spring Boot's generic probe support).
+      probes:
+        enabled: true
+      group:
+        # Liveness = "process is healthy"; must NOT depend on external infra,
+        # otherwise a DB/Redis blip would cause needless restarts.
+        liveness:
+          include: livenessState
+        # Readiness = "can serve traffic"; DOWN until DB and Redis are reachable
+        # so an orchestrator stops sending requests this node cannot serve.
+        readiness:
+          include: readinessState,db,redis
     info:
       enabled: true
   info:

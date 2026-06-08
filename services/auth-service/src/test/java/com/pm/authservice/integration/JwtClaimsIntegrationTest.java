@@ -15,8 +15,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Non-enforced introduction of issuer/audience: issued tokens carry them, but tokens
- * lacking them are still accepted (enforcement is deferred to a future gateway).
+ * Issuer/audience are now ENFORCED (parity with the gateway and the other services):
+ * issued tokens carry them, and tokens lacking them are rejected.
  */
 class JwtClaimsIntegrationTest extends AbstractMockMvcIntegrationTest {
 
@@ -37,16 +37,16 @@ class JwtClaimsIntegrationTest extends AbstractMockMvcIntegrationTest {
     }
 
     @Test
-    void tokenWithoutIssuerOrAudienceIsStillAccepted() throws Exception {
+    void tokenWithoutIssuerOrAudienceIsRejected() throws Exception {
         long id = uniqueId();
         String email = "noaud" + id + "@finsight.test";
         register("user" + id, email, "password123");
 
         // Correctly signed and addressed to an existing user, but with no iss/aud claims.
-        // Because validation does not yet enforce them, the request must still succeed.
+        // Issuer/audience are now enforced, so the request must be rejected.
         String token = JwtTestTokens.valid(jwtSecret, id, email, "ROLE_USER");
 
         mockMvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer " + token))
-                .andExpect(status().isOk());
+                .andExpect(status().isUnauthorized());
     }
 }

@@ -46,5 +46,12 @@ management:
   endpoint:
     health:
       show-details: never
+      # Expose /actuator/health/liveness and /actuator/health/readiness (generic
+      # Spring Boot probe support, not Kubernetes-specific). The gateway owns no
+      # datastore, so the default groups apply: liveness=livenessState,
+      # readiness=readinessState — readiness deliberately depends on NO external
+      # infra, as required.
+      probes:
+        enabled: true
   # Gateway readiness must NOT depend on any external datastore. No Redis health
   # contributor exists in this phase; keep it that way.
