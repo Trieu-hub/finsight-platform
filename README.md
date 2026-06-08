@@ -83,6 +83,34 @@ service). All four logical databases (`auth_db`, `user_db`, `transaction_db`,
 `budget_db`) are created automatically on first MySQL start via
 `docker/mysql/init/01-create-databases.sql`.
 
+## Continuous Integration
+
+GitHub Actions (`.github/workflows/ci.yml`) builds and tests every service on each
+`pull_request` and on pushes to `main`. A single matrix job fans out across all six
+modules, so the build/test steps are defined once:
+
+- **JDK 21** (Temurin) with the Maven (`~/.m2`) cache enabled.
+- Each module runs `mvn -B -ntp verify`, which compiles it and runs **all** its tests —
+  unit and Testcontainers integration tests alike (the integration tests are named
+  `*IntegrationTest` and run under Surefire in the same pass; there is no separate
+  integration phase). `auth`, `user`, `transaction` and `budget` spin up a real MySQL 8
+  container via Testcontainers; the `ubuntu-latest` runner ships with Docker, so this
+  needs no extra configuration.
+- The workflow is **red if any module fails to build or any test fails**. `fail-fast`
+  is off, so one run reports every failing service; failing modules also upload their
+  Surefire reports as artifacts.
+
+Reproduce a CI job locally (Docker required for the four MySQL-backed services):
+
+```bash
+cd services/<service>
+mvn -B verify
+```
+
+> No root aggregator pom exists today; the matrix is what builds "all services" in CI.
+> Introducing an aggregator/parent pom would let a single `mvn verify` build everything
+> and is a reasonable future improvement, but it is out of scope for the CI change.
+
 ## Running a single service locally
 
 Each service has its own `CLAUDE.md` / `HELP.md` with details. In general:
