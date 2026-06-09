@@ -109,6 +109,11 @@ services:
       DB_USERNAME: transaction_user
       DB_PASSWORD: ${TRANSACTION_DB_PASSWORD:?set TRANSACTION_DB_PASSWORD in .env}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      # Native Spring Boot 4 structured logging: emit ECS-formatted JSON to stdout for
+      # log aggregation (ELK/OpenSearch/Loki-ready). Bound to logging.structured.format.console
+      # via relaxed binding; service.name comes from spring.application.name and MDC
+      # (correlationId) is included automatically. Unset (local/CI) => unchanged plain text.
+      LOGGING_STRUCTURED_FORMAT_CONSOLE: ecs
     ports:
       - "8083:8083"
     restart: unless-stopped
@@ -160,6 +165,11 @@ services:
       TRANSACTION_SERVICE_URI: http://transaction-service:8083
       BUDGET_SERVICE_URI: http://budget-service:8084
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      # Native Spring Boot 4 structured logging: emit ECS-formatted JSON to stdout for
+      # log aggregation (ELK/OpenSearch/Loki-ready). Bound to logging.structured.format.console
+      # via relaxed binding; service.name comes from spring.application.name and MDC
+      # (correlationId) is included automatically. Unset (local/CI) => unchanged plain text.
+      LOGGING_STRUCTURED_FORMAT_CONSOLE: ecs
     ports:
       - "8085:8085"
     restart: unless-stopped
@@ -202,6 +212,11 @@ services:
       # shared HMAC secret auth-service signs with (issuer/audience default to the
       # minted values). See docs/ADR-0002.
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      # Native Spring Boot 4 structured logging: emit ECS-formatted JSON to stdout for
+      # log aggregation (ELK/OpenSearch/Loki-ready). Bound to logging.structured.format.console
+      # via relaxed binding; service.name comes from spring.application.name and MDC
+      # (correlationId) is included automatically. Unset (local/CI) => unchanged plain text.
+      LOGGING_STRUCTURED_FORMAT_CONSOLE: ecs
     ports:
       - "8080:8080"
     restart: unless-stopped
