@@ -31,6 +31,40 @@ charter said it must not merely be.
 
 ---
 
+## 0.5. Phase 1 — Observability & Developer Experience (IN PROGRESS)
+
+_Branch `feature/ci-github-actions`. Work proceeds in small, individually-verified
+commits — `./mvnw verify` on every touched service before each commit._
+
+**Goal:** OpenAPI/Swagger · correlation-ID propagation · structured JSON logging.
+
+### Done
+| Step | What | Commit | Services |
+|---|---|---|---|
+| 1 | Correlation-ID propagation (`X-Correlation-ID`: reuse-or-generate, MDC, response echo; gateway forwards a single canonical id; dashboard relays to upstreams via a `RestClient` interceptor) | `f67fe19` | gateway, dashboard, transaction |
+| 2 | Native Boot 4 **ECS JSON logging**, toggled by `LOGGING_STRUCTURED_FORMAT_CONSOLE=ecs` (set in docker-compose); MDC `correlationId` + `service.name` auto-included; var absent ⇒ unchanged plain text | `c97ad93` | gateway, dashboard, transaction |
+| 5 | **OpenAPI/Swagger pilot**: springdoc 3.0.3, `OpenApiConfig` (metadata + bearer-JWT scheme), Swagger paths permitted in SecurityConfig | `06b3548` | transaction only |
+
+### Pending (pick up here next session)
+- **Step 3 — roll correlation-ID + ECS logging out to `auth`, `user`, `budget`** (the 3 not yet touched). Same pattern as the done services: one `CorrelationIdFilter` + `CorrelationIdFilterConfig` per module, plus `LOGGING_STRUCTURED_FORMAT_CONSOLE: ecs` in each docker-compose block.
+- **Step 6 — roll Swagger out to `auth`, `user`, `budget`, `dashboard`** (same springdoc 3.0.3 + `OpenApiConfig` + SecurityConfig permit-list as the transaction pilot).
+- Then: Micrometer/Prometheus metrics → Grafana → alerting.
+
+### Key facts / decisions (don't re-derive these)
+- **springdoc `3.0.3`** is the verified Spring Boot 4 / Spring 7 line — `org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3`. It pins no Boot version, so it composes with the app's Boot 4.0.6 BOM. Limitation: issue #3163 (HTTP 400 with Boot 4 API-versioning) — N/A, we don't use API versioning. Swagger UI is currently **unauthenticated on the service port** (fine for pilot; for prod disable via `springdoc.api-docs.enabled=false` / `springdoc.swagger-ui.enabled=false`).
+- **Boot 4 / Spring 7 API change that bit us:** `HttpHeaders.containsKey(...)` was removed (HttpHeaders no longer implements `Map`) → use **`containsHeader(...)`**.
+- `FilterRegistrationBean` is still `org.springframework.boot.web.servlet.FilterRegistrationBean` in Boot 4.
+- Correlation filters register at **`Ordered.HIGHEST_PRECEDENCE`** (ahead of Spring Security) so MDC covers error/auth-failure logs too; `try/finally` MDC cleanup prevents thread-pool leakage. Header name is a per-module constant `CorrelationIdFilter.CORRELATION_ID_HEADER` (`X-Correlation-ID`), MDC key `correlationId`. No shared lib across services → the constant is duplicated per module by design.
+- **ECS logging needs NO dependency and NO `logback-spring.xml`** (`logging.structured.format.console=ecs`); Boot's own JSON writer is used (works even on the gateway, which has no Jackson). MDC inclusion is default-on; `service.name` comes from `spring.application.name`.
+
+### Build / verify environment (important)
+- **No `mvn` on PATH** — use the wrapper **`./mvnw`**; it self-bootstraps Maven 3.9.16 from `~/.m2/wrapper` (`distributionType=only-script`, no wrapper jar committed; CI uses preinstalled `mvn`).
+- **Local JDK is 23; CI is JDK 21** (project targets 21). Local `./mvnw verify` is a valid pre-check; **CI on JDK 21 is authoritative.**
+- transaction-service tests use **Testcontainers-MySQL → Docker must be running.** The runtime Swagger smoke test used an ephemeral `mysql:8.4` on host port 13306.
+- HS512 needs a **≥64-byte `JWT_SECRET`** or the app won't start (use a 64-char dummy for local boots).
+
+---
+
 ## 1. Chartered scope vs. reality
 
 ### Core domains (5)
@@ -163,10 +197,10 @@ tokens independently).
   secrets store (currently a local `.env`).
 - Single shared MySQL instance = shared failure domain; no **backup/restore** strategy.
 
-**Observability (largely absent)**
-- No correlation-ID propagation, no structured (JSON) logging, no distributed tracing.
+**Observability (partially addressed — see §0.5)**
+- Correlation-ID propagation + ECS JSON logging: **done on gateway/dashboard/transaction**, pending on auth/user/budget. No distributed tracing yet.
+- OpenAPI/Swagger: **piloted on transaction-service**; rollout to the other REST services pending.
 - No metrics (Micrometer/Prometheus), no dashboards (Grafana), no alerting.
-- Logging is present on the dashboard error path only; needs to be platform-wide.
 
 **Resilience & API**
 - No edge **rate limiting**; auth endpoints are unthrottled (gateway has Redis dep but unused).
@@ -245,8 +279,8 @@ yet built; load/scale and a real deployment target are absent.
 Cheap-and-high-leverage first, then the vision-defining work:
 
 1. Green CI run on a merged branch (validates §6 items 2–5).
-2. OpenAPI/Swagger (in charter, cheapest gap).
-3. Correlation IDs + structured JSON logging (high debug + CV value).
+2. OpenAPI/Swagger — **in progress** (transaction-service piloted; roll out to the rest). See §0.5.
+3. Correlation IDs + structured JSON logging — **in progress** (live on gateway/dashboard/transaction; roll out to auth/user/budget). See §0.5.
 4. Prometheus + Grafana.
 5. Reconcile the Notification scope conflict (§1.1), then build it if confirmed in-scope.
 6. Kafka event backbone (prerequisite for the next item).
