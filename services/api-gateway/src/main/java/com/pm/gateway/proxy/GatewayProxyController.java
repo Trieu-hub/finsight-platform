@@ -1,10 +1,12 @@
 package com.pm.gateway.proxy;
 
 import com.pm.gateway.config.GatewayProperties;
+import com.pm.gateway.logging.CorrelationIdFilter;
 import com.pm.gateway.security.JwtAuthenticator;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -88,6 +90,13 @@ public class GatewayProxyController {
 
         RestClient.RequestBodySpec spec = client.method(method).uri(target);
         copyRequestHeaders(request, spec);
+        // Forward the canonical correlation id (established by CorrelationIdFilter, which
+        // reused an incoming one or generated it) so a single id spans the call graph.
+        // The inbound copy of this header is skipped below to avoid a duplicate.
+        String correlationId = MDC.get(CorrelationIdFilter.CORRELATION_ID_MDC_KEY);
+        if (correlationId != null) {
+            spec.header(CorrelationIdFilter.CORRELATION_ID_HEADER, correlationId);
+        }
         if (body.length > 0) {
             spec.body(body);
         }
@@ -171,6 +180,11 @@ public class GatewayProxyController {
         while (names.hasMoreElements()) {
             String name = names.nextElement();
             if (HOP_BY_HOP.contains(name.toLowerCase(Locale.ROOT))) {
+                continue;
+            }
+            // Skip the inbound correlation header: proxy() re-adds the canonical id from
+            // the MDC, so copying it here too would forward a duplicate.
+            if (name.equalsIgnoreCase(CorrelationIdFilter.CORRELATION_ID_HEADER)) {
                 continue;
             }
             var values = request.getHeaders(name);
