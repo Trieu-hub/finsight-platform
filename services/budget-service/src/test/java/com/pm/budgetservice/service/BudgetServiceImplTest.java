@@ -8,7 +8,9 @@ import com.pm.budgetservice.enums.BudgetPeriod;
 import com.pm.budgetservice.exception.BudgetConflictException;
 import com.pm.budgetservice.exception.BudgetNotFoundException;
 import com.pm.budgetservice.exception.InvalidBudgetDataException;
+import com.pm.budgetservice.entity.ProcessedEvent;
 import com.pm.budgetservice.repository.BudgetRepository;
+import com.pm.budgetservice.repository.ProcessedEventRepository;
 import com.pm.budgetservice.service.impl.BudgetServiceImpl;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -41,6 +43,9 @@ class BudgetServiceImplTest {
 
     @Mock
     private BudgetRepository budgetRepository;
+
+    @Mock
+    private ProcessedEventRepository processedEventRepository;
 
     @InjectMocks
     private BudgetServiceImpl budgetService;
@@ -169,6 +174,33 @@ class BudgetServiceImplTest {
         assertThatThrownBy(() -> budgetService.update(USER_ID, id, patch))
                 .isInstanceOf(BudgetConflictException.class);
         verify(budgetRepository, never()).save(any());
+    }
+
+    @Test
+    void applyExpenseRecordsInboxRowAndIncrementsBudgets() {
+        UUID eventId = UUID.randomUUID();
+        when(processedEventRepository.existsById(eventId)).thenReturn(false);
+
+        boolean applied = budgetService.applyExpense(eventId, USER_ID, 4L, "USD",
+                new BigDecimal("42.50"), LocalDate.of(2026, 6, 15));
+
+        assertThat(applied).isTrue();
+        verify(processedEventRepository).save(any(ProcessedEvent.class));
+        verify(budgetRepository).applyExpense(USER_ID, 4L, "USD",
+                new BigDecimal("42.50"), LocalDate.of(2026, 6, 15));
+    }
+
+    @Test
+    void applyExpenseSkipsDuplicateEventWithoutTouchingBudgets() {
+        UUID eventId = UUID.randomUUID();
+        when(processedEventRepository.existsById(eventId)).thenReturn(true);
+
+        boolean applied = budgetService.applyExpense(eventId, USER_ID, 4L, "USD",
+                new BigDecimal("42.50"), LocalDate.of(2026, 6, 15));
+
+        assertThat(applied).isFalse();
+        verify(processedEventRepository, never()).save(any());
+        verify(budgetRepository, never()).applyExpense(anyLong(), anyLong(), any(), any(), any());
     }
 
     @Test

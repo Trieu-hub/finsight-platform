@@ -67,6 +67,15 @@ public class Budget {
     @Column(name = "currency", nullable = false, length = 3)
     private String currency;
 
+    /**
+     * Sum of matching EXPENSE transactions, materialized by the TransactionCreated
+     * Kafka consumer. Eventually consistent and may drift (see docs/ADR-0004); only
+     * ever written through the consumer's atomic SQL increment, never set directly.
+     */
+    @Column(name = "spent_amount", nullable = false, precision = 19, scale = 4)
+    @Builder.Default
+    private BigDecimal spentAmount = BigDecimal.ZERO;
+
     @Column(name = "is_deleted", nullable = false)
     @Builder.Default
     private boolean isDeleted = false;

@@ -33,7 +33,9 @@ class BudgetApiCrudIntegrationTest extends AbstractMockMvcIntegrationTest {
                 .andExpect(jsonPath("$.data.name").value("Groceries"))
                 .andExpect(jsonPath("$.data.periodType").value("MONTHLY"))
                 .andExpect(jsonPath("$.data.categoryId").value(4))
-                .andExpect(jsonPath("$.data.currency").value("USD"));
+                .andExpect(jsonPath("$.data.currency").value("USD"))
+                // Utilization starts at zero; only the Kafka consumer ever moves it.
+                .andExpect(jsonPath("$.data.spentAmount").value(0));
     }
 
     @Test

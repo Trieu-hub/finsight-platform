@@ -18,18 +18,22 @@ shares its conventions verbatim: the response envelope, the JWT stack (same shar
 secret), the exception handler, soft delete, JPA auditing, 1-based pagination, and
 the Testcontainers test style.
 
-## Scope (MVP) — and what is deliberately NOT here
+## Scope — and what is deliberately NOT here
 
-This service stores budget **definitions only**. It does **not** compute "spent vs.
-limit" progress, because spend data lives in `transaction-service` and the
-architecture forbids cross-service runtime calls. Progress is left to a future
-dashboard/BFF, which can join these limits with transaction-service's existing
-`GET /api/v1/transactions/summary/by-category`.
+This service stores budget **definitions** and maintains `spent_amount`, an
+**event-driven materialization** of matching EXPENSE spend consumed from Kafka
+(`TransactionCreated` on `finsight.transactions.created`, Phase 2.2 — see
+`docs/ADR-0004` at the repo root). There are still no cross-service runtime calls;
+the only inbound data path besides HTTP is the Kafka listener.
 
-Deliberately deferred (depend on services that do not exist yet, or are premature):
-alerts/notifications, Kafka/domain events, dashboards/analytics rollups, recurring
+`spent_amount` is **eventually consistent and can drift**: there are no
+TransactionUpdated/TransactionDeleted events and no backfill, so dashboard-service's
+live computation over transaction-service summaries remains the accurate view. This
+tradeoff is accepted and documented in ADR-0004 — do not "fix" it casually.
+
+Deliberately deferred: alerts/notifications, dashboards/analytics rollups, recurring
 auto-generation, overall (all-category) budgets, cross-service category validation,
-and FX conversion.
+and FX conversion (the consumer matches on exact currency only).
 
 ## Commands
 
@@ -85,6 +89,23 @@ Layering is strict and one-directional: `controller → service → repository`.
   `wallet_id`).
 - List filtering is built dynamically in `BudgetSpecifications` (JPA Criteria).
 - `createdAt` / `updatedAt` are managed by JPA auditing (`AuditingConfig`).
+
+### Kafka consumer (budget utilization)
+- `TransactionEventConsumer` (gated by `finsight.kafka.enabled`; off in the test
+  profile) consumes `TransactionCreated` and delegates to
+  `BudgetService.applyExpense(...)`.
+- **Matching**: same `userId` + `categoryId` + `currency`, `transactionDate` within
+  `[startDate, endDate]`, not soft-deleted. `periodType` plays no role. One event may
+  increment **several overlapping budgets** — that is correct, not a bug.
+- **EXPENSE only**; unknown types, null/unparseable dates and missing eventIds are
+  ignored (and deliberately NOT recorded in the inbox).
+- **Idempotency**: `processed_events` inbox row written in the same DB transaction as
+  the increment; redelivered eventIds are skipped. Never bypass it.
+- **`spent_amount` is only ever written via `BudgetRepository.applyExpense`** (atomic
+  SQL increment). Never set it through the entity — read-modify-write loses updates.
+- The consumer-side `TransactionCreatedEvent` record is a deliberate copy of the
+  producer's wire contract (`type` as String for leniency). Do not import or share
+  code with transaction-service.
 
 ### Domain rules
 - `limitAmount` must be `> 0` (Bean Validation + service guard + DB CHECK).

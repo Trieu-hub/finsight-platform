@@ -1,0 +1,42 @@
+# Prometheus scrape configuration for the FinSight compose stack.
+# Targets use compose-network DNS (service names); every Spring Boot service exposes
+# Micrometer metrics at /actuator/prometheus (permit-listed, no auth — acceptable for
+# the local stack, see README "Observability").
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: api-gateway
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["api-gateway:8080"]
+
+  - job_name: auth-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["auth-service:8081"]
+
+  - job_name: user-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["user-service:8082"]
+
+  - job_name: transaction-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["transaction-service:8083"]
+
+  - job_name: budget-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["budget-service:8084"]
+
+  - job_name: dashboard-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["dashboard-service:8085"]

@@ -43,6 +43,24 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
+        <!-- Prometheus metrics export (/actuator/prometheus). Boot 4: the export
+             autoconfiguration lives in spring-boot-micrometer-metrics (pulled in by
+             the actuator starter) and activates when this registry is on the
+             classpath; version managed by the imported micrometer-bom. -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- OpenAPI / Swagger UI. springdoc 3.0.x is the Spring Boot 4 / Spring
+             Framework 7 line (it composes with the app's Boot 4.0.6 BOM). -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>3.0.3</version>
+        </dependency>
+
         <!-- JWT (same jjwt stack/version as the rest of the platform). -->
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
