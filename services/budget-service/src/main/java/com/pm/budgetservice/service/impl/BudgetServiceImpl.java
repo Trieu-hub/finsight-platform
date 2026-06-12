@@ -5,12 +5,14 @@ import com.pm.budgetservice.dto.BudgetResponse;
 import com.pm.budgetservice.dto.CreateBudgetRequest;
 import com.pm.budgetservice.dto.UpdateBudgetRequest;
 import com.pm.budgetservice.entity.Budget;
+import com.pm.budgetservice.entity.ProcessedEvent;
 import com.pm.budgetservice.enums.BudgetPeriod;
 import com.pm.budgetservice.exception.BudgetConflictException;
 import com.pm.budgetservice.exception.BudgetNotFoundException;
 import com.pm.budgetservice.exception.InvalidBudgetDataException;
 import com.pm.budgetservice.repository.BudgetRepository;
 import com.pm.budgetservice.repository.BudgetSpecifications;
+import com.pm.budgetservice.repository.ProcessedEventRepository;
 import com.pm.budgetservice.service.BudgetService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -22,15 +24,19 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Service
 public class BudgetServiceImpl implements BudgetService {
 
     private final BudgetRepository budgetRepository;
+    private final ProcessedEventRepository processedEventRepository;
 
-    public BudgetServiceImpl(BudgetRepository budgetRepository) {
+    public BudgetServiceImpl(BudgetRepository budgetRepository,
+                             ProcessedEventRepository processedEventRepository) {
         this.budgetRepository = budgetRepository;
+        this.processedEventRepository = processedEventRepository;
     }
 
     @Override
@@ -123,6 +129,28 @@ public class BudgetServiceImpl implements BudgetService {
         // Soft delete.
         budget.setDeleted(true);
         budgetRepository.save(budget);
+    }
+
+    @Override
+    @Transactional
+    public boolean applyExpense(UUID eventId, Long userId, Long categoryId, String currency,
+                                BigDecimal amount, LocalDate transactionDate) {
+        // Idempotency inbox: an existence check (not insert-and-catch) because a flush
+        // failure inside this transaction would mark it rollback-only. Duplicates only
+        // arrive sequentially (one consumer per partition), so check-then-insert is
+        // race-free in practice; the PK still backstops correctness — a true race would
+        // roll back this whole transaction and the redelivery lands here again.
+        if (processedEventRepository.existsById(eventId)) {
+            return false;
+        }
+        processedEventRepository.save(ProcessedEvent.builder()
+                .eventId(eventId)
+                .processedAt(LocalDateTime.now())
+                .build());
+
+        // Same DB transaction as the inbox row: both commit or neither does.
+        budgetRepository.applyExpense(userId, categoryId, currency, amount, transactionDate);
+        return true;
     }
 
     private Budget requireOwnedBudget(Long userId, UUID id) {

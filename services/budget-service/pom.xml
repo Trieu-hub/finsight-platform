@@ -82,6 +82,17 @@
             <artifactId>flyway-mysql</artifactId>
         </dependency>
 
+        <!-- Kafka: consumes TransactionCreated from transaction-service (Phase 2.2).
+             Boot 4 modularized autoconfiguration, so the dedicated STARTER is required:
+             it pulls spring-kafka AND the spring-boot-kafka autoconfig module (listener
+             container factory, @KafkaListener processing). The raw spring-kafka library
+             alone does NOT register the autoconfiguration under Boot 4 (it did under
+             Boot 3) — the listener would be silently ignored. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-kafka</artifactId>
+        </dependency>
+
         <!-- JWT -->
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
@@ -141,6 +152,18 @@
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>mysql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Kafka consumer integration tests run against a real single-node KRaft broker. -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>kafka</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Async assertions for the consumer tests (version from the Boot BOM). -->
+        <dependency>
+            <groupId>org.awaitility</groupId>
+            <artifactId>awaitility</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

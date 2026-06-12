@@ -11,6 +11,12 @@ spring:
   flyway:
     enabled: true
 
+# No broker in the default test context: the listener and its config are gated off.
+# Kafka integration tests re-enable this against a Testcontainers broker.
+finsight:
+  kafka:
+    enabled: false
+
 # Dummy HMAC secret (>= 256 bits) so JwtService can build a signing key in tests.
 jwt:
   secret: test-secret-test-secret-test-secret-test-secret-0123456789abcdef
