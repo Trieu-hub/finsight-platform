@@ -110,6 +110,23 @@ so a compromise of one service cannot reach another's data.
 - **JWT secret rotation:** the previously committed secret is compromised and has been
   replaced. To rotate, see [`docs/security/jwt-secret-rotation.md`](docs/security/jwt-secret-rotation.md).
 
+## Observability (Prometheus + Grafana)
+
+Every service exports Micrometer metrics at `/actuator/prometheus` (JVM, HTTP
+server with latency histograms, and Kafka client/domain counters where relevant —
+e.g. budget-service's `finsight.budget.events.*` consumer outcomes). The compose
+stack runs the collection side:
+
+- **Prometheus** — <http://localhost:9090> — scrapes all six services every 15s
+  (`docker/prometheus/prometheus.yml`); check *Status → Targets* to see the fleet.
+- **Grafana** — <http://localhost:3000> — datasource and the *FinSight Platform
+  Overview* dashboard (request rate, 5xx rate, p95 latency, JVM heap/GC/CPU per
+  service) are auto-provisioned from `docker/grafana/provisioning/`.
+
+> Dev-stack posture, on purpose: Grafana allows anonymous admin and the scrape
+> endpoint is unauthenticated. Both are acceptable on a local compose network and
+> would be locked down (auth proxy / scrape credentials) before any real deployment.
+
 ## Continuous Integration
 
 GitHub Actions (`.github/workflows/ci.yml`) builds and tests every service on each

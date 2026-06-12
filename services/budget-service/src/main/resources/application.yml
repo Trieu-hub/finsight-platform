@@ -23,14 +23,50 @@ spring:
   flyway:
     enabled: true
 
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      # One consumer group for the service; offsets track what budgets have absorbed.
+      group-id: budget-service
+      # First deploy starts from the beginning of the topic, not only new events.
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      # Wrap the JSON deserializer so a malformed payload becomes a handled error
+      # (DefaultErrorHandler: retry, then log-and-skip) instead of an infinite
+      # redelivery loop pinning the partition.
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
+        # The producer deliberately omits Java type headers (language-neutral wire
+        # format), so the target type must be declared here.
+        spring.json.value.default.type: com.pm.budgetservice.event.TransactionCreatedEvent
+        spring.json.use.type.headers: false
+        spring.json.trusted.packages: com.pm.budgetservice.event
+
+finsight:
+  kafka:
+    # Master switch for event consumption (mirrors the producer-side flag in
+    # transaction-service). Off => no listener container starts, no broker needed.
+    enabled: true
+    # Topic names this service consumes. Owned by transaction-service; externalized
+    # so infra/tests can override.
+    topics:
+      transaction-created: finsight.transactions.created
+
 management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,prometheus
     jmx:
       exposure:
         exclude: "*"
+  metrics:
+    distribution:
+      # Publish latency histogram buckets so Grafana can compute p95/p99 with
+      # histogram_quantile(); without buckets only averages are possible.
+      percentiles-histogram:
+        http.server.requests: true
   endpoint:
     health:
       show-details: never

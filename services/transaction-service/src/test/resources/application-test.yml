@@ -10,6 +10,19 @@ spring:
         dialect: org.hibernate.dialect.MySQLDialect
   flyway:
     enabled: true
+  # The MySQL-only integration tests boot the full context but have no broker. Disabling
+  # admin topic auto-creation stops KafkaAdmin from trying to reach one on startup (which
+  # would log noise and stall the context). The event-publishing test re-enables it and
+  # points bootstrap-servers at its Kafka container via @DynamicPropertySource.
+  kafka:
+    admin:
+      auto-create: false
+
+# Off by default in tests so a create() never blocks on a (absent) broker. The
+# event-publishing integration test flips this back on via @DynamicPropertySource.
+finsight:
+  kafka:
+    enabled: false
 
 # Dummy HMAC secret (>= 256 bits) so JwtService can build a signing key in tests.
 jwt:
