@@ -165,6 +165,7 @@ public class BudgetServiceImpl implements BudgetService {
                 .startDate(b.getStartDate())
                 .endDate(b.getEndDate())
                 .limitAmount(b.getLimitAmount())
+                .spentAmount(b.getSpentAmount())
                 .currency(b.getCurrency())
                 .createdAt(b.getCreatedAt())
                 .updatedAt(b.getUpdatedAt())
