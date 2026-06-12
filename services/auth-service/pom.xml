@@ -47,6 +47,15 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
+        <!-- Prometheus metrics export (/actuator/prometheus). Boot 4: the export
+             autoconfiguration lives in spring-boot-micrometer-metrics (pulled in by
+             the actuator starter) and activates when this registry is on the
+             classpath; version managed by the imported micrometer-bom. -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+            <scope>runtime</scope>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-jpa</artifactId>

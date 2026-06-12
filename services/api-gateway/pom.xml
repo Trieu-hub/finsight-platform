@@ -33,6 +33,16 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
+        <!-- Prometheus metrics export (/actuator/prometheus). Boot 4: the export
+             autoconfiguration lives in spring-boot-micrometer-metrics (pulled in by
+             the actuator starter) and activates when this registry is on the
+             classpath; version managed by the imported micrometer-bom. -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
         <!-- JWT (Phase 2): edge validation of the access token. Same jjwt stack and
              version as auth-service / the backend services. jjwt-jackson provides the
              runtime JSON deserializer jjwt needs to read claims. -->

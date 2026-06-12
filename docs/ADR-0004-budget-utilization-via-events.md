@@ -50,8 +50,24 @@ utilization (`spent_amount`) inside budget-service itself.
   `TransactionUpdated`/`TransactionDeleted` events, so editing or soft-deleting a
   transaction does **not** adjust `spent_amount`. Emitting those events is the known
   fix and is out of scope for this phase.
-- **No backfill.** A budget created *after* transactions occurred starts at 0; the
-  consumer only applies events that arrive after it.
+- **Budget edits also drift.** Updating a budget's `categoryId`, `currency` or date
+  window leaves `spent_amount` untouched, so after a slot change it reflects spend
+  matched under the *old* slot. Resetting it to 0 on slot change would be equally
+  wrong (the new window's past events are gone either way — see "no backfill").
+  Accepted for the same reason as transaction-edit drift.
+- **Retry exhaustion loses events.** A record that still fails after the error
+  handler's retries (e.g. a DB outage outlasting ~3s) is logged and skipped — its
+  offset commits and the event is never applied, silently widening drift. A DLT is
+  the known fix and is deliberately out of scope; the skip is surfaced via the
+  `finsight.budget.events.failed` counter (Phase C.2) rather than re-queued.
+- **No backfill — almost.** A budget created *after* transactions occurred starts
+  at 0; the consumer only applies events that arrive after it. One asymmetry: on the
+  consumer group's *very first* start, `auto-offset-reset: earliest` replays whatever
+  is still inside the topic's retention window, partially backfilling budgets that
+  already exist at that moment. Correct behavior, called out so the "no backfill"
+  rule is read precisely.
+- **`processed_events` grows unboundedly.** One row per applied event, no TTL or
+  purge. Irrelevant at this scale; a scheduled cleanup is documented debt, not built.
 - **The dashboard remains the accurate view.** dashboard-service's live computation
   over transaction-service summaries (ADR-0003) is unaffected and authoritative;
   `spent_amount` is the eventually-consistent, event-driven approximation. The two
