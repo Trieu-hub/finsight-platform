@@ -5,6 +5,7 @@ import com.pm.transactionservice.dto.TransactionFilterRequest;
 import com.pm.transactionservice.dto.TransactionResponse;
 import com.pm.transactionservice.dto.UpdateTransactionRequest;
 import com.pm.transactionservice.entity.Transaction;
+import com.pm.transactionservice.event.TransactionCreatedEvent;
 import com.pm.transactionservice.exception.CategoryNotFoundException;
 import com.pm.transactionservice.exception.InvalidTransactionDataException;
 import com.pm.transactionservice.exception.TransactionNotFoundException;
@@ -12,6 +13,7 @@ import com.pm.transactionservice.repository.CategoryRepository;
 import com.pm.transactionservice.repository.TransactionRepository;
 import com.pm.transactionservice.repository.TransactionSpecifications;
 import com.pm.transactionservice.service.TransactionService;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -28,11 +30,14 @@ public class TransactionServiceImpl implements TransactionService {
 
     private final TransactionRepository transactionRepository;
     private final CategoryRepository categoryRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     public TransactionServiceImpl(TransactionRepository transactionRepository,
-                                  CategoryRepository categoryRepository) {
+                                  CategoryRepository categoryRepository,
+                                  ApplicationEventPublisher eventPublisher) {
         this.transactionRepository = transactionRepository;
         this.categoryRepository = categoryRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     @Override
@@ -56,6 +61,19 @@ public class TransactionServiceImpl implements TransactionService {
                 .build();
 
         Transaction saved = transactionRepository.save(transaction);
+
+        // Emit the domain event inside the transaction; TransactionEventListener forwards
+        // it to Kafka only AFTER_COMMIT, so a rolled-back create never publishes.
+        eventPublisher.publishEvent(TransactionCreatedEvent.of(
+                saved.getId(),
+                saved.getUserId(),
+                saved.getType(),
+                saved.getAmount(),
+                saved.getCurrency(),
+                saved.getCategoryId(),
+                saved.getTransactionDate(),
+                saved.getWalletId()));
+
         return toResponse(saved);
     }
 

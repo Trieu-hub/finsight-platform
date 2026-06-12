@@ -51,6 +51,38 @@ services:
       timeout: 5s
       retries: 10
 
+  # Kafka — single-node KRaft broker (no Zookeeper). The async event backbone:
+  # transaction-service publishes TransactionCreated (Phase 2.1); budget-service
+  # consumes it to materialize budget utilization (Phase 2.2). Listener
+  # 'PLAINTEXT' is for in-network clients (advertised as kafka:9092); 'CONTROLLER'
+  # is the KRaft quorum. Single broker => replication factor 1 (see KAFKA env).
+  kafka:
+    image: apache/kafka:3.9.1
+    container_name: finsight-kafka
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      # Single-node: every internal topic must fit on one broker.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    # Not published to the host (see mysql note); add `ports: ["19092:9092"]` plus an
+    # extra advertised listener to inspect from the host.
+    healthcheck:
+      # Broker is ready once the API responds to a topic listing over the bootstrap port.
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
   auth-service:
     build: ./services/auth-service
     container_name: finsight-auth-service
@@ -104,11 +136,15 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+      kafka:
+        condition: service_healthy
     environment:
       DB_URL: jdbc:mysql://mysql:3306/transaction_db
       DB_USERNAME: transaction_user
       DB_PASSWORD: ${TRANSACTION_DB_PASSWORD:?set TRANSACTION_DB_PASSWORD in .env}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      # Async event backbone: where TransactionCreated is published (Phase 2.1).
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       # Native Spring Boot 4 structured logging: emit ECS-formatted JSON to stdout for
       # log aggregation (ELK/OpenSearch/Loki-ready). Bound to logging.structured.format.console
       # via relaxed binding; service.name comes from spring.application.name and MDC
@@ -130,11 +166,16 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+      kafka:
+        condition: service_healthy
     environment:
       DB_URL: jdbc:mysql://mysql:3306/budget_db
       DB_USERNAME: budget_user
       DB_PASSWORD: ${BUDGET_DB_PASSWORD:?set BUDGET_DB_PASSWORD in .env}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      # Async event backbone: consumes TransactionCreated to materialize budget
+      # utilization (spent_amount). See docs/ADR-0004.
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     ports:
       - "8084:8084"
     restart: unless-stopped
@@ -227,5 +268,39 @@ services:
       retries: 12
       start_period: 45s
 
+  # ── Observability (Phase C) ─────────────────────────────────────────────────
+  # Prometheus scrapes every service's /actuator/prometheus over the compose
+  # network; Grafana auto-provisions the datasource + dashboards from ./docker.
+  # Both are dev-stack conveniences: anonymous Grafana admin and an unauthenticated
+  # scrape endpoint are acceptable locally, not a production posture (see README).
+  prometheus:
+    image: prom/prometheus:v3.12.0
+    container_name: finsight-prometheus
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:12.3.7
+    container_name: finsight-grafana
+    depends_on:
+      - prometheus
+    environment:
+      # Local-only convenience: no login wall in the dev stack.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
 volumes:
   mysql_data:
+  prometheus_data:
+  grafana_data:

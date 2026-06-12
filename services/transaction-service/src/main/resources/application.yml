@@ -23,14 +23,44 @@ spring:
   flyway:
     enabled: true
 
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      # Durability: wait for all in-sync replicas (no-op at RF=1, correct as we scale).
+      acks: all
+      properties:
+        # Don't stamp the Java class name into headers — keep the payload language-neutral
+        # for future (possibly non-JVM) consumers; they deserialize by the documented schema.
+        spring.json.add.type.headers: false
+        # Bound how long a send() blocks fetching metadata. Since the publish runs
+        # AFTER_COMMIT on the request thread, a broker outage must fail fast (logged,
+        # not rethrown) rather than stall transaction creation for the 60s default.
+        max.block.ms: 10000
+
+finsight:
+  kafka:
+    # Master switch for event publishing. Off => create() never reaches for a broker.
+    enabled: true
+    # Topic names this service owns. Externalized so infra/tests can override.
+    topics:
+      transaction-created: finsight.transactions.created
+
 management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,prometheus
     jmx:
       exposure:
         exclude: "*"
+  metrics:
+    distribution:
+      # Publish latency histogram buckets so Grafana can compute p95/p99 with
+      # histogram_quantile(); without buckets only averages are possible.
+      percentiles-histogram:
+        http.server.requests: true
   endpoint:
     health:
       show-details: never

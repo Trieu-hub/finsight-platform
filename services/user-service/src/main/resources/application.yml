@@ -27,10 +27,16 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,prometheus
     jmx:
       exposure:
         exclude: "*"
+  metrics:
+    distribution:
+      # Publish latency histogram buckets so Grafana can compute p95/p99 with
+      # histogram_quantile(); without buckets only averages are possible.
+      percentiles-histogram:
+        http.server.requests: true
   endpoint:
     health:
       show-details: never

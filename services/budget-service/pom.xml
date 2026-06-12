@@ -63,6 +63,24 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
+        <!-- Prometheus metrics export (/actuator/prometheus). Boot 4: the export
+             autoconfiguration lives in spring-boot-micrometer-metrics (pulled in by
+             the actuator starter) and activates when this registry is on the
+             classpath; version managed by the imported micrometer-bom. -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- OpenAPI / Swagger UI. springdoc 3.0.x is the Spring Boot 4 / Spring
+             Framework 7 line (it composes with the app's Boot 4.0.6 BOM). -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>3.0.3</version>
+        </dependency>
+
         <!-- Flyway: the Boot starter provides Flyway autoconfiguration + flyway-core;
              flyway-mysql adds MySQL support (required on Flyway 10+). -->
         <dependency>
@@ -72,6 +90,17 @@
         <dependency>
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-mysql</artifactId>
+        </dependency>
+
+        <!-- Kafka: consumes TransactionCreated from transaction-service (Phase 2.2).
+             Boot 4 modularized autoconfiguration, so the dedicated STARTER is required:
+             it pulls spring-kafka AND the spring-boot-kafka autoconfig module (listener
+             container factory, @KafkaListener processing). The raw spring-kafka library
+             alone does NOT register the autoconfiguration under Boot 4 (it did under
+             Boot 3) — the listener would be silently ignored. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-kafka</artifactId>
         </dependency>
 
         <!-- JWT -->
@@ -133,6 +162,18 @@
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>mysql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Kafka consumer integration tests run against a real single-node KRaft broker. -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>kafka</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Async assertions for the consumer tests (version from the Boot BOM). -->
+        <dependency>
+            <groupId>org.awaitility</groupId>
+            <artifactId>awaitility</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

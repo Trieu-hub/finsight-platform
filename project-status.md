@@ -1,6 +1,6 @@
 # FinSight — Project Status
 
-_Last updated: 2026-06-09_
+_Last updated: 2026-06-11_
 _Repo: `D:\finsight` · Branch: `feature/ci-github-actions`_
 
 FinSight's **original vision** is a *Financial Intelligence & Risk Monitoring Platform* —
@@ -25,9 +25,10 @@ near-completion. Progress is tracked on three independent axes:
 
 **Headline:** The MVP (finance tracker + budgets + dashboard) is nearly done and is well
 built. But the product's defining half — *Intelligence & Risk* — is essentially unbuilt:
-**3 of 5 core domains are at 0%**, and **2 of 3 communication pillars (gRPC, Kafka) do not
-exist**. Today the system is, in practice, a polished expense tracker — the thing the
-charter said it must not merely be.
+**3 of 5 core domains are at 0%**, and of the 3 communication pillars only REST is mature —
+**gRPC does not exist** and **Kafka has just been bootstrapped** (Phase 2.1: one producer,
+no consumers — see §0.6). Today the system is, in practice, a polished expense tracker —
+the thing the charter said it must not merely be.
 
 ---
 
@@ -62,6 +63,36 @@ commits — `./mvnw verify` on every touched service before each commit._
 - **Local JDK is 23; CI is JDK 21** (project targets 21). Local `./mvnw verify` is a valid pre-check; **CI on JDK 21 is authoritative.**
 - transaction-service tests use **Testcontainers-MySQL → Docker must be running.** The runtime Swagger smoke test used an ephemeral `mysql:8.4` on host port 13306.
 - HS512 needs a **≥64-byte `JWT_SECRET`** or the app won't start (use a 64-char dummy for local boots).
+
+---
+
+## 0.6. Phase 2.1 — Kafka Foundation (DONE locally; not yet committed / CI-run)
+
+_Branch `feature/ci-github-actions`. **transaction-service only** — no consumers, no Budget
+Service, no gateway/Swagger changes._
+
+**Goal:** stand up the async event backbone and publish the first domain event end-to-end.
+
+### Done
+| What | Detail |
+|---|---|
+| KRaft broker | Single-node `apache/kafka:3.9.1` (no Zookeeper) in docker-compose, RF=1, healthcheck; transaction-service `depends_on` it + `KAFKA_BOOTSTRAP_SERVERS`. |
+| Producer | `spring-boot-starter-kafka`; JSON value, keyed by `userId`, `acks=all`, topic **`finsight.transactions.created`** (`NewTopic` bean, 1 partition). |
+| Event contract | `TransactionCreatedEvent` (record): envelope (`eventId`/`eventType`/`occurredAt`) + transaction snapshot; decoupled from the JPA entity; ISO-8601 string temporals. |
+| Publish timing | `@TransactionalEventListener(AFTER_COMMIT)`, emitted from `TransactionServiceImpl.create()` — shipped only after the DB commit; delivery failure logged, not rethrown. |
+| Verification | Testcontainers E2E test against a real KRaft broker: POST → consume → assert full payload + `userId` key. `./mvnw verify` green (48 tests, 0 failures). |
+
+### Pending (pick up here next session)
+- **Commit + green CI run (JDK 21)** — verified locally on JDK 23 only.
+- **First consumer (Phase 2.2)** — the Risk/Anomaly or Analytics feed.
+- **Harden delivery:** transactional outbox to close the commit-then-publish dual-write gap; consider async publish so a broker outage adds no latency to `create()`.
+- Roll the producer pattern to other services once consumers exist.
+
+### Key facts / decisions (don't re-derive these)
+- **Boot 4 modularized autoconfiguration:** the raw `spring-kafka` library no longer registers `KafkaAutoConfiguration` (it did under Boot 3) ⇒ no `KafkaTemplate` bean and every `@SpringBootTest` context fails. Use **`spring-boot-starter-kafka`** (+ `spring-boot-starter-kafka-test`).
+- **Default `JsonSerializer` writes `java.time` as Jackson timestamps** (LocalDate → `[2026,6,1]`, Instant → epoch) ⇒ `LocalDate` arrived as `""`. The contract therefore uses **ISO-8601 strings** for temporals — language-neutral and independent of the serializer's mapper config.
+- **No-broker safety:** `finsight.kafka.enabled` (default `true`; **`false` in the test profile**) gates publishing, and producer `max.block.ms=10000` bounds the metadata wait — otherwise each `create()` blocks **60s** when no broker is present (one integration class took 1141s before this fix). The E2E test flips the flag back on via `@DynamicPropertySource`.
+- Topic auto-creation (`spring.kafka.admin.auto-create`) is **off in the test profile** so MySQL-only tests never reach a broker at startup.
 
 ---
 
@@ -104,7 +135,7 @@ transaction-service's `SummaryService`.
 |---|---|---|
 | REST (external) | required | ✅ implemented |
 | gRPC (internal sync) | required | ❌ **0%** — no proto, no deps; internal calls are REST (`RestClient`) |
-| Kafka (async events) | required | ❌ **0%** — and it is a *prerequisite* for Risk/Anomaly data flow |
+| Kafka (async events) | required | ⚠️ **~15%** — Phase 2.1 foundation: transaction-service publishes `TransactionCreated` to a single-node KRaft broker (verified E2E); no consumers yet. See §0.6 |
 
 ### Infrastructure
 
@@ -112,7 +143,7 @@ transaction-service's `SummaryService`.
 |---|---|---|
 | MySQL (DB-per-service) | ✅ | ✅ logical DB-per-service on one instance |
 | Redis | ✅ | ⚠️ only auth-service uses it (refresh tokens + lockout); gateway has the dep but **unused** |
-| Kafka | ✅ | ❌ absent |
+| Kafka | ✅ | ⚠️ single-node KRaft broker in compose; transaction-service produces `TransactionCreated` (Phase 2.1) |
 | Docker | ✅ | ✅ |
 | CI/CD | ✅ | ✅ GitHub Actions (build + test) |
 | OpenAPI/Swagger | ✅ | ❌ **0%** — cheapest gap to close, prioritize early |
@@ -174,7 +205,9 @@ tokens independently).
 1. **Intelligence & Risk domains (Behavioral Insights, Anomaly Detection, Risk Monitoring)** —
    3/5 core domains at 0%. This is the single largest gap and the product's reason to exist.
 2. **Kafka (async events)** — not an independent "advanced" feature: it is the data backbone
-   the Risk/Anomaly domains depend on. Without it, the intelligence half has no event feed.
+   the Risk/Anomaly domains depend on. **Foundation now laid** (Phase 2.1: transaction-service
+   produces `TransactionCreated`; §0.6); the gap is now the *consumers* + remaining producers
+   that turn it into a real event feed.
 3. **Analytics Service** — a real analysis engine, distinct from the dashboard's presentation.
 4. **gRPC (internal sync)** — architectural pillar at 0%; functionally low impact (REST
    works), but leaves the "REST + gRPC + Kafka" design only 1/3 realized.
@@ -283,7 +316,7 @@ Cheap-and-high-leverage first, then the vision-defining work:
 3. Correlation IDs + structured JSON logging — **in progress** (live on gateway/dashboard/transaction; roll out to auth/user/budget). See §0.5.
 4. Prometheus + Grafana.
 5. Reconcile the Notification scope conflict (§1.1), then build it if confirmed in-scope.
-6. Kafka event backbone (prerequisite for the next item).
+6. Kafka event backbone — **foundation done** (Phase 2.1, §0.6); next: consumers + outbox.
 7. Risk Intelligence + Analytics services (Behavioral Insights, Anomaly Detection) — the vision.
 8. gRPC for internal sync calls.
 9. Transaction `TRANSFER` type; in-service audit logging.
