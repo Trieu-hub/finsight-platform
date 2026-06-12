@@ -51,8 +51,9 @@ services:
       timeout: 5s
       retries: 10
 
-  # Kafka — single-node KRaft broker (no Zookeeper). The async event backbone
-  # (Phase 2.1): transaction-service publishes TransactionCreated here. Listener
+  # Kafka — single-node KRaft broker (no Zookeeper). The async event backbone:
+  # transaction-service publishes TransactionCreated (Phase 2.1); budget-service
+  # consumes it to materialize budget utilization (Phase 2.2). Listener
   # 'PLAINTEXT' is for in-network clients (advertised as kafka:9092); 'CONTROLLER'
   # is the KRaft quorum. Single broker => replication factor 1 (see KAFKA env).
   kafka:
@@ -165,11 +166,16 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+      kafka:
+        condition: service_healthy
     environment:
       DB_URL: jdbc:mysql://mysql:3306/budget_db
       DB_USERNAME: budget_user
       DB_PASSWORD: ${BUDGET_DB_PASSWORD:?set BUDGET_DB_PASSWORD in .env}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      # Async event backbone: consumes TransactionCreated to materialize budget
+      # utilization (spent_amount). See docs/ADR-0004.
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     ports:
       - "8084:8084"
     restart: unless-stopped
