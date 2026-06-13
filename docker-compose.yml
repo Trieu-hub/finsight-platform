@@ -27,6 +27,7 @@ services:
       USER_DB_PASSWORD: ${USER_DB_PASSWORD:?set USER_DB_PASSWORD in .env}
       TRANSACTION_DB_PASSWORD: ${TRANSACTION_DB_PASSWORD:?set TRANSACTION_DB_PASSWORD in .env}
       BUDGET_DB_PASSWORD: ${BUDGET_DB_PASSWORD:?set BUDGET_DB_PASSWORD in .env}
+      RISK_DB_PASSWORD: ${RISK_DB_PASSWORD:?set RISK_DB_PASSWORD in .env}
     # DB ports are intentionally NOT published to the host: the services reach the
     # database over the compose network, and publishing 3306 collides with a
     # locally-run MySQL (which the services' own localhost defaults assume exists).
@@ -181,6 +182,33 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8084/actuator/health/readiness"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
+
+  # Risk Service — Risk Intelligence MVP (Phase D.1 + D.2).
+  # Consumes TransactionCreated, evaluates the HIGH_AMOUNT_EXPENSE rule, publishes
+  # RiskDetected, and persists each detection to risk_alerts (owns risk_db). Exposes a
+  # read API at /api/v1/risks. Depends on the Kafka broker and MySQL.
+  risk-service:
+    build: ./services/risk-service
+    container_name: finsight-risk-service
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/risk_db
+      DB_USERNAME: risk_user
+      DB_PASSWORD: ${RISK_DB_PASSWORD:?set RISK_DB_PASSWORD in .env}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    ports:
+      - "8086:8086"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8086/actuator/health/readiness"]
       interval: 10s
       timeout: 5s
       retries: 12
