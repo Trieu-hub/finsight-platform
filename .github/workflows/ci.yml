@@ -34,6 +34,7 @@ jobs:
           - auth-service
           - budget-service
           - dashboard-service
+          - risk-service
           - transaction-service
           - user-service
 
