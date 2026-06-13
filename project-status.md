@@ -1,6 +1,6 @@
 # FinSight — Project Status
 
-_Last updated: 2026-06-11_
+_Last updated: 2026-06-12_
 _Repo: `D:\finsight` · Branch: `feature/ci-github-actions`_
 
 FinSight's **original vision** is a *Financial Intelligence & Risk Monitoring Platform* —
@@ -19,16 +19,16 @@ near-completion. Progress is tracked on three independent axes:
 
 | Axis | What it measures | Progress |
 |---|---|---|
-| **MVP backend** | Core finance CRUD + auth + dashboard working end-to-end | **~85–90%** |
-| **Production-ready MVP** | The MVP, operable & secure for real deployment | **~55–65%** |
-| **Full FinSight vision** | The chartered Intelligence & Risk platform | **~40–45%** |
+| **MVP backend** | Core finance CRUD + auth + dashboard working end-to-end | **~90%** |
+| **Production-ready MVP** | The MVP, operable & secure for real deployment | **~70–75%** |
+| **Full FinSight vision** | The chartered Intelligence & Risk platform | **~45–50%** |
 
 **Headline:** The MVP (finance tracker + budgets + dashboard) is nearly done and is well
-built. But the product's defining half — *Intelligence & Risk* — is essentially unbuilt:
-**3 of 5 core domains are at 0%**, and of the 3 communication pillars only REST is mature —
-**gRPC does not exist** and **Kafka has just been bootstrapped** (Phase 2.1: one producer,
-no consumers — see §0.6). Today the system is, in practice, a polished expense tracker —
-the thing the charter said it must not merely be.
+built, and the platform now has a **complete event pipeline** (producer → broker → consumer
+with idempotency, Phase 2.2 — §0.6) plus **full API docs and Prometheus/Grafana
+observability** (§0.5, §0.7). But the product's defining half — *Intelligence & Risk* —
+is still unbuilt: **3 of 5 core domains are at 0%** and **gRPC does not exist**. The next
+milestone (Phase D, Risk MVP) is the first step into that half.
 
 ---
 
@@ -45,11 +45,12 @@ commits — `./mvnw verify` on every touched service before each commit._
 | 1 | Correlation-ID propagation (`X-Correlation-ID`: reuse-or-generate, MDC, response echo; gateway forwards a single canonical id; dashboard relays to upstreams via a `RestClient` interceptor) | `f67fe19` | gateway, dashboard, transaction |
 | 2 | Native Boot 4 **ECS JSON logging**, toggled by `LOGGING_STRUCTURED_FORMAT_CONSOLE=ecs` (set in docker-compose); MDC `correlationId` + `service.name` auto-included; var absent ⇒ unchanged plain text | `c97ad93` | gateway, dashboard, transaction |
 | 5 | **OpenAPI/Swagger pilot**: springdoc 3.0.3, `OpenApiConfig` (metadata + bearer-JWT scheme), Swagger paths permitted in SecurityConfig | `06b3548` | transaction only |
+| 6 | **Swagger rollout (Phase A)**: same pilot pattern (springdoc 3.0.3 + `OpenApiConfig` + SecurityConfig permit-list) + a `/v3/api-docs`-reachable integration test per service. Gateway deliberately skipped (catch-all proxy, nothing to introspect). | `df947c7`, `bfe9190`, `26bb5ba`, `19800cc` | auth, user, budget, dashboard |
 
 ### Pending (pick up here next session)
 - **Step 3 — roll correlation-ID + ECS logging out to `auth`, `user`, `budget`** (the 3 not yet touched). Same pattern as the done services: one `CorrelationIdFilter` + `CorrelationIdFilterConfig` per module, plus `LOGGING_STRUCTURED_FORMAT_CONSOLE: ecs` in each docker-compose block.
-- **Step 6 — roll Swagger out to `auth`, `user`, `budget`, `dashboard`** (same springdoc 3.0.3 + `OpenApiConfig` + SecurityConfig permit-list as the transaction pilot).
-- Then: Micrometer/Prometheus metrics → Grafana → alerting.
+- ~~Step 6 — Swagger rollout~~ **done** (Phase A, see table above).
+- Micrometer/Prometheus → Grafana: **implemented, uncommitted** (Phase C.1, §0.7). Alerting deliberately out of scope.
 
 ### Key facts / decisions (don't re-derive these)
 - **springdoc `3.0.3`** is the verified Spring Boot 4 / Spring 7 line — `org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3`. It pins no Boot version, so it composes with the app's Boot 4.0.6 BOM. Limitation: issue #3163 (HTTP 400 with Boot 4 API-versioning) — N/A, we don't use API versioning. Swagger UI is currently **unauthenticated on the service port** (fine for pilot; for prod disable via `springdoc.api-docs.enabled=false` / `springdoc.swagger-ui.enabled=false`).
@@ -66,12 +67,13 @@ commits — `./mvnw verify` on every touched service before each commit._
 
 ---
 
-## 0.6. Phase 2.1 — Kafka Foundation (DONE locally; not yet committed / CI-run)
+## 0.6. Phase 2 — Kafka event pipeline (2.1 producer + 2.2 consumer: DONE, committed)
 
-_Branch `feature/ci-github-actions`. **transaction-service only** — no consumers, no Budget
-Service, no gateway/Swagger changes._
+_Branch `feature/ci-github-actions`. Phase 2.1 (producer) committed as `0cc521a`;
+Phase 2.2 (Budget consumer) committed as `463ea37`…`f7d2674` (5 commits)._
 
-**Goal:** stand up the async event backbone and publish the first domain event end-to-end.
+**Goal:** stand up the async event backbone and complete the first
+producer → broker → consumer flow end-to-end.
 
 ### Done
 | What | Detail |
@@ -81,12 +83,18 @@ Service, no gateway/Swagger changes._
 | Event contract | `TransactionCreatedEvent` (record): envelope (`eventId`/`eventType`/`occurredAt`) + transaction snapshot; decoupled from the JPA entity; ISO-8601 string temporals. |
 | Publish timing | `@TransactionalEventListener(AFTER_COMMIT)`, emitted from `TransactionServiceImpl.create()` — shipped only after the DB commit; delivery failure logged, not rethrown. |
 | Verification | Testcontainers E2E test against a real KRaft broker: POST → consume → assert full payload + `userId` key. `./mvnw verify` green (48 tests, 0 failures). |
+| **Consumer (Phase 2.2)** | budget-service consumes `TransactionCreated` (group `budget-service`) and materializes **`budgets.spent_amount`** via one atomic SQL `UPDATE` across all matching budgets. Matching: `userId` + `categoryId` + exact `currency` + `transactionDate` in `[startDate, endDate]` + not deleted; `periodType` plays no role; **overlapping budgets all increment** (by design). EXPENSE only; null/bad dates and missing eventIds ignored. |
+| Idempotency | **`processed_events` inbox** (eventId PK) written in the same DB transaction as the increment; redelivered events skipped. Verified by a duplicate-eventId-counted-once Testcontainers test. |
+| Consumer safety | `ErrorHandlingDeserializer` + `DefaultErrorHandler` (3 attempts → log-and-skip; no DLT by design). `finsight.kafka.enabled` gates the listener (off in test profile). |
+| Metrics | Micrometer counters `finsight.budget.events.{processed,duplicate,ignored{reason}}` — scrapeable via Phase C.1. |
+| Tradeoffs | **ADR-0004** (`docs/`): drift accepted (no `TransactionUpdated/Deleted` events, no backfill, budget-edit drift, retry-exhaustion loss); dashboard's live computation remains the accurate spend view. |
+| Verification (2.2) | budget-service `./mvnw verify` green — 59 tests incl. consumer E2E (real KRaft + MySQL, producer's exact wire format), overlap test, idempotency test. |
 
 ### Pending (pick up here next session)
-- **Commit + green CI run (JDK 21)** — verified locally on JDK 23 only.
-- **First consumer (Phase 2.2)** — the Risk/Anomaly or Analytics feed.
-- **Harden delivery:** transactional outbox to close the commit-then-publish dual-write gap; consider async publish so a broker outage adds no latency to `create()`.
-- Roll the producer pattern to other services once consumers exist.
+- **Green CI run (JDK 21)** — all Phase A/B commits are local-verified (JDK 23); push + PR pending.
+- **Phase C.2** — `finsight.budget.events.failed` counter (retry-exhaustion) + Event Pipeline Grafana dashboard.
+- **Phase D** — risk-service: second consumer + first `RiskDetected` producer (rule-based MVP).
+- Outbox explicitly **rejected** for this phase (over-engineering per constraints); AFTER_COMMIT + documented gap stands.
 
 ### Key facts / decisions (don't re-derive these)
 - **Boot 4 modularized autoconfiguration:** the raw `spring-kafka` library no longer registers `KafkaAutoConfiguration` (it did under Boot 3) ⇒ no `KafkaTemplate` bean and every `@SpringBootTest` context fails. Use **`spring-boot-starter-kafka`** (+ `spring-boot-starter-kafka-test`).

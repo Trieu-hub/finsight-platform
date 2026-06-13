@@ -1,0 +1,117 @@
+{
+  "uid": "finsight-event-pipeline",
+  "title": "FinSight Event Pipeline",
+  "tags": ["finsight", "kafka"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Processed (total)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "green" } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "area" },
+      "targets": [
+        { "refId": "A", "expr": "sum(finsight_budget_events_processed_total)" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Duplicate (total)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "blue" } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "area" },
+      "targets": [
+        { "refId": "A", "expr": "sum(finsight_budget_events_duplicate_total)" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Ignored (total)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "yellow" } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "area" },
+      "targets": [
+        { "refId": "A", "expr": "sum(finsight_budget_events_ignored_total)" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Failed (total) — retries exhausted",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "red", "value": 1 }
+          ] }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "area" },
+      "targets": [
+        { "refId": "A", "expr": "sum(finsight_budget_events_failed_total)" }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Event outcomes — rate (events/s)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "cps", "min": 0 }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(finsight_budget_events_processed_total[5m]))", "legendFormat": "processed" },
+        { "refId": "B", "expr": "sum(rate(finsight_budget_events_duplicate_total[5m]))", "legendFormat": "duplicate" },
+        { "refId": "C", "expr": "sum(rate(finsight_budget_events_ignored_total[5m]))", "legendFormat": "ignored" },
+        { "refId": "D", "expr": "sum(rate(finsight_budget_events_failed_total[5m]))", "legendFormat": "failed" }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Ignored events by reason — rate (events/s)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "cps", "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (reason) (rate(finsight_budget_events_ignored_total[5m]))",
+          "legendFormat": "{{reason}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Failed events — cumulative (data loss signal)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 12 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "color": { "mode": "fixed", "fixedColor": "red" },
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }
+        },
+        "overrides": []
+      },
+      "targets": [
+        { "refId": "A", "expr": "sum(finsight_budget_events_failed_total)", "legendFormat": "failed (total)" }
+      ]
+    }
+  ]
+}

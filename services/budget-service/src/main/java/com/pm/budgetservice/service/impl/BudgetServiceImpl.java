@@ -7,6 +7,7 @@ import com.pm.budgetservice.dto.UpdateBudgetRequest;
 import com.pm.budgetservice.entity.Budget;
 import com.pm.budgetservice.entity.ProcessedEvent;
 import com.pm.budgetservice.enums.BudgetPeriod;
+import com.pm.budgetservice.event.BudgetChangedEvent;
 import com.pm.budgetservice.exception.BudgetConflictException;
 import com.pm.budgetservice.exception.BudgetNotFoundException;
 import com.pm.budgetservice.exception.InvalidBudgetDataException;
@@ -14,6 +15,7 @@ import com.pm.budgetservice.repository.BudgetRepository;
 import com.pm.budgetservice.repository.BudgetSpecifications;
 import com.pm.budgetservice.repository.ProcessedEventRepository;
 import com.pm.budgetservice.service.BudgetService;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -32,11 +34,14 @@ public class BudgetServiceImpl implements BudgetService {
 
     private final BudgetRepository budgetRepository;
     private final ProcessedEventRepository processedEventRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     public BudgetServiceImpl(BudgetRepository budgetRepository,
-                             ProcessedEventRepository processedEventRepository) {
+                             ProcessedEventRepository processedEventRepository,
+                             ApplicationEventPublisher eventPublisher) {
         this.budgetRepository = budgetRepository;
         this.processedEventRepository = processedEventRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     @Override
@@ -60,7 +65,10 @@ public class BudgetServiceImpl implements BudgetService {
                 .isDeleted(false)
                 .build();
 
-        return toResponse(budgetRepository.save(budget));
+        Budget saved = budgetRepository.save(budget);
+        // Emitted to Kafka only AFTER this transaction commits (see BudgetEventListener).
+        eventPublisher.publishEvent(BudgetChangedEvent.of(saved, false));
+        return toResponse(saved);
     }
 
     @Override
@@ -119,7 +127,9 @@ public class BudgetServiceImpl implements BudgetService {
             budget.setCurrency(request.getCurrency());
         }
 
-        return toResponse(budgetRepository.save(budget));
+        Budget saved = budgetRepository.save(budget);
+        eventPublisher.publishEvent(BudgetChangedEvent.of(saved, false));
+        return toResponse(saved);
     }
 
     @Override
@@ -129,6 +139,8 @@ public class BudgetServiceImpl implements BudgetService {
         // Soft delete.
         budget.setDeleted(true);
         budgetRepository.save(budget);
+        // Tell consumers to stop matching this budget.
+        eventPublisher.publishEvent(BudgetChangedEvent.of(budget, true));
     }
 
     @Override

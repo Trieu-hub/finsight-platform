@@ -1,0 +1,19 @@
+# Test profile. The datasource is injected dynamically from the MySQL Testcontainer
+# (see AbstractMySqlIntegrationTest), so only non-datasource settings live here.
+spring:
+  jpa:
+    hibernate:
+      # Schema is owned by Flyway; Hibernate only validates it against the entities.
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+  flyway:
+    enabled: true
+
+# No broker in the default test context: the listener, producer-topic creation and their
+# config are gated off. The Kafka integration test re-enables this against a
+# Testcontainers broker via @DynamicPropertySource.
+finsight:
+  kafka:
+    enabled: false

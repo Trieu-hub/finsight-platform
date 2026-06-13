@@ -1,12 +1,12 @@
 server:
-  port: 8084
+  port: 8086
 
 spring:
   application:
-    name: budget-service
+    name: risk-service
 
   datasource:
-    url: ${DB_URL:jdbc:mysql://localhost:3306/budget_db}
+    url: ${DB_URL:jdbc:mysql://localhost:3306/risk_db}
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:}
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -26,8 +26,8 @@ spring:
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     consumer:
-      # One consumer group for the service; offsets track what budgets have absorbed.
-      group-id: budget-service
+      # One consumer group for the service; offsets track which transactions were evaluated.
+      group-id: risk-service
       # First deploy starts from the beginning of the topic, not only new events.
       auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
@@ -37,11 +37,11 @@ spring:
       value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
       properties:
         spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
-        # The producer deliberately omits Java type headers (language-neutral wire
-        # format), so the target type must be declared here.
-        spring.json.value.default.type: com.pm.budgetservice.event.TransactionCreatedEvent
+        # The producer omits Java type headers (language-neutral wire format), so the
+        # target type must be declared here.
+        spring.json.value.default.type: com.pm.riskservice.event.TransactionCreatedEvent
         spring.json.use.type.headers: false
-        spring.json.trusted.packages: com.pm.budgetservice.event
+        spring.json.trusted.packages: com.pm.riskservice.event
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
@@ -50,20 +50,21 @@ spring:
       properties:
         # Keep the payload language-neutral — consumers deserialize by the documented schema.
         spring.json.add.type.headers: false
-        # The publish runs AFTER_COMMIT on the request thread; bound the metadata wait so a
-        # broker blip fails fast (logged, not rethrown) rather than stalling the request.
+        # Bound how long a send() blocks fetching metadata so a broker blip fails fast.
         max.block.ms: 10000
 
 finsight:
   kafka:
-    # Master switch for event consumption AND publishing (mirrors transaction-service).
-    # Off => no listener container starts and the AFTER_COMMIT publisher is skipped.
+    # Master switch for event consumption/production. Off => no listener starts, no
+    # broker needed (the default in the test profile).
     enabled: true
     topics:
-      # Consumed: owned by transaction-service.
+      # Owned by transaction-service; consumed here.
       transaction-created: finsight.transactions.created
-      # Produced: owned by this service (Phase E.2), consumed by risk-service.
+      # Owned by budget-service; consumed here for the BUDGET_RISK read-model (Phase E.2).
       budget-changed: finsight.budgets.changed
+      # Owned by this service; produced here.
+      risk-detected: finsight.risk.detected
 
 management:
   endpoints:
@@ -73,18 +74,11 @@ management:
     jmx:
       exposure:
         exclude: "*"
-  metrics:
-    distribution:
-      # Publish latency histogram buckets so Grafana can compute p95/p99 with
-      # histogram_quantile(); without buckets only averages are possible.
-      percentiles-histogram:
-        http.server.requests: true
   endpoint:
     health:
       show-details: never
       show-components: never
-      # Expose /actuator/health/liveness and /actuator/health/readiness (generic
-      # Spring Boot probe support, not Kubernetes-specific).
+      # Expose /actuator/health/liveness and /actuator/health/readiness.
       probes:
         enabled: true
       group:
@@ -99,9 +93,3 @@ management:
   info:
     env:
       enabled: false
-
-jwt:
-  secret: ${JWT_SECRET}
-  # Enforced on validation (parity with the gateway and the minting auth-service).
-  issuer: ${JWT_ISSUER:finsight-auth}
-  audience: ${JWT_AUDIENCE:finsight-api}
