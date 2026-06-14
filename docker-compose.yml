@@ -1,19 +1,23 @@
 # FinSight platform stack.
 #
 # Topology notes (derived from the services' actual config):
-#   * All four services are MySQL-backed (auth_db, user_db, transaction_db, budget_db)
+#   * Five services are MySQL-backed (auth_db, user_db, transaction_db, budget_db, risk_db)
 #     on a single shared MySQL 8 instance. (user-service was consolidated off its own
-#     PostgreSQL instance onto MySQL to match the rest of the platform.)
-#   * Services do NOT call each other at runtime. The only coupling is the shared
-#     HMAC JWT secret: auth-service issues tokens; user/transaction/budget validate
-#     them locally with the same secret. Hence every service depends only on its own
-#     datastore, never on another service.
-#   * All four services read the same externalized config contract
+#     PostgreSQL instance onto MySQL to match the rest of the platform.) dashboard-service
+#     (a BFF) and api-gateway own no database.
+#   * The business services do NOT call each other at runtime. The only coupling is the
+#     shared HMAC JWT secret: auth-service issues tokens; user/transaction/budget — and the
+#     dashboard BFF and the edge gateway — validate them locally with the same secret.
+#     (risk-service is an internal event consumer with no JWT stack; dashboard-service is the
+#     one service that fans out to user/transaction/budget over HTTP, relaying the caller's
+#     token.) Every DB-backed service still depends only on its own datastore.
+#   * Each DB-backed service reads the same externalized config contract
 #     (${DB_URL}/${DB_USERNAME}/${DB_PASSWORD}, ${REDIS_HOST}/${REDIS_PORT}, ${JWT_SECRET}),
-#     so each is configured purely through environment variables here.
+#     so it is configured purely through environment variables here.
 #   * Secrets are NOT in this file. They are interpolated from a gitignored `.env`
 #     (copy `.env.example` -> `.env`). Each service authenticates to MySQL as its own
-#     least-privilege user (auth_user/user_user/transaction_user/budget_user), never root.
+#     least-privilege user (auth_user/user_user/transaction_user/budget_user/risk_user),
+#     never root.
 
 services:
   mysql:

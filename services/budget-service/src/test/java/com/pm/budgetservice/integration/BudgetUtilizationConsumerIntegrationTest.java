@@ -3,6 +3,8 @@ package com.pm.budgetservice.integration;
 import com.pm.budgetservice.entity.Budget;
 import com.pm.budgetservice.enums.BudgetPeriod;
 import com.pm.budgetservice.repository.BudgetRepository;
+import io.micrometer.core.instrument.Meter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -78,8 +80,14 @@ class BudgetUtilizationConsumerIntegrationTest extends AbstractMySqlIntegrationT
         registry.add("finsight.kafka.enabled", () -> "true");
     }
 
+    /** Prometheus naming: kafka_consumer_fetch_manager_records_lag{,_max} (consumer lag, P2-3). */
+    private static final String LAG_METRIC_PREFIX = "kafka.consumer.fetch.manager.records.lag";
+
     @Autowired
     private BudgetRepository budgetRepository;
+
+    @Autowired
+    private MeterRegistry meterRegistry;
 
     private long uniqueUserId() {
         return USER_SEQUENCE.incrementAndGet();
@@ -145,6 +153,20 @@ class BudgetUtilizationConsumerIntegrationTest extends AbstractMySqlIntegrationT
         sendExpense(userId, 4L, "7.50", "USD", "2026-06-16");
 
         awaitSpentAmount(budgetId, "50.00"); // 42.50 once + 7.50, not 92.50
+    }
+
+    @Test
+    void consumerLagMetricIsExposedForPrometheus() {
+        // The auto-configured consumer factory is instrumented by Boot's KafkaMetricsAutoConfiguration,
+        // so the native lag metric is bound to Micrometer and exported at /actuator/prometheus (P2-3).
+        // One expense forces the consumer to fetch so the lag sensors populate.
+        long userId = uniqueUserId();
+        sendExpense(userId, 4L, "1.00", "USD", "2026-06-15");
+
+        await().atMost(Duration.ofSeconds(60)).untilAsserted(() ->
+                assertThat(meterRegistry.getMeters())
+                        .extracting(Meter::getId)
+                        .anyMatch(id -> id.getName().startsWith(LAG_METRIC_PREFIX)));
     }
 
     private UUID createBudget(long userId, long categoryId, BudgetPeriod period,

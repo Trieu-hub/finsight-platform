@@ -14,6 +14,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
+import org.springframework.kafka.core.MicrometerConsumerListener;
 import org.springframework.kafka.listener.ConsumerRecordRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
@@ -80,12 +81,20 @@ public class KafkaConsumerConfig {
      * Dedicated factory for the budget read-model listener: a separate consumer group reading
      * {@code finsight.budgets.changed} from the beginning, deserializing headerless JSON into
      * {@link BudgetChangedEvent}. Reuses the same retry/skip error handler.
+     *
+     * <p>Unlike the auto-configured TransactionCreated factory (which Boot's
+     * {@code KafkaMetricsAutoConfiguration} instruments automatically), this hand-built factory
+     * is not reached by that customizer, so we attach a {@link MicrometerConsumerListener}
+     * explicitly. That binds the native Kafka client metrics — including
+     * {@code kafka.consumer.fetch.manager.records.lag(.max)} — for the {@code risk-service-budgets}
+     * group so consumer lag is scrapeable at {@code /actuator/prometheus} for both groups (P2-3).
      */
     @Bean
     public ConcurrentKafkaListenerContainerFactory<String, BudgetChangedEvent>
             budgetEventListenerContainerFactory(
                     @Value("${spring.kafka.bootstrap-servers}") String bootstrapServers,
-                    DefaultErrorHandler kafkaErrorHandler) {
+                    DefaultErrorHandler kafkaErrorHandler,
+                    MeterRegistry meterRegistry) {
 
         Map<String, Object> props = new HashMap<>();
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
@@ -101,8 +110,10 @@ public class KafkaConsumerConfig {
         props.put(JsonDeserializer.USE_TYPE_INFO_HEADERS, false);
         props.put(JsonDeserializer.TRUSTED_PACKAGES, "com.pm.riskservice.event");
 
-        ConsumerFactory<String, BudgetChangedEvent> consumerFactory =
+        DefaultKafkaConsumerFactory<String, BudgetChangedEvent> consumerFactory =
                 new DefaultKafkaConsumerFactory<>(props);
+        // Emit native Kafka consumer metrics (lag included) to Micrometer for this group.
+        consumerFactory.addListener(new MicrometerConsumerListener<>(meterRegistry));
         ConcurrentKafkaListenerContainerFactory<String, BudgetChangedEvent> factory =
                 new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(consumerFactory);

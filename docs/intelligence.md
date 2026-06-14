@@ -10,6 +10,18 @@ that order (`RiskEventConsumer.onTransactionCreated`).
 
 Numeric thresholds below are the constants in code at the time of writing.
 
+> **Read-model caveat — `observed_expenses` is append-only and can drift.** The read-model is
+> populated solely from `TransactionCreated`; there are no `TransactionUpdated` or
+> `TransactionDeleted` events and no backfill/reconciliation job. A transaction edited or
+> deleted in transaction-service after the fact is **not** reflected here, so every derived
+> figure — risk windows, the spending/category/savings baselines, and the anomaly average —
+> can diverge from transaction-service's authoritative ledger over time. This is the same
+> accepted, eventually-consistent tradeoff documented for budget-service's `spent_amount`
+> (`docs/ADR-0004`): transaction-service remains the source of truth for actual spend; the
+> intelligence figures are advisory signals computed from the create-time stream. Fixing it
+> would require update/delete events (or periodic reconciliation) and is deliberately out of
+> the current MVP scope.
+
 ---
 
 ## Risk Monitoring

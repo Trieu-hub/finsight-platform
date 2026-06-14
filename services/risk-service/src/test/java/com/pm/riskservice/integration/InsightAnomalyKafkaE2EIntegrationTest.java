@@ -4,6 +4,8 @@ import com.pm.riskservice.entity.Anomaly;
 import com.pm.riskservice.entity.Insight;
 import com.pm.riskservice.repository.AnomalyRepository;
 import com.pm.riskservice.repository.InsightRepository;
+import io.micrometer.core.instrument.Meter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -42,10 +44,15 @@ class InsightAnomalyKafkaE2EIntegrationTest extends AbstractMySqlIntegrationTest
 
     private static final String TX_TOPIC = "finsight.transactions.created";
 
+    /** Prometheus naming: kafka_consumer_fetch_manager_records_lag{,_max} (consumer lag, P2-3). */
+    private static final String LAG_METRIC_PREFIX = "kafka.consumer.fetch.manager.records.lag";
+
     @Autowired
     private InsightRepository insightRepository;
     @Autowired
     private AnomalyRepository anomalyRepository;
+    @Autowired
+    private MeterRegistry meterRegistry;
 
     /** Distinct per test so events never cross-contaminate on the shared broker. */
     private static final AtomicLong USER_SEQUENCE = new AtomicLong(700_000L);
@@ -123,6 +130,23 @@ class InsightAnomalyKafkaE2EIntegrationTest extends AbstractMySqlIntegrationTest
                 assertThat(a.getRatio()).isEqualByComparingTo("5.00");
             });
         });
+    }
+
+    /**
+     * P2-3: the native Kafka consumer-lag metric is bound to Micrometer (via the
+     * MicrometerConsumerListener — auto-configured for the TransactionCreated group, attached
+     * explicitly to the budget group) and therefore exported at {@code /actuator/prometheus}.
+     * Sending one event forces the consumer to fetch so the lag sensors populate.
+     */
+    @Test
+    void consumerLagMetricIsExposedForPrometheus() {
+        long userId = USER_SEQUENCE.incrementAndGet();
+        send(userId, "EXPENSE", "100", 4L, "2026-06-10", "2026-06-10T09:00:00Z");
+
+        await().atMost(Duration.ofSeconds(60)).untilAsserted(() ->
+                assertThat(meterRegistry.getMeters())
+                        .extracting(Meter::getId)
+                        .anyMatch(id -> id.getName().startsWith(LAG_METRIC_PREFIX)));
     }
 
     /** Sends the producer's exact wire format: headerless JSON keyed by userId. */
