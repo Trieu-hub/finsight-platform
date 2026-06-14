@@ -2,6 +2,7 @@ package com.pm.riskservice.event;
 
 import com.pm.riskservice.rule.RiskRule;
 import com.pm.riskservice.rule.RiskRuleEngine;
+import com.pm.riskservice.service.AnomalyService;
 import com.pm.riskservice.service.InsightService;
 import com.pm.riskservice.service.RiskAlertService;
 import io.micrometer.core.instrument.Counter;
@@ -41,6 +42,7 @@ class RiskEventConsumerTest {
     private final RiskRuleEngine riskRuleEngine = mock(RiskRuleEngine.class);
     private final RiskAlertService riskAlertService = mock(RiskAlertService.class);
     private final InsightService insightService = mock(InsightService.class);
+    private final AnomalyService anomalyService = mock(AnomalyService.class);
 
     private SimpleMeterRegistry meterRegistry;
     private RiskEventConsumer consumer;
@@ -49,7 +51,7 @@ class RiskEventConsumerTest {
     void setUp() {
         meterRegistry = new SimpleMeterRegistry();
         consumer = new RiskEventConsumer(kafkaTemplate, riskRuleEngine, riskAlertService,
-                insightService, RISK_TOPIC, meterRegistry);
+                insightService, anomalyService, RISK_TOPIC, meterRegistry);
     }
 
     @Test
@@ -114,8 +116,9 @@ class RiskEventConsumerTest {
 
         consumer.onTransactionCreated(event);
 
-        // Insight evaluation runs off the recorded expenses, independent of risk detection.
+        // Insight and anomaly evaluation run off the recorded expenses, independent of risk.
         verify(insightService).evaluate(event);
+        verify(anomalyService).evaluate(event);
     }
 
     private TransactionCreatedEvent expense(UUID txId, long userId) {

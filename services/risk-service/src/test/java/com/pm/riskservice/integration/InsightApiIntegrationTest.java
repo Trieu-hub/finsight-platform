@@ -117,6 +117,38 @@ class InsightApiIntegrationTest extends AbstractMockMvcIntegrationTest {
     }
 
     @Test
+    void lowSavingsRateIsGeneratedAndListed() throws Exception {
+        // Income 1,000 and expenses 900 in June → expenses are 90% of income (≥ 80%). No prior
+        // month and no category/budget, so only LOW_SAVINGS_RATE qualifies.
+        seedIncome("1000", "2026-06-01");
+        seedExpense(null, "900", "2026-06-15");
+
+        assertThat(insightService.evaluate(expenseOn(null, "2026-06-15"))).hasSize(1);
+
+        JsonNode insight = onlyInsight();
+        assertThat(insight.path("insightType").asText()).isEqualTo("LOW_SAVINGS_RATE");
+        assertThat(insight.path("periodMonth").asText()).isEqualTo("2026-06");
+        assertThat(insight.path("categoryId").isNull()).isTrue();
+        assertThat(new BigDecimal(insight.path("previousAmount").asText())).isEqualByComparingTo("1000");
+        assertThat(new BigDecimal(insight.path("currentAmount").asText())).isEqualByComparingTo("900");
+        assertThat(new BigDecimal(insight.path("increasePct").asText())).isEqualByComparingTo("90.00");
+
+        // Fires once per user/month — re-evaluating does not duplicate.
+        assertThat(insightService.evaluate(expenseOn(null, "2026-06-15"))).isEmpty();
+        mockMvc.perform(get("/api/v1/insights")).andExpect(jsonPath("$.length()").value(1));
+    }
+
+    @Test
+    void lowSavingsRateDoesNotFireBelowThreshold() throws Exception {
+        // Income 1,000 and expenses 700 in June → 70% of income, below the 80% threshold.
+        seedIncome("1000", "2026-06-01");
+        seedExpense(null, "700", "2026-06-15");
+
+        assertThat(insightService.evaluate(expenseOn(null, "2026-06-15"))).isEmpty();
+        mockMvc.perform(get("/api/v1/insights")).andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
     void listIsEmptyWhenNoInsights() throws Exception {
         mockMvc.perform(get("/api/v1/insights"))
                 .andExpect(status().isOk())
@@ -135,9 +167,10 @@ class InsightApiIntegrationTest extends AbstractMockMvcIntegrationTest {
 
         assertThat(metrics).contains("finsight_insights_generated_total");
         assertThat(metrics).contains("type=\"SPENDING_INCREASE\"");
-        // All three series are registered eagerly (exported even at 0).
+        // All series are registered eagerly (exported even at 0).
         assertThat(metrics).contains("type=\"CATEGORY_SURGE\"");
         assertThat(metrics).contains("type=\"BUDGET_RISK\"");
+        assertThat(metrics).contains("type=\"LOW_SAVINGS_RATE\"");
     }
 
     private JsonNode onlyInsight() throws Exception {
@@ -157,6 +190,13 @@ class InsightApiIntegrationTest extends AbstractMockMvcIntegrationTest {
 
     private void seedExpenseCat(Long categoryId, String amount, String date) {
         seedExpense(categoryId, amount, date);
+    }
+
+    private void seedIncome(String amount, String date) {
+        LocalDate day = LocalDate.parse(date);
+        expenseRepository.save(new ExpenseObservation(
+                UUID.randomUUID(), USER, ExpenseObservation.INCOME, null, new BigDecimal(amount),
+                CUR, day.atStartOfDay().toInstant(ZoneOffset.UTC), day));
     }
 
     private TransactionCreatedEvent expenseOn(Long categoryId, String date) {

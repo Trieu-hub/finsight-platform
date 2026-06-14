@@ -1,169 +1,252 @@
 # FinSight
 
-Financial Intelligence & Risk Monitoring Platform.
+**Financial Intelligence & Risk Monitoring Platform** — a Spring Boot 4 / Java 21
+microservice monorepo.
 
-A Spring Boot microservice monorepo. Each service is self-contained and owns its
-own database; services do **not** call each other at runtime.
+FinSight is an event-driven finance platform: users record transactions and budgets over a
+REST API, and an asynchronous Kafka backbone feeds a **risk-intelligence** service that
+derives risk alerts, behavioral insights, and anomalies from the activity. Each service owns
+its own database and the only synchronous fan-out is a read-only BFF; all other cross-service
+coupling is asynchronous over Kafka.
 
-## Tech Stack
+> **Status:** working MVP with a rule-based intelligence layer. The intelligence is
+> **rule-based, not ML**. See [Roadmap / not yet built](#roadmap--not-yet-built) for what is
+> intentionally absent, and [`project-status.md`](project-status.md) for a detailed breakdown.
 
-- Java 21, Spring Boot 4.0.6
-- MySQL 8 (auth, user, transaction, budget — one shared instance)
-- Redis (auth — wired, not yet used)
-- Flyway (schema ownership, `ddl-auto: validate`)
-- Docker / Docker Compose
-- Kubernetes (planned)
+## Documentation
 
-## Services
+| Doc | Contents |
+|---|---|
+| [`docs/architecture.md`](docs/architecture.md) | Service boundaries, request/event flow, diagrams |
+| [`docs/event-catalog.md`](docs/event-catalog.md) | Every Kafka event: producer, consumers, payloads |
+| [`docs/intelligence.md`](docs/intelligence.md) | Risk rules, insights, anomalies — triggers & metrics |
+| [`docs/runbook.md`](docs/runbook.md) | Startup, compose workflow, Kafka/Prometheus/Grafana verification, troubleshooting |
+| [`project-status.md`](project-status.md) | Phase-by-phase completion and roadmap |
+| [`docs/ADR-0004-budget-utilization-via-events.md`](docs/ADR-0004-budget-utilization-via-events.md) | Why budget utilization is event-driven (and its accepted drift) |
 
-| Service               | Port | Database                | Engine      | Key responsibility                                   |
-|-----------------------|------|-------------------------|-------------|------------------------------------------------------|
-| `auth-service`        | 8081 | `auth_db`               | MySQL       | Registration, login, JWT issuance (+ Redis)          |
-| `user-service`        | 8082 | `user_db`               | MySQL       | User profile data (consumes JWTs)                    |
-| `transaction-service` | 8083 | `transaction_db`        | MySQL       | Transactions + categories, summaries                 |
-| `budget-service`      | 8084 | `budget_db`             | MySQL       | Budget definitions (spending limit per category)     |
-| `dashboard-service`   | 8085 | _(none)_                | —           | Read-only aggregation / BFF (no DB; calls the others)|
-| `api-gateway`         | 8080 | _(none)_                | —           | Edge routing + JWT validation (Phase 2)              |
+## Tech stack
 
-Shared infrastructure: a single **MySQL 8** instance hosts `auth_db`, `user_db`,
-`transaction_db` and `budget_db` (each service owns its own logical database);
-**Redis** is available for auth-service.
+- **Java 21**, **Spring Boot 4.0.6**, Spring Security, Spring Data JPA
+- **MySQL 8** — one shared instance, one logical database per service
+- **Redis** — used by auth-service (refresh tokens + brute-force lockout)
+- **Kafka** (single-node KRaft broker) — asynchronous event backbone
+- **Flyway** — schema ownership (`ddl-auto: validate`)
+- **JWT** (HS512, shared HMAC secret) — issued by auth-service, validated by every service
+- **springdoc / OpenAPI** — API docs on the user-facing REST services
+- **Micrometer + Prometheus + Grafana** — metrics and dashboards
+- **Docker / Docker Compose**, **GitHub Actions** (CI), **Testcontainers** (integration tests)
 
-## Architecture
+## Architecture summary
 
 ```
-                       ┌───────────────┐
-                       │ auth-service  │  issues JWT (HMAC, shared secret)
-                       │   :8081       │
-                       └───────┬───────┘
-            JWT (Bearer) validated locally by every service
-            ┌──────────────────┼──────────────────┐
-            ▼                   ▼                   ▼
-   ┌────────────────┐ ┌────────────────────┐ ┌────────────────┐
-   │ user-service   │ │ transaction-service│ │ budget-service │
-   │   :8082        │ │   :8083            │ │   :8084        │
-   └───────┬────────┘ └─────────┬──────────┘ └───────┬────────┘
-           ▼                    ▼                     ▼
-       MySQL                  MySQL                  MySQL
-      user_db          transaction_db             budget_db
+                 ┌──────────────┐
+   Client ─────▶ │ api-gateway  │  edge JWT validation + routing
+                 │   :8080      │
+                 └──────┬───────┘
+        ┌───────────┬───┴────┬────────────┬─────────────┐
+        ▼           ▼        ▼            ▼             ▼
+   auth :8081  user :8082  tx :8083   budget :8084  dashboard :8085
+   auth_db     user_db     transaction_db budget_db   (no DB, BFF)
+        │                     │            │   ▲          │ calls user/tx/budget
+        │                     │            │   │          ▼ (REST, relays JWT)
+     (Redis)                  │            │   │
+                              ▼            ▼   │
+                       ┌───────────── Kafka ───────────────┐
+                       │ finsight.transactions.created      │
+                       │ finsight.budgets.changed           │
+                       │ finsight.risk.detected             │
+                       └───────────────┬───────────────────┘
+                                       ▼
+                                 risk-service :8086  ──▶ risk_db
+                                 (risk rules · insights · anomalies)
 ```
 
-Key design rules (consistent across all services):
+- **Synchronous** (HTTP/REST): client → gateway → owning service; the dashboard BFF fans out
+  to user/transaction/budget, relaying the caller's JWT (fail-fast). No other business service
+  calls another at runtime.
+- **Asynchronous** (Kafka): transaction-service produces `TransactionCreated`; budget-service
+  and risk-service consume it; budget-service produces `BudgetChanged` (consumed by
+  risk-service); risk-service produces `RiskDetected` (best-effort, no consumer yet).
 
-- **No runtime cross-service calls** between the core business services. The only
-  coupling is the shared HMAC `JWT_SECRET`: auth-service issues tokens; the others
-  validate them locally. Each owns only its own datastore. **Exception:**
-  `dashboard-service` is a read-only BFF that *does* call the others over HTTP,
-  relaying the caller's JWT (see `docs/ADR-0003`); it owns no data of its own.
-- **`userId` is sacred** — read only from the JWT `userId` claim (`BIGINT`/`Long`),
-  never from the request body or URL.
-- **Identifier contract.** Cross-service identifiers are uniformly `Long`/`BIGINT`:
-  `userId` everywhere, and `categoryId` (owned by transaction-service's `categories`
-  table; referenced as an opaque value by budget-service). Transaction and budget
-  rows use app-generated `UUID` primary keys; auth/user rows use `BIGINT` PKs — an
-  intentional per-entity choice, not an inconsistency.
-- **Schema is owned by Flyway**; Hibernate runs `validate` only.
-- **Soft delete + 1-based API pagination + a shared response/error envelope** are
-  used by transaction-service and budget-service.
+Full diagrams (Mermaid) are in [`docs/architecture.md`](docs/architecture.md).
 
-## Running the platform (Docker Compose)
+**Design rules** (enforced in code): no runtime cross-service calls except the dashboard BFF;
+`userId` is read only from the JWT; Flyway owns every schema; every service validates the JWT
+locally (the gateway stays removable); `risk-service` is internal (no JWT stack, not behind the
+gateway).
 
-The root `docker-compose.yml` builds all four services from source (multi-stage
-Dockerfiles) and starts MySQL and Redis. All services share one `JWT_SECRET` so
-tokens issued by auth-service validate everywhere.
+## Service inventory
 
-### Secrets (`.env`) — required first step
+| Service | Port | Database | Inbound | Responsibility |
+|---|---|---|---|---|
+| `api-gateway` | 8080 | – | HTTP | Edge routing + JWT validation (HS512/issuer/audience) |
+| `auth-service` | 8081 | `auth_db` | HTTP | Register, login, refresh, account lockout; Redis-backed tokens |
+| `user-service` | 8082 | `user_db` | HTTP | User profile data |
+| `transaction-service` | 8083 | `transaction_db` | HTTP | Transactions (INCOME/EXPENSE), categories, summaries; **produces** `TransactionCreated` |
+| `budget-service` | 8084 | `budget_db` | HTTP, Kafka | Budget definitions + utilization; **consumes** `TransactionCreated`, **produces** `BudgetChanged` |
+| `dashboard-service` | 8085 | _(none, BFF)_ | HTTP | Read-only aggregation over user/transaction/budget; relays JWT; fail-fast |
+| `risk-service` | 8086 (internal) | `risk_db` | Kafka | Risk rules, behavioral insights, anomaly detection; **consumes** `TransactionCreated` + `BudgetChanged`, **produces** `RiskDetected`; read APIs. Port not host-published (SE-2) |
 
-No secrets live in `docker-compose.yml`. They are interpolated from a **gitignored
-`.env`** file. Compose will refuse to start (with a clear `set X in .env` message) if
-any value is missing.
+## Databases
+
+One **MySQL 8** instance hosts five logical databases (DB-per-service isolation):
+
+| Database | Owner | Notable tables |
+|---|---|---|
+| `auth_db` | auth-service | users, roles, refresh-token records |
+| `user_db` | user-service | user_profiles |
+| `transaction_db` | transaction-service | transactions, categories |
+| `budget_db` | budget-service | budgets (incl. `spent_amount`), `processed_events` (idempotency inbox) |
+| `risk_db` | risk-service | `risk_alerts`, `observed_expenses`, `insights`, `budget_snapshots`, `anomalies` |
+
+`dashboard-service` owns no database. **Redis** backs only auth-service.
+
+## Kafka topics
+
+Single-node KRaft broker; JSON without type headers; keyed by `userId`; at-least-once delivery
+with idempotent consumers. Full payloads in [`docs/event-catalog.md`](docs/event-catalog.md).
+
+| Topic | Producer | Consumer(s) |
+|---|---|---|
+| `finsight.transactions.created` | transaction-service | budget-service, risk-service |
+| `finsight.budgets.changed` | budget-service | risk-service |
+| `finsight.risk.detected` | risk-service | _(none yet — best-effort notification)_ |
+
+## Implemented intelligence
+
+All in **risk-service**, derived from the `observed_expenses` read-model fed by the
+`TransactionCreated` consumer — **no ML, no prediction**, simple counts/sums/averages only.
+Triggers, severities, persistence, and metrics are detailed in
+[`docs/intelligence.md`](docs/intelligence.md).
+
+**Risk Monitoring** → persisted to `risk_alerts`, published as `RiskDetected`, exposed at
+`GET /api/v1/risks`; metric `finsight.risk.events.detected{type,severity}`:
+
+| Rule | Trigger | Severity |
+|---|---|---|
+| `HIGH_AMOUNT_EXPENSE` | A single EXPENSE ≥ 10,000,000 | HIGH |
+| `RAPID_SPENDING` | 5th EXPENSE for a user within a 10-minute window | MEDIUM |
+| `LARGE_DAILY_SPEND` | Daily EXPENSE total crosses above 20,000,000 | HIGH |
+
+**Behavioral Insights** → persisted to `insights` (one per scope per month), exposed at
+`GET /api/v1/insights`; metric `finsight.insights.generated{type}`:
+
+| Insight | Trigger |
+|---|---|
+| `SPENDING_INCREASE` | Current-month expenses ≥ +30% vs previous month |
+| `CATEGORY_SURGE` | Current-month category expenses ≥ +50% vs previous month |
+| `BUDGET_RISK` | A matching budget's utilization exceeds 80% while its period is open |
+| `LOW_SAVINGS_RATE` | Month with positive income where expenses reach ≥ 80% of income |
+
+**Anomaly Detection** → persisted to `anomalies`, exposed at `GET /api/v1/anomalies`; metric
+`finsight.anomalies.detected{type}`:
+
+| Anomaly | Trigger |
+|---|---|
+| `UNUSUAL_TRANSACTION_AMOUNT` | An EXPENSE ≥ 3× the user's average historical expense, with ≥ 10 prior EXPENSE transactions |
+
+> The risk-service read APIs (`/api/v1/risks`, `/api/v1/insights`, `/api/v1/anomalies`) are an
+> internal/admin surface — unauthenticated by design, not behind the gateway, and **not published
+> to the host** (reachable only on the compose network at `risk-service:8086`, SE-2).
+
+## Observability stack
+
+Every service exposes Micrometer metrics at `/actuator/prometheus` and liveness/readiness
+probes at `/actuator/health/{liveness,readiness}`.
+
+- **Prometheus** — <http://localhost:9090> — scrapes all seven services every 15s
+  (`docker/prometheus/prometheus.yml`); check *Status → Targets*.
+- **Grafana** — <http://localhost:3000> — auto-provisions the Prometheus datasource and three
+  dashboards (folder **FinSight**, from `docker/grafana/provisioning/`):
+  - **FinSight Platform Overview** — request rate, 5xx rate, p95 latency, JVM heap, GC, CPU.
+  - **FinSight Event Pipeline** — budget consumer `processed` / `duplicate` / `ignored` / `failed`.
+  - **FinSight Risk** — detected risks by type and severity.
+
+> Dev-stack posture, on purpose: Grafana allows anonymous admin and the scrape endpoint is
+> unauthenticated — acceptable on a local compose network, not a production posture.
+
+<!-- Screenshot placeholders — add images under docs/images/ when available:
+![Grafana — Platform Overview](docs/images/grafana-platform-overview.png)
+![Grafana — Event Pipeline](docs/images/grafana-event-pipeline.png)
+![Grafana — Risk](docs/images/grafana-risk.png)
+-->
+
+## Local startup (Docker Compose)
+
+The root `docker-compose.yml` builds all seven services and starts MySQL, Redis, Kafka,
+Prometheus, and Grafana. All services share one `JWT_SECRET`.
+
+**1. Secrets (`.env`) — required first.** No secrets live in compose; they are interpolated
+from a gitignored `.env`. Compose refuses to start (clear `set X in .env` message) if any are
+missing.
 
 ```bash
-cp .env.example .env     # then fill in JWT_SECRET, MYSQL_ROOT_PASSWORD, and the
-                         # four *_DB_PASSWORD values (generation commands are in the file)
+cp .env.example .env
+# Fill in: JWT_SECRET (>= 64 bytes for HS512), MYSQL_ROOT_PASSWORD, and the five
+# *_DB_PASSWORD values (AUTH/USER/TRANSACTION/BUDGET/RISK). Generation commands are in the file.
 ```
+
+**2. Start the stack:**
 
 ```bash
-docker compose up --build        # build images + start the full stack
-docker compose up -d mysql redis # start just the datastores
-docker compose down              # stop (add -v to also drop the DB volumes)
+docker compose up --build -d     # build images + start everything
+docker compose ps                # watch readiness-gated startup
+docker compose logs -f risk-service
+docker compose down              # stop  (add -v to also drop MySQL/Prometheus/Grafana volumes)
 ```
 
-Service health: `GET http://localhost:<port>/actuator/health` (public on every
-service). On the **first** MySQL start the init scripts run in order:
-`01-create-databases.sql` creates the four logical databases, then
-`02-create-app-users.sh` creates one **least-privilege user per service**
-(`auth_user`→`auth_db`, `user_user`→`user_db`, `transaction_user`→`transaction_db`,
-`budget_user`→`budget_db`). Each service connects as its own user — **never `root`** —
-so a compromise of one service cannot reach another's data.
+**3. Verify health** (services are readiness-gated via healthchecks + `depends_on`):
 
-> Init scripts only run against an **empty** data directory. If you already have a
-> `mysql_data` volume from before this change, recreate it with `docker compose down -v`
-> (drops local DB data) so the per-service users get provisioned.
+```bash
+# risk-service (8086) is not host-published (internal-only); check it via `docker compose ps`.
+for p in 8080 8081 8082 8083 8084 8085; do
+  curl -fsS http://localhost:$p/actuator/health/readiness && echo " <- $p OK"
+done
+```
 
-### Security model & secret rotation
+On the **first** MySQL start, init scripts create the five databases and one least-privilege
+user per service (`auth_user`, `user_user`, `transaction_user`, `budget_user`, `risk_user`) —
+each service connects as its own user, never `root`. Kafka/MySQL/Redis ports are not published
+to the host; see [`docs/runbook.md`](docs/runbook.md) for Kafka/Prometheus/Grafana verification
+and troubleshooting.
 
-- **`.env` is the single source of secrets** locally; it is gitignored and must never be
-  committed. `.env.example` is the committed template.
-- **Per-service DB isolation:** dedicated MySQL users hold privileges on only their own
-  database (Flyway runs as that user, so it has DDL on that one schema and nothing else).
-- **JWT secret rotation:** the previously committed secret is compromised and has been
-  replaced. To rotate, see [`docs/security/jwt-secret-rotation.md`](docs/security/jwt-secret-rotation.md).
+> Init scripts run only against an empty data dir. If you have an existing `mysql_data` volume
+> from before the risk-service database was added, recreate it with `docker compose down -v`.
 
-## Observability (Prometheus + Grafana)
+### Run / test a single service
 
-Every service exports Micrometer metrics at `/actuator/prometheus` (JVM, HTTP
-server with latency histograms, and Kafka client/domain counters where relevant —
-e.g. budget-service's `finsight.budget.events.*` consumer outcomes). The compose
-stack runs the collection side:
-
-- **Prometheus** — <http://localhost:9090> — scrapes all six services every 15s
-  (`docker/prometheus/prometheus.yml`); check *Status → Targets* to see the fleet.
-- **Grafana** — <http://localhost:3000> — datasource and the *FinSight Platform
-  Overview* dashboard (request rate, 5xx rate, p95 latency, JVM heap/GC/CPU per
-  service) are auto-provisioned from `docker/grafana/provisioning/`.
-
-> Dev-stack posture, on purpose: Grafana allows anonymous admin and the scrape
-> endpoint is unauthenticated. Both are acceptable on a local compose network and
-> would be locked down (auth proxy / scrape credentials) before any real deployment.
+```bash
+cd services/<service>
+./mvnw spring-boot:run     # mvnw.cmd on Windows; needs a DB and (for JWT services) JWT_SECRET
+./mvnw verify              # unit + Testcontainers integration tests (Docker required)
+```
 
 ## Continuous Integration
 
 GitHub Actions (`.github/workflows/ci.yml`) builds and tests every service on each
-`pull_request` and on pushes to `main`. A single matrix job fans out across all six
-modules, so the build/test steps are defined once:
+`pull_request` and on pushes to `main`. A single matrix job fans out across all **seven**
+modules (`api-gateway`, `auth-service`, `user-service`, `transaction-service`, `budget-service`,
+`dashboard-service`, `risk-service`):
 
 - **JDK 21** (Temurin) with the Maven (`~/.m2`) cache enabled.
-- Each module runs `mvn -B -ntp verify`, which compiles it and runs **all** its tests —
-  unit and Testcontainers integration tests alike (the integration tests are named
-  `*IntegrationTest` and run under Surefire in the same pass; there is no separate
-  integration phase). `auth`, `user`, `transaction` and `budget` spin up a real MySQL 8
-  container via Testcontainers; the `ubuntu-latest` runner ships with Docker, so this
-  needs no extra configuration.
-- The workflow is **red if any module fails to build or any test fails**. `fail-fast`
-  is off, so one run reports every failing service; failing modules also upload their
+- Each module runs `mvn -B -ntp verify` — unit **and** Testcontainers integration tests in one
+  pass (MySQL/Kafka containers via Testcontainers; the runner ships with Docker).
+- `fail-fast` is off, so one run reports every failing service; failing modules upload their
   Surefire reports as artifacts.
 
-Reproduce a CI job locally (Docker required for the four MySQL-backed services):
+> There is no aggregator pom; the matrix is what builds "all services" in CI.
 
-```bash
-cd services/<service>
-mvn -B verify
-```
+## Roadmap / not yet built
 
-> No root aggregator pom exists today; the matrix is what builds "all services" in CI.
-> Introducing an aggregator/parent pom would let a single `mvn verify` build everything
-> and is a reasonable future improvement, but it is out of scope for the CI change.
+These are **absent from the codebase** — do not assume they exist:
 
-## Running a single service locally
+- **gRPC** — no proto, no dependencies; all synchronous calls are REST.
+- **Notification Service** — `RiskDetected` is produced but has no consumer / delivery yet.
+- **Analytics engine** — distinct from the dashboard BFF (presentation only).
+- **Transaction `TRANSFER`** — only INCOME/EXPENSE exist (`walletId` is scaffolded, unused).
+- **ML-based intelligence** — current rules are deterministic and threshold-based.
+- **Asymmetric JWT signing** (RS256/JWKS), **edge rate limiting**, **transactional outbox**,
+  **distributed tracing**, **Prometheus alerting**, and a **production deployment target**
+  (Kubernetes/TLS/managed secrets).
 
-Each service has its own `CLAUDE.md` / `HELP.md` with details. In general:
-
-```bash
-cd services/<service>
-./mvnw spring-boot:run     # mvnw.cmd on Windows
-./mvnw test                # transaction/budget integration tests need Docker (Testcontainers)
-```
-
-Local runs need a reachable database and (for user/transaction/budget) a
-`JWT_SECRET` env var matching auth-service's secret.
+See [`project-status.md`](project-status.md) §5 for the prioritized roadmap.
