@@ -155,6 +155,58 @@ class InsightServiceTest {
         verify(insightRepository, never()).save(any());
     }
 
+    // --- LOW_SAVINGS_RATE ---------------------------------------------------------------------
+
+    @Test
+    void lowSavingsRateFiresWhenExpensesReach80PercentOfIncome() {
+        stubMonthIncome("1000");
+        stubMonthExpenses("800"); // exactly 80% of income — "at least 80%"
+
+        List<Insight> result = service.evaluate(expenseOn("2026-06-15"));
+
+        assertThat(result).hasSize(1);
+        Insight insight = result.get(0);
+        assertThat(insight.getInsightType()).isEqualTo(InsightType.LOW_SAVINGS_RATE.name());
+        assertThat(insight.getPeriodMonth()).isEqualTo("2026-06");
+        assertThat(insight.getCategoryId()).isNull();
+        assertThat(insight.getSubjectId()).isEqualTo(InsightService.USER_SUBJECT);
+        assertThat(insight.getPreviousAmount()).isEqualByComparingTo("1000"); // income
+        assertThat(insight.getCurrentAmount()).isEqualByComparingTo("800");   // expenses
+        assertThat(insight.getIncreasePct()).isEqualByComparingTo("80.00");   // share of income spent
+        assertThat(count(InsightType.LOW_SAVINGS_RATE)).isEqualTo(1.0);
+    }
+
+    @Test
+    void lowSavingsRateDoesNotFireBelowThreshold() {
+        stubMonthIncome("1000");
+        stubMonthExpenses("799.99"); // 79.999% — below 80%
+        assertThat(service.evaluate(expenseOn("2026-06-15"))).isEmpty();
+        verify(insightRepository, never()).save(any());
+    }
+
+    @Test
+    void lowSavingsRateNeedsPositiveIncome() {
+        stubMonthIncome("0");
+        stubMonthExpenses("5000");
+        assertThat(service.evaluate(expenseOn("2026-06-15"))).isEmpty();
+    }
+
+    // --- INCOME recording ---------------------------------------------------------------------
+
+    @Test
+    void incomeEventIsRecordedButProducesNoInsight() {
+        TransactionCreatedEvent income = new TransactionCreatedEvent(
+                UUID.randomUUID(), "TransactionCreated", "2026-06-15T10:00:00Z",
+                UUID.randomUUID(), USER, "INCOME", new BigDecimal("9999"),
+                CUR, CATEGORY, "2026-06-15", 1L);
+
+        assertThat(service.evaluate(income)).isEmpty();
+        // Recorded into observed_expenses as the income side of the read-model...
+        verify(expenseRepository).save(any());
+        // ...but income itself is not an insight.
+        verify(insightRepository, never()).save(any());
+    }
+
     // --- cross-cutting ------------------------------------------------------------------------
 
     @Test
@@ -191,6 +243,16 @@ class InsightServiceTest {
                 .thenReturn(new BigDecimal(current));
         when(expenseRepository.sumAmountInDateRange(eq(USER), eq(MAY_START), eq(JUNE_START)))
                 .thenReturn(new BigDecimal(previous));
+    }
+
+    private void stubMonthIncome(String current) {
+        when(expenseRepository.sumIncomeInDateRange(eq(USER), eq(JUNE_START), eq(JULY_START)))
+                .thenReturn(new BigDecimal(current));
+    }
+
+    private void stubMonthExpenses(String current) {
+        when(expenseRepository.sumAmountInDateRange(eq(USER), eq(JUNE_START), eq(JULY_START)))
+                .thenReturn(new BigDecimal(current));
     }
 
     private void stubCategoryTotals(String current, String previous) {

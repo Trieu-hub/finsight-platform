@@ -1,6 +1,6 @@
 # FinSight — Project Status
 
-_Last updated: 2026-06-12_
+_Last updated: 2026-06-14_
 _Repo: `D:\finsight` · Branch: `feature/ci-github-actions`_
 
 FinSight's **original vision** is a *Financial Intelligence & Risk Monitoring Platform* —
@@ -8,134 +8,90 @@ explicitly **not** just an expense tracker. This document measures progress agai
 chartered scope, not against the current repository alone.
 
 **Stack (today):** Java 21 · Spring Boot 4.0.6 · Spring Security · Spring Data JPA · Flyway ·
-MySQL 8.4 · Redis · JWT (HS512) · Docker Compose · GitHub Actions · Testcontainers.
+MySQL 8 · Redis · Kafka (KRaft) · JWT (HS512) · springdoc/OpenAPI · Micrometer ·
+Prometheus · Grafana · Docker Compose · GitHub Actions · Testcontainers.
+
+> Companion docs (added in this pass): [docs/architecture.md](docs/architecture.md),
+> [docs/event-catalog.md](docs/event-catalog.md), [docs/intelligence.md](docs/intelligence.md),
+> [docs/runbook.md](docs/runbook.md).
 
 ---
 
 ## 0. Progress at a glance — three axes (not one number)
 
-A single "% complete" mixes two very different goals and creates a false sense of
-near-completion. Progress is tracked on three independent axes:
+A single "% complete" mixes very different goals. Progress is tracked on three independent axes:
 
 | Axis | What it measures | Progress |
 |---|---|---|
 | **MVP backend** | Core finance CRUD + auth + dashboard working end-to-end | **~90%** |
-| **Production-ready MVP** | The MVP, operable & secure for real deployment | **~70–75%** |
-| **Full FinSight vision** | The chartered Intelligence & Risk platform | **~45–50%** |
+| **Production-ready MVP** | The MVP, operable & secure for real deployment | **~72%** |
+| **Full FinSight vision** | The chartered Intelligence & Risk platform | **~65%** |
 
-**Headline:** The MVP (finance tracker + budgets + dashboard) is nearly done and is well
-built, and the platform now has a **complete event pipeline** (producer → broker → consumer
-with idempotency, Phase 2.2 — §0.6) plus **full API docs and Prometheus/Grafana
-observability** (§0.5, §0.7). But the product's defining half — *Intelligence & Risk* —
-is still unbuilt: **3 of 5 core domains are at 0%** and **gRPC does not exist**. The next
-milestone (Phase D, Risk MVP) is the first step into that half.
-
----
-
-## 0.5. Phase 1 — Observability & Developer Experience (IN PROGRESS)
-
-_Branch `feature/ci-github-actions`. Work proceeds in small, individually-verified
-commits — `./mvnw verify` on every touched service before each commit._
-
-**Goal:** OpenAPI/Swagger · correlation-ID propagation · structured JSON logging.
-
-### Done
-| Step | What | Commit | Services |
-|---|---|---|---|
-| 1 | Correlation-ID propagation (`X-Correlation-ID`: reuse-or-generate, MDC, response echo; gateway forwards a single canonical id; dashboard relays to upstreams via a `RestClient` interceptor) | `f67fe19` | gateway, dashboard, transaction |
-| 2 | Native Boot 4 **ECS JSON logging**, toggled by `LOGGING_STRUCTURED_FORMAT_CONSOLE=ecs` (set in docker-compose); MDC `correlationId` + `service.name` auto-included; var absent ⇒ unchanged plain text | `c97ad93` | gateway, dashboard, transaction |
-| 5 | **OpenAPI/Swagger pilot**: springdoc 3.0.3, `OpenApiConfig` (metadata + bearer-JWT scheme), Swagger paths permitted in SecurityConfig | `06b3548` | transaction only |
-| 6 | **Swagger rollout (Phase A)**: same pilot pattern (springdoc 3.0.3 + `OpenApiConfig` + SecurityConfig permit-list) + a `/v3/api-docs`-reachable integration test per service. Gateway deliberately skipped (catch-all proxy, nothing to introspect). | `df947c7`, `bfe9190`, `26bb5ba`, `19800cc` | auth, user, budget, dashboard |
-
-### Pending (pick up here next session)
-- **Step 3 — roll correlation-ID + ECS logging out to `auth`, `user`, `budget`** (the 3 not yet touched). Same pattern as the done services: one `CorrelationIdFilter` + `CorrelationIdFilterConfig` per module, plus `LOGGING_STRUCTURED_FORMAT_CONSOLE: ecs` in each docker-compose block.
-- ~~Step 6 — Swagger rollout~~ **done** (Phase A, see table above).
-- Micrometer/Prometheus → Grafana: **implemented, uncommitted** (Phase C.1, §0.7). Alerting deliberately out of scope.
-
-### Key facts / decisions (don't re-derive these)
-- **springdoc `3.0.3`** is the verified Spring Boot 4 / Spring 7 line — `org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3`. It pins no Boot version, so it composes with the app's Boot 4.0.6 BOM. Limitation: issue #3163 (HTTP 400 with Boot 4 API-versioning) — N/A, we don't use API versioning. Swagger UI is currently **unauthenticated on the service port** (fine for pilot; for prod disable via `springdoc.api-docs.enabled=false` / `springdoc.swagger-ui.enabled=false`).
-- **Boot 4 / Spring 7 API change that bit us:** `HttpHeaders.containsKey(...)` was removed (HttpHeaders no longer implements `Map`) → use **`containsHeader(...)`**.
-- `FilterRegistrationBean` is still `org.springframework.boot.web.servlet.FilterRegistrationBean` in Boot 4.
-- Correlation filters register at **`Ordered.HIGHEST_PRECEDENCE`** (ahead of Spring Security) so MDC covers error/auth-failure logs too; `try/finally` MDC cleanup prevents thread-pool leakage. Header name is a per-module constant `CorrelationIdFilter.CORRELATION_ID_HEADER` (`X-Correlation-ID`), MDC key `correlationId`. No shared lib across services → the constant is duplicated per module by design.
-- **ECS logging needs NO dependency and NO `logback-spring.xml`** (`logging.structured.format.console=ecs`); Boot's own JSON writer is used (works even on the gateway, which has no Jackson). MDC inclusion is default-on; `service.name` comes from `spring.application.name`.
-
-### Build / verify environment (important)
-- **No `mvn` on PATH** — use the wrapper **`./mvnw`**; it self-bootstraps Maven 3.9.16 from `~/.m2/wrapper` (`distributionType=only-script`, no wrapper jar committed; CI uses preinstalled `mvn`).
-- **Local JDK is 23; CI is JDK 21** (project targets 21). Local `./mvnw verify` is a valid pre-check; **CI on JDK 21 is authoritative.**
-- transaction-service tests use **Testcontainers-MySQL → Docker must be running.** The runtime Swagger smoke test used an ephemeral `mysql:8.4` on host port 13306.
-- HS512 needs a **≥64-byte `JWT_SECRET`** or the app won't start (use a 64-char dummy for local boots).
+**Headline:** The MVP (finance tracker + budgets + dashboard) is built, and the platform now
+has a **real multi-topic event backbone** (3 topics, 2 producers, 2 idempotent consumers) plus
+**full Prometheus/Grafana observability** and **OpenAPI docs**. The product's defining half —
+*Intelligence & Risk* — is **no longer at zero**: risk-service implements rule-based
+**Risk Monitoring**, **Behavioral Insights**, and **Anomaly Detection** end-to-end (Phases D–F).
+The remaining vision gaps are **gRPC** (0%), a **Notification Service** (0% — `RiskDetected` has
+no consumer), and a deeper **Analytics** engine.
 
 ---
 
-## 0.6. Phase 2 — Kafka event pipeline (2.1 producer + 2.2 consumer: DONE, committed)
+## 1. Phase completion (implemented & verified in code)
 
-_Branch `feature/ci-github-actions`. Phase 2.1 (producer) committed as `0cc521a`;
-Phase 2.2 (Budget consumer) committed as `463ea37`…`f7d2674` (5 commits)._
+All phases below are **DONE** — implemented, with unit + Testcontainers integration tests.
 
-**Goal:** stand up the async event backbone and complete the first
-producer → broker → consumer flow end-to-end.
+| Phase | Scope | Evidence in code |
+|---|---|---|
+| **A** | OpenAPI/Swagger rollout (springdoc 3.0.3) to auth, user, budget, dashboard (transaction piloted) | `OpenApiConfig` + SecurityConfig permit-list + `/v3/api-docs` test per service |
+| **2.1** | transaction-service **produces** `TransactionCreated` (AFTER_COMMIT, keyed by userId) | `event/` package; topic `finsight.transactions.created` |
+| **2.2** | budget-service **consumes** `TransactionCreated` → materializes `spent_amount`; idempotency inbox | `TransactionEventConsumer`, `processed_events`; ADR-0004 |
+| **C.1** | Micrometer → Prometheus → Grafana; datasource + **Platform Overview** dashboard | compose `prometheus`/`grafana`; `docker/prometheus`, `docker/grafana` |
+| **C.2** | `finsight.budget.events.failed` (retry-exhaustion) + **Event Pipeline** dashboard | `KafkaConsumerConfig` recoverer; `finsight-event-pipeline.json` |
+| **D.1** | risk-service foundation: consume `TransactionCreated`, `HIGH_AMOUNT_EXPENSE`, **produce** `RiskDetected` | `RiskEventConsumer`, `RiskDetectedEvent`; topic `finsight.risk.detected` |
+| **D.2** | Persist detections to `risk_alerts`; read API `GET /api/v1/risks` | `RiskAlert`, `RiskAlertService`, `RiskAlertController` |
+| **D.3** | Detection metrics `finsight.risk.events.detected{type,severity}` + **Risk** dashboard | `RiskEventConsumer`; `finsight-risk.json` |
+| **D.4** | `observed_expenses` read-model + windowed rules `RAPID_SPENDING`, `LARGE_DAILY_SPEND` | `RiskRuleEngine`, `ObservedExpenseRepository` |
+| **E.1** | Behavioral insight `SPENDING_INCREASE`; `insights` table; `GET /api/v1/insights`; `finsight.insights.generated` | `InsightService`, `Insight`, `InsightController` |
+| **E.2** | `CATEGORY_SURGE` + `BUDGET_RISK`; budget read-model from **`BudgetChanged`** (budget-service produces it) | `BudgetEventConsumer`, `budget_snapshots`; `KafkaBudgetEventPublisher` |
+| **E.3** | `LOW_SAVINGS_RATE`; INCOME recorded into `observed_expenses` (income side) | `InsightService`, V7 migration |
+| **F.1** | Anomaly `UNUSUAL_TRANSACTION_AMOUNT`; `anomalies` table; `GET /api/v1/anomalies`; `finsight.anomalies.detected` | `AnomalyService`, `Anomaly`, `AnomalyController`, V8 migration |
 
-### Done
-| What | Detail |
-|---|---|
-| KRaft broker | Single-node `apache/kafka:3.9.1` (no Zookeeper) in docker-compose, RF=1, healthcheck; transaction-service `depends_on` it + `KAFKA_BOOTSTRAP_SERVERS`. |
-| Producer | `spring-boot-starter-kafka`; JSON value, keyed by `userId`, `acks=all`, topic **`finsight.transactions.created`** (`NewTopic` bean, 1 partition). |
-| Event contract | `TransactionCreatedEvent` (record): envelope (`eventId`/`eventType`/`occurredAt`) + transaction snapshot; decoupled from the JPA entity; ISO-8601 string temporals. |
-| Publish timing | `@TransactionalEventListener(AFTER_COMMIT)`, emitted from `TransactionServiceImpl.create()` — shipped only after the DB commit; delivery failure logged, not rethrown. |
-| Verification | Testcontainers E2E test against a real KRaft broker: POST → consume → assert full payload + `userId` key. `./mvnw verify` green (48 tests, 0 failures). |
-| **Consumer (Phase 2.2)** | budget-service consumes `TransactionCreated` (group `budget-service`) and materializes **`budgets.spent_amount`** via one atomic SQL `UPDATE` across all matching budgets. Matching: `userId` + `categoryId` + exact `currency` + `transactionDate` in `[startDate, endDate]` + not deleted; `periodType` plays no role; **overlapping budgets all increment** (by design). EXPENSE only; null/bad dates and missing eventIds ignored. |
-| Idempotency | **`processed_events` inbox** (eventId PK) written in the same DB transaction as the increment; redelivered events skipped. Verified by a duplicate-eventId-counted-once Testcontainers test. |
-| Consumer safety | `ErrorHandlingDeserializer` + `DefaultErrorHandler` (3 attempts → log-and-skip; no DLT by design). `finsight.kafka.enabled` gates the listener (off in test profile). |
-| Metrics | Micrometer counters `finsight.budget.events.{processed,duplicate,ignored{reason}}` — scrapeable via Phase C.1. |
-| Tradeoffs | **ADR-0004** (`docs/`): drift accepted (no `TransactionUpdated/Deleted` events, no backfill, budget-edit drift, retry-exhaustion loss); dashboard's live computation remains the accurate spend view. |
-| Verification (2.2) | budget-service `./mvnw verify` green — 59 tests incl. consumer E2E (real KRaft + MySQL, producer's exact wire format), overlap test, idempotency test. |
-
-### Pending (pick up here next session)
-- **Green CI run (JDK 21)** — all Phase A/B commits are local-verified (JDK 23); push + PR pending.
-- **Phase C.2** — `finsight.budget.events.failed` counter (retry-exhaustion) + Event Pipeline Grafana dashboard.
-- **Phase D** — risk-service: second consumer + first `RiskDetected` producer (rule-based MVP).
-- Outbox explicitly **rejected** for this phase (over-engineering per constraints); AFTER_COMMIT + documented gap stands.
-
-### Key facts / decisions (don't re-derive these)
-- **Boot 4 modularized autoconfiguration:** the raw `spring-kafka` library no longer registers `KafkaAutoConfiguration` (it did under Boot 3) ⇒ no `KafkaTemplate` bean and every `@SpringBootTest` context fails. Use **`spring-boot-starter-kafka`** (+ `spring-boot-starter-kafka-test`).
-- **Default `JsonSerializer` writes `java.time` as Jackson timestamps** (LocalDate → `[2026,6,1]`, Instant → epoch) ⇒ `LocalDate` arrived as `""`. The contract therefore uses **ISO-8601 strings** for temporals — language-neutral and independent of the serializer's mapper config.
-- **No-broker safety:** `finsight.kafka.enabled` (default `true`; **`false` in the test profile**) gates publishing, and producer `max.block.ms=10000` bounds the metadata wait — otherwise each `create()` blocks **60s** when no broker is present (one integration class took 1141s before this fix). The E2E test flips the flag back on via `@DynamicPropertySource`.
-- Topic auto-creation (`spring.kafka.admin.auto-create`) is **off in the test profile** so MySQL-only tests never reach a broker at startup.
+Detailed trigger conditions, severities, persistence, and metrics for D–F are in
+[docs/intelligence.md](docs/intelligence.md).
 
 ---
 
-## 1. Chartered scope vs. reality
+## 2. Chartered scope vs. reality
 
 ### Core domains (5)
 
 | Core domain | Status | Notes |
 |---|---|---|
 | Personal Finance Management | ✅ ~85% | Transactions, categories, budgets |
-| Dashboard & Analytics | ⚠️ partial | Dashboard ✅; *Analytics* domain only ~25–30% |
-| Behavioral Insights | ❌ 0% | Not started |
-| Anomaly Detection | ❌ 0% | Not started |
-| Financial Risk Monitoring | ❌ 0% | Not started |
+| Dashboard & Analytics | ⚠️ partial | Dashboard ✅; a dedicated *Analytics* engine is still ~30% |
+| Behavioral Insights | ✅ MVP | Rule-based: SPENDING_INCREASE, CATEGORY_SURGE, BUDGET_RISK, LOW_SAVINGS_RATE (E.1–E.3) |
+| Anomaly Detection | ✅ MVP | Rule-based: UNUSUAL_TRANSACTION_AMOUNT (F.1) |
+| Financial Risk Monitoring | ✅ MVP | Rule-based: HIGH_AMOUNT_EXPENSE, RAPID_SPENDING, LARGE_DAILY_SPEND (D.1–D.4) |
 
-The three intelligence domains (Insights / Anomaly / Risk) are the product's identity and
-its biggest gap — far larger than any single missing feature.
+The three intelligence domains now have **working rule-based implementations** (no ML — and ML
+is explicitly out of scope for v1). The remaining depth (richer analytics, more rules) is
+incremental, not greenfield.
 
 ### Services (8 chartered)
 
 | Service (charter) | Reality | Mapping / completeness |
 |---|---|---|
-| API Gateway | ✅ exists | Proxy + JWT validation; **no rate limiting** → ~80% |
+| API Gateway | ✅ exists | Proxy + edge JWT validation; **no rate limiting** → ~80% |
 | Auth Service | ✅ exists | JWT, refresh, lockout, Redis-backed → ~90% |
 | User Service | ✅ exists | Profile data → ~85% |
 | Transaction Service | ✅ exists | INCOME/EXPENSE + categories/summaries; **no TRANSFER** → ~75% |
-| Budget Service | ✅ exists | Definitions + utilization → ~85% |
-| **Analytics Service** | ⚠️ substituted | `dashboard-service` (BFF) covers presentation, not analysis → ~25–30% |
-| **Risk Intelligence Service** | ❌ absent | 0% |
-| **Notification Service** | ❌ absent | 0% (see §1.1 — scope conflict) |
+| Budget Service | ✅ exists | Definitions + event-driven utilization → ~85% |
+| **Analytics Service** | ⚠️ substituted | `dashboard-service` (BFF) covers presentation, not analysis → ~30% |
+| **Risk Intelligence Service** | ✅ exists | `risk-service`: Risk + Insights + Anomaly (rule-based MVP) → ~70% |
+| **Notification Service** | ❌ absent | 0% — `RiskDetected` is published but has **no consumer** yet (see §5.1) |
 
-`dashboard-service` is an **extra** BFF, not one of the 8 chartered services. It aggregates
-user + transaction + budget over REST and renders summaries; it does **not** compute
-behavioral insight, anomaly, or forecasting. The aggregate math it shows lives in
-transaction-service's `SummaryService`.
+`dashboard-service` is an **extra** BFF, not one of the 8 chartered services.
 
 ### Communication pillars (3)
 
@@ -143,189 +99,156 @@ transaction-service's `SummaryService`.
 |---|---|---|
 | REST (external) | required | ✅ implemented |
 | gRPC (internal sync) | required | ❌ **0%** — no proto, no deps; internal calls are REST (`RestClient`) |
-| Kafka (async events) | required | ⚠️ **~15%** — Phase 2.1 foundation: transaction-service publishes `TransactionCreated` to a single-node KRaft broker (verified E2E); no consumers yet. See §0.6 |
+| Kafka (async events) | required | ✅ **real backbone** — 3 topics, 2 producers (`TransactionCreated`, `BudgetChanged`), 2 idempotent consumers (budget, risk), 1 best-effort output (`RiskDetected`). See [docs/event-catalog.md](docs/event-catalog.md) |
 
 ### Infrastructure
 
 | Item | Charter | Reality |
 |---|---|---|
-| MySQL (DB-per-service) | ✅ | ✅ logical DB-per-service on one instance |
-| Redis | ✅ | ⚠️ only auth-service uses it (refresh tokens + lockout); gateway has the dep but **unused** |
-| Kafka | ✅ | ⚠️ single-node KRaft broker in compose; transaction-service produces `TransactionCreated` (Phase 2.1) |
+| MySQL (DB-per-service) | ✅ | ✅ five logical DBs (auth/user/transaction/budget/risk) on one instance |
+| Redis | ✅ | ⚠️ only auth-service uses it (refresh tokens + lockout); no other service depends on Redis (the gateway has **no** Redis dependency) |
+| Kafka | ✅ | ✅ single-node KRaft broker; full producer→consumer flows (Phases 2.1–F.1) |
 | Docker | ✅ | ✅ |
 | CI/CD | ✅ | ✅ GitHub Actions (build + test) |
-| OpenAPI/Swagger | ✅ | ❌ **0%** — cheapest gap to close, prioritize early |
-| Monitoring (Prometheus/Grafana) | ✅ | ❌ absent |
+| OpenAPI/Swagger | ✅ | ✅ Phase A on the 5 user-facing REST services (auth/user/transaction/budget/dashboard); gateway + internal risk-service excluded |
+| Monitoring (Prometheus/Grafana) | ✅ | ✅ Phase C — scrape of all 7 services + 3 provisioned dashboards |
 
 ### Explicitly out-of-scope for v1 (correctly absent)
 
 Saga · CQRS · Event Sourcing · ELK · Keycloak · Istio · Helm · ArgoCD · ML · Blockchain ·
 **separate Audit Service**. None of these count against progress.
 
-### 1.1 Two scope clarifications
-
-- **Audit:** the charter keeps audit as *in-service logging*, with a separate Audit Service
-  only "if time allows." So a missing Audit *Service* is **not** a gap. **However**, the
-  real v1 requirement — audit logging inside each service — is also **not implemented**;
-  what exists is only JPA timestamp auditing (`@CreatedDate`/`@LastModifiedDate`), not
-  action/security audit logging. So this item is *open*, just not as a separate service.
-- **Notification — unresolved conflict:** it is listed in the chartered **architecture (1 of
-  8 services)** and is **not** in the v1 out-of-scope list, so by the written charter it is
-  **required**, not nice-to-have. This must be reconciled: either amend the charter to
-  demote it, or count it as a missing core service. It cannot be both.
-
 ---
 
-## 2. Architecture as built (what exists today)
+## 3. Architecture as built (what exists today)
 
 | Service | Port | Owns DB | Responsibility |
 |---|---|---|---|
 | api-gateway | 8080 | – | Edge routing + JWT validation (HS512/iss/aud), error envelope |
 | auth-service | 8081 | `auth_db` | Register, login, refresh, account lockout; Redis-backed tokens |
 | user-service | 8082 | `user_db` | User profile data |
-| transaction-service | 8083 | `transaction_db` | Transactions (INCOME/EXPENSE), categories, summaries (categories/trend/monthly) |
-| budget-service | 8084 | `budget_db` | Budget definitions + utilization |
+| transaction-service | 8083 | `transaction_db` | Transactions (INCOME/EXPENSE), categories, summaries; produces `TransactionCreated` |
+| budget-service | 8084 | `budget_db` | Budget definitions + utilization; consumes `TransactionCreated`, produces `BudgetChanged` |
 | dashboard-service | 8085 | none (BFF) | Aggregates user + transaction + budget; fail-fast; relays JWT |
-| mysql / redis | – | – | Shared MySQL instance (DB-per-service logical isolation) + Redis |
+| risk-service | 8086 | `risk_db` | Risk rules, insights, anomaly; consumes `TransactionCreated` + `BudgetChanged`, produces `RiskDetected`; read APIs |
+| mysql / redis / kafka | – | – | Shared MySQL (DB-per-service) + Redis (auth) + single-node KRaft broker |
+| prometheus / grafana | 9090 / 3000 | – | Metrics scrape + dashboards |
 
-**Design rules:** no runtime cross-service calls between business services (only the
-dashboard BFF calls others); `userId` read only from the JWT; Flyway owns the schema
-(`ddl-auto: validate`); shared HMAC secret; gateway is removable (services validate
-tokens independently).
+**Design rules:** no runtime cross-service calls between business services (only the dashboard
+BFF calls others); all other coupling is Kafka; `userId` read only from the JWT; Flyway owns the
+schema (`ddl-auto: validate`); shared HMAC secret; gateway is removable (services validate
+tokens independently); risk-service is internal (no JWT stack, not behind the gateway).
+
+Full diagrams: [docs/architecture.md](docs/architecture.md).
 
 ---
 
-## 3. Capabilities accomplished (MVP)
+## 4. Capabilities accomplished
 
-- Working end-to-end auth flow: register → login → JWT (HS512) → authorized calls through
-  the gateway, with per-account brute-force lockout and Redis-backed token/session data.
+- End-to-end auth: register → login → JWT (HS512) → authorized calls through the gateway, with
+  per-account lockout and Redis-backed token/session data.
 - Full CRUD + reporting in transaction and budget services (summaries, trends, utilization).
-- A stateless BFF that aggregates three services with fail-fast behavior and JWT relay.
-- Flyway-owned schemas, `validate`-only Hibernate, DB-per-service logical isolation.
-- Defense-in-depth JWT validation (edge + every service), now consistent.
-- Containerized local stack that comes up healthy with readiness-gated startup ordering.
-- Automated CI and a meaningful Testcontainers-based integration test suite (51 test files).
+- A stateless BFF aggregating three services with fail-fast behavior and JWT relay.
+- **A real Kafka backbone:** `TransactionCreated` and `BudgetChanged` produced AFTER_COMMIT;
+  budget-service materializes utilization idempotently; risk-service derives risk/insight/anomaly.
+- **Rule-based intelligence MVP** in risk-service across all three domains (Phases D–F), each
+  persisted and exposed over a read API, each emitting Micrometer metrics.
+- Observability: every service scraped by Prometheus; 3 provisioned Grafana dashboards
+  (Platform Overview, Event Pipeline, Risk); ECS JSON logging with correlation IDs.
+- OpenAPI/Swagger on every REST service.
+- Flyway-owned schemas, `validate`-only Hibernate, DB-per-service isolation.
+- Containerized stack with readiness-gated startup; CI with Testcontainers integration tests.
 
 ---
 
-## 4. Gaps, prioritized by impact on the vision
+## 5. Remaining roadmap (separate from completed work)
 
-1. **Intelligence & Risk domains (Behavioral Insights, Anomaly Detection, Risk Monitoring)** —
-   3/5 core domains at 0%. This is the single largest gap and the product's reason to exist.
-2. **Kafka (async events)** — not an independent "advanced" feature: it is the data backbone
-   the Risk/Anomaly domains depend on. **Foundation now laid** (Phase 2.1: transaction-service
-   produces `TransactionCreated`; §0.6); the gap is now the *consumers* + remaining producers
-   that turn it into a real event feed.
-3. **Analytics Service** — a real analysis engine, distinct from the dashboard's presentation.
-4. **gRPC (internal sync)** — architectural pillar at 0%; functionally low impact (REST
-   works), but leaves the "REST + gRPC + Kafka" design only 1/3 realized.
-5. **Transaction TRANSFER** — relatively small; add the `TRANSFER` type and wallet-to-wallet
-   semantics (the `walletId` field is already scaffolded).
-6. **OpenAPI/Swagger** — in charter, 0%, and the cheapest item to close; do it early.
-7. **In-service audit logging** — open (see §1.1).
-8. **Notification Service** — pending scope reconciliation (see §1.1).
+**Vision-defining (the chartered "second half"):**
+1. **Notification Service** — consume `RiskDetected` and deliver alerts. The topic and producer
+   already exist; only the consumer/delivery side is missing. (Scope note in §5.1.)
+2. **gRPC (internal sync)** — architectural pillar at 0%; no proto, no deps.
+3. **Analytics engine** — distinct from the dashboard's presentation; deeper rollups/analysis.
+4. **More intelligence rules** — incremental additions on the existing risk-service framework
+   (explicitly **not** part of this documentation pass; e.g. Phase F.2 is **not** started).
+
+**Product features:**
+5. **Transaction `TRANSFER`** type + wallet-to-wallet semantics (`walletId` is scaffolded).
+6. **In-service audit logging** — only JPA timestamp auditing exists today (see §5.1).
+
+**Production-readiness (axis 2):**
+7. Merge the feature branch and get a **green CI run** (JDK 21).
+8. Replace the **shared symmetric HMAC secret** with asymmetric signing (RS256/ES256) — today
+   every service can *mint* tokens, not just verify. Biggest structural risk.
+9. Real **deployment target** (K8s/ECS), TLS/HTTPS, managed secrets store.
+10. Edge **rate limiting**; gateway max-request-body limit; retries/circuit breakers.
+11. **Transactional outbox** to close the AFTER_COMMIT dual-write gap (ADR-0004).
+12. Distributed tracing; Prometheus **alerting** rules; backup/restore for the shared MySQL.
+13. Load/performance tests; whole-stack E2E in CI; SAST/dependency/secret scanning.
+
+### 5.1 Scope clarifications (unchanged)
+
+- **Audit:** the charter keeps audit as *in-service logging*, with a separate Audit Service only
+  "if time allows." A missing Audit *Service* is not a gap; but the real requirement — action/
+  security audit logging inside each service — is **not implemented** (only JPA timestamp
+  auditing). Item is *open*.
+- **Notification — charter conflict:** listed in the chartered architecture (1 of 8 services) and
+  not in the v1 out-of-scope list, so by the written charter it is **required**. `RiskDetected`
+  is already produced; building the consumer/delivery side resolves this.
 
 ---
 
-## 5. Production-readiness gaps (axis 2)
+## 6. Production-readiness gaps (axis 2)
 
 **Blocking (before any real deployment)**
-- Merge the feature branch and get a **green CI run** — most hardening is uncommitted and
-  unverified by the build.
-- Replace the **shared symmetric HMAC secret** with asymmetric signing (RS256/ES256): today
-  every service can *mint* tokens, not just verify. Single biggest structural risk.
-- No real **deployment target** (Kubernetes/ECS manifests), no TLS/HTTPS, no managed
-  secrets store (currently a local `.env`).
-- Single shared MySQL instance = shared failure domain; no **backup/restore** strategy.
+- Green CI run on a merged branch.
+- Asymmetric JWT signing (RS256/ES256) — replace the shared HMAC secret.
+- No deployment target (K8s/ECS), no TLS/HTTPS, no managed secrets store (local `.env`).
+- Single shared MySQL = shared failure domain; no backup/restore strategy.
 
-**Observability (partially addressed — see §0.5)**
-- Correlation-ID propagation + ECS JSON logging: **done on gateway/dashboard/transaction**, pending on auth/user/budget. No distributed tracing yet.
-- OpenAPI/Swagger: **piloted on transaction-service**; rollout to the other REST services pending.
-- No metrics (Micrometer/Prometheus), no dashboards (Grafana), no alerting.
+**Observability — now substantially addressed**
+- ✅ Micrometer/Prometheus across all 7 services; ✅ 3 Grafana dashboards; ✅ ECS JSON logging +
+  correlation IDs (on api-gateway/transaction/dashboard).
+- ⚠️ Correlation-ID/ECS rollout to auth/user/budget pending; no distributed tracing; **no alerting**.
 
 **Resilience & API**
-- No edge **rate limiting**; auth endpoints are unthrottled (gateway has Redis dep but unused).
-- No gateway max-request-body limit (custom proxy buffers full bodies in memory).
-- No retries/circuit breakers; dashboard fan-out is strictly fail-fast.
+- No edge rate limiting; auth endpoints unthrottled (the gateway has no Redis dependency to back a limiter yet).
+- No gateway max-request-body limit; no retries/circuit breakers (dashboard is fail-fast).
 - No token revocation/denylist for access tokens.
-- No OpenAPI/Swagger contract; no consumer-driven contract tests for the BFF↔upstreams.
+- Kafka delivery is at-least-once with an accepted AFTER_COMMIT dual-write gap (no outbox).
 
 **Testing & process**
-- No load/performance tests, no whole-stack automated E2E in CI, no security scanning
-  (SAST/dependency/secret scanning).
-- No staging environment, no rollback/runbook beyond the JWT rotation doc.
-
----
-
-## 6. Work done in the recent hardening session
-
-All code changes live on branch **`feature/ci-github-actions`**. The dashboard fix (item 6)
-was built and verified live in Docker; the rest was implemented and statically reviewed but
-**not compiled/tested locally** (no local Maven; CI is the intended gate).
-
-1. **Production-readiness review (advisory).** Identified that observability and security
-   were under-prioritized and that "95% complete" measured features, not production readiness.
-2. **CI pipeline.** `.github/workflows/ci.yml` — matrix build/test of all six services on
-   `pull_request` + push to `main`, JDK 21, Maven cache, `mvn verify` (unit + Testcontainers),
-   Surefire reports on failure.
-3. **Secrets & DB hardening.** Removed hardcoded JWT secret and `root`/`123456` DB password
-   from `docker-compose.yml`; moved to a gitignored `.env` (+ `.env.example`). Added per-service
-   least-privilege DB users and a JWT secret-rotation runbook (`docs/security/jwt-secret-rotation.md`).
-4. **Health checks / startup reliability.** Actuator liveness/readiness in all six services;
-   compose healthchecks; `depends_on: condition: service_healthy` (fixes the startup race).
-5. **JWT validation parity.** Hardened all six validators to enforce HS512 + issuer
-   (`finsight-auth`) + audience (`finsight-api`) + signature + expiry, matching the gateway.
-   Added a `JwtServiceTest` per service (valid / wrong issuer / wrong audience / wrong algo / expired).
-6. **Dashboard root-cause fix (built + verified live).** Proved `DASHBOARD_UPSTREAM_ERROR` /
-   `SERVICE_TIMEOUT` is a faithful symptom of transaction-service being unreachable, not a
-   security/routing/deserialization bug. Added real cause logging; excluded
-   `UserDetailsServiceAutoConfiguration` (the "generated password" red herring). Verified end-to-end.
-
-| Item | State | Verified? |
-|---|---|---|
-| CI workflow | committed (branch) | YAML structure only; no live CI run |
-| Secrets/DB users | committed (branch) | `docker compose config` valid; not booted with new users |
-| Health probes / compose | committed (branch) | live: stack healthy, readiness-gated |
-| JWT parity + tests | committed (branch) | static review only; **not compiled/tested locally** |
-| Dashboard fix | committed (branch) | **built + verified live in Docker** |
+- No load/performance tests, no whole-stack E2E in CI, no security scanning.
+- No staging environment; runbook now exists ([docs/runbook.md](docs/runbook.md)) but no
+  rollback automation.
 
 ---
 
 ## 7. CV positioning (honest)
 
-**Above typical intern-portfolio level**, provided it is described as a *finance-tracker MVP
-with strong engineering hygiene* — not as the full Intelligence & Risk platform.
+A **6→7-service Spring Boot 4 / Java 21 platform** with real microservice decomposition, an
+explicit BFF, a working **Kafka event backbone** (idempotent consumers, read-models), a
+**rule-based intelligence layer** (risk/insights/anomaly), and an **observability stack**
+(Prometheus/Grafana, structured logging) — described as a *finance-intelligence MVP with strong
+engineering hygiene*, not a production-deployed, ML-driven platform.
 
-Genuine strengths to talk about: real microservice decomposition with an explicit BFF and
-enforced rules; security depth (JWT algorithm pinning + issuer/audience, lockout, secret
-externalization, least-privilege DB users, rotation runbook); operational maturity (Actuator
-probes, Docker healthchecks, dependency gating, CI with Testcontainers); and a genuine,
-evidence-based distributed-bug investigation verified at runtime (the strongest talking point).
+Genuine strengths: enforced service boundaries; security depth (JWT algorithm pinning +
+issuer/audience, lockout, secret externalization, least-privilege DB users, rotation runbook);
+event-driven design with idempotency and documented tradeoffs (ADR-0004); and operational
+maturity (Actuator probes, Docker healthchecks, CI with Testcontainers, dashboards).
 
-**Suggested CV bullet:**
-> Built a 6-service Spring Boot 4 / Java 21 finance platform (API gateway, JWT auth,
-> transactions, budgets, dashboard BFF) with MySQL/Flyway/Redis, Dockerized with
-> readiness-gated startup, GitHub Actions CI, and Testcontainers integration tests; hardened
-> JWT validation (HS512 + issuer/audience) and per-service DB credentials, and diagnosed/fixed
-> a distributed upstream-failure bug with live verification.
-
-**Be honest in interview:** learning/portfolio project, not production-deployed; the
-Intelligence & Risk half of the vision (Analytics/Insights/Anomaly/Risk, Kafka, gRPC) is not
-yet built; load/scale and a real deployment target are absent.
+**Be honest in interview:** learning/portfolio project, not production-deployed; intelligence is
+**rule-based, not ML**; gRPC and a Notification Service are not built; load/scale and a real
+deployment target are absent.
 
 ---
 
 ## 8. Recommended next order
 
-Cheap-and-high-leverage first, then the vision-defining work:
-
-1. Green CI run on a merged branch (validates §6 items 2–5).
-2. OpenAPI/Swagger — **in progress** (transaction-service piloted; roll out to the rest). See §0.5.
-3. Correlation IDs + structured JSON logging — **in progress** (live on gateway/dashboard/transaction; roll out to auth/user/budget). See §0.5.
-4. Prometheus + Grafana.
-5. Reconcile the Notification scope conflict (§1.1), then build it if confirmed in-scope.
-6. Kafka event backbone — **foundation done** (Phase 2.1, §0.6); next: consumers + outbox.
-7. Risk Intelligence + Analytics services (Behavioral Insights, Anomaly Detection) — the vision.
-8. gRPC for internal sync calls.
-9. Transaction `TRANSFER` type; in-service audit logging.
-10. RS256/JWKS migration; edge rate limiting.
+1. Green CI run on a merged branch.
+2. Build the **Notification Service** (consume `RiskDetected`) — closes the last chartered
+   service and gives `RiskDetected` a consumer.
+3. Analytics engine (distinct from the dashboard BFF).
+4. gRPC for internal sync calls.
+5. Transaction `TRANSFER` type; in-service audit logging.
+6. RS256/JWKS migration; edge rate limiting; transactional outbox.
+7. Distributed tracing + Prometheus alerting.

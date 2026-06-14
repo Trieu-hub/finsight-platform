@@ -2,6 +2,7 @@ package com.pm.riskservice.event;
 
 import com.pm.riskservice.rule.RiskRule;
 import com.pm.riskservice.rule.RiskRuleEngine;
+import com.pm.riskservice.service.AnomalyService;
 import com.pm.riskservice.service.InsightService;
 import com.pm.riskservice.service.RiskAlertService;
 import io.micrometer.core.instrument.Counter;
@@ -41,6 +42,7 @@ public class RiskEventConsumer {
     private final RiskRuleEngine riskRuleEngine;
     private final RiskAlertService riskAlertService;
     private final InsightService insightService;
+    private final AnomalyService anomalyService;
     private final MeterRegistry meterRegistry;
     private final String riskTopic;
     private final Counter processedEvents;
@@ -49,12 +51,14 @@ public class RiskEventConsumer {
                              RiskRuleEngine riskRuleEngine,
                              RiskAlertService riskAlertService,
                              InsightService insightService,
+                             AnomalyService anomalyService,
                              @Value("${finsight.kafka.topics.risk-detected}") String riskTopic,
                              MeterRegistry meterRegistry) {
         this.kafkaTemplate = kafkaTemplate;
         this.riskRuleEngine = riskRuleEngine;
         this.riskAlertService = riskAlertService;
         this.insightService = insightService;
+        this.anomalyService = anomalyService;
         this.meterRegistry = meterRegistry;
         this.riskTopic = riskTopic;
         this.processedEvents = Counter.builder("finsight.risk.events.processed")
@@ -70,9 +74,11 @@ public class RiskEventConsumer {
             emit(event, rule);
         }
 
-        // The risk engine has recorded this expense; derive the behavioral insight from the
-        // now-updated observed_expenses (Phase E.1). Independent of whether any risk fired.
+        // The risk engine has recorded this expense; derive the behavioral insights (Phase E)
+        // and anomalies (Phase F) from the now-updated observed_expenses. Both run regardless
+        // of whether any risk fired. Insight evaluation also records INCOME (its own input).
         insightService.evaluate(event);
+        anomalyService.evaluate(event);
     }
 
     private void emit(TransactionCreatedEvent event, RiskRule rule) {

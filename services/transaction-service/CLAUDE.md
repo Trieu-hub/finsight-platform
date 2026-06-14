@@ -9,12 +9,12 @@ alongside `auth-service` and `user-service`). It owns transactions and their
 categories. It is self-contained: it does **not** call `auth-service` or
 `user-service` at runtime, and it must not touch their code.
 
-Stack: Java 21 + Spring Boot 4.0.6 + Spring Data JPA + Flyway + PostgreSQL.
+Stack: Java 21 + Spring Boot 4.0.6 + Spring Data JPA + Flyway + MySQL.
 Listens on port **8083** (auth=8081, user=8082 by convention).
 
-> The root `README.md` lists MySQL/Java 23 for the platform, but this service
-> uses **PostgreSQL** (JSONB columns) and targets **Java 21** (`pom.xml`). Follow
-> the service's own config, not the platform README.
+> This service runs on **MySQL 8** (`transaction_db` on the shared instance) and targets
+> **Java 21** (`pom.xml`), consistent with the platform `README.md`. The `metadata` column
+> uses MySQL's native `json` type.
 
 ## Commands
 
@@ -32,13 +32,13 @@ Running locally requires these env vars (DB defaults exist; `JWT_SECRET` does no
 
 ```
 JWT_SECRET=<same secret as auth-service>   # required, no default — app won't start without it
-DB_URL=jdbc:postgresql://localhost:5432/transaction_db
-DB_USERNAME=postgres
-DB_PASSWORD=postgres
+DB_URL=jdbc:mysql://localhost:3306/transaction_db
+DB_USERNAME=root
+DB_PASSWORD=
 ```
 
-Create the database before first run: `CREATE DATABASE transaction_db;`. Tests
-run against in-memory H2, so no Postgres is needed for `mvnw test`.
+Create the database before first run: `CREATE DATABASE transaction_db;`. Integration tests
+run against a real MySQL 8 Testcontainer (Docker required); unit tests do not.
 
 ## Architecture and conventions
 
@@ -78,8 +78,8 @@ Layering is strict and one-directional: `controller → service → repository`.
   filtering scoped so they're usable.
 - List filtering is built dynamically in `TransactionSpecifications`
   (JPA Criteria), not with derived query methods.
-- `metadata` is a `Map<String,Object>` stored as Postgres `jsonb`
-  (`@JdbcTypeCode(SqlTypes.JSON)`).
+- `metadata` is a `Map<String,Object>` stored as a MySQL `json` column
+  (`@JdbcTypeCode(SqlTypes.JSON)`, `columnDefinition = "json"`).
 - `createdAt` / `updatedAt` are managed by JPA auditing (`@EnableJpaAuditing` in
   `AuditingConfig`), not set manually.
 
