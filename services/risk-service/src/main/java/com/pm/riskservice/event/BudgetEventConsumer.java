@@ -11,7 +11,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.format.DateTimeParseException;
 
 /**
  * Maintains the local budget read-model (Phase E.2) by consuming {@code BudgetChanged} from
@@ -39,8 +38,8 @@ public class BudgetEventConsumer {
             containerFactory = "budgetEventListenerContainerFactory")
     @Transactional
     public void onBudgetChanged(BudgetChangedEvent event) {
-        LocalDate start = parseDate(event.startDate());
-        LocalDate end = parseDate(event.endDate());
+        LocalDate start = EventTimes.parseDate(event.startDate());
+        LocalDate end = EventTimes.parseDate(event.endDate());
         if (event.budgetId() == null || start == null || end == null) {
             log.warn("Ignoring BudgetChanged with missing id/dates: budgetId={}", event.budgetId());
             return;
@@ -51,16 +50,5 @@ public class BudgetEventConsumer {
         log.info("Budget read-model updated: budgetId={}, userId={}, categoryId={}, limit={} {}, deleted={}",
                 event.budgetId(), event.userId(), event.categoryId(),
                 event.limitAmount(), event.currency(), event.deleted());
-    }
-
-    private static LocalDate parseDate(String value) {
-        if (value == null) {
-            return null;
-        }
-        try {
-            return LocalDate.parse(value);
-        } catch (DateTimeParseException e) {
-            return null;
-        }
     }
 }

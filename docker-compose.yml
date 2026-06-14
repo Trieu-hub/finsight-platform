@@ -187,10 +187,18 @@ services:
       retries: 12
       start_period: 45s
 
-  # Risk Service — Risk Intelligence MVP (Phase D.1 + D.2).
-  # Consumes TransactionCreated, evaluates the HIGH_AMOUNT_EXPENSE rule, publishes
-  # RiskDetected, and persists each detection to risk_alerts (owns risk_db). Exposes a
-  # read API at /api/v1/risks. Depends on the Kafka broker and MySQL.
+  # Risk Service — Risk Intelligence MVP (Phases D.1–D.4, E.1–E.3, F.1).
+  # Consumes TransactionCreated + BudgetChanged; evaluates the risk rules
+  # (HIGH_AMOUNT_EXPENSE, RAPID_SPENDING, LARGE_DAILY_SPEND), behavioral insights
+  # (SPENDING_INCREASE, CATEGORY_SURGE, BUDGET_RISK, LOW_SAVINGS_RATE) and the
+  # UNUSUAL_TRANSACTION_AMOUNT anomaly; publishes RiskDetected; persists detections,
+  # insights and anomalies (owns risk_db). Read APIs at /api/v1/{risks,insights,anomalies}.
+  #
+  # Port is intentionally NOT published to the host (SE-2): risk-service carries no JWT
+  # stack, so its read APIs are unauthenticated and must stay reachable only on the compose
+  # network. Prometheus scrapes it over that network (risk-service:8086); the in-container
+  # healthcheck still hits localhost:8086. To inspect from the host, temporarily add
+  # `ports: ["8086:8086"]`.
   risk-service:
     build: ./services/risk-service
     container_name: finsight-risk-service
@@ -204,8 +212,6 @@ services:
       DB_USERNAME: risk_user
       DB_PASSWORD: ${RISK_DB_PASSWORD:?set RISK_DB_PASSWORD in .env}
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-    ports:
-      - "8086:8086"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8086/actuator/health/readiness"]

@@ -1,7 +1,9 @@
 package com.pm.riskservice.service;
 
 import com.pm.riskservice.entity.BudgetSnapshot;
+import com.pm.riskservice.entity.ExpenseObservation;
 import com.pm.riskservice.entity.Insight;
+import com.pm.riskservice.event.EventTimes;
 import com.pm.riskservice.event.TransactionCreatedEvent;
 import com.pm.riskservice.insight.InsightType;
 import com.pm.riskservice.repository.BudgetSnapshotRepository;
@@ -19,7 +21,6 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
-import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
@@ -38,7 +39,13 @@ import java.util.UUID;
  *       month in that category +50%.</li>
  *   <li><b>BUDGET_RISK</b> (E.2): for a budget matching the event, spend over the budget window
  *       exceeds 80% of its limit while the period is still open.</li>
+ *   <li><b>LOW_SAVINGS_RATE</b> (E.3): for a month with positive income, expenses reach at least
+ *       80% of that income.</li>
  * </ul>
+ *
+ * <p>To support LOW_SAVINGS_RATE this service also records consumed INCOME transactions into
+ * {@code observed_expenses} (the risk engine records EXPENSE), keyed by the source event id for
+ * idempotency — the income side of the same read-model, no new store.
  *
  * <h4>Idempotency &amp; "fire once"</h4>
  * Each insight is keyed by (user, type, period_month, subject) — subject being the category id,
@@ -59,12 +66,15 @@ public class InsightService {
     static final String USER_SUBJECT = "-";
 
     private static final String EXPENSE = "EXPENSE";
+    private static final String INCOME = "INCOME";
     /** Current month must be at least 1.30× the previous month (a +30% increase). */
     static final BigDecimal SPENDING_INCREASE_THRESHOLD = new BigDecimal("1.30");
     /** Current month in a category must be at least 1.50× the previous (a +50% increase). */
     static final BigDecimal CATEGORY_SURGE_THRESHOLD = new BigDecimal("1.50");
     /** Budget utilization must exceed 80%. */
     static final BigDecimal BUDGET_UTILIZATION_THRESHOLD = new BigDecimal("80");
+    /** LOW_SAVINGS_RATE fires when current-month expenses reach at least 80% of income. */
+    static final BigDecimal LOW_SAVINGS_EXPENSE_RATIO = new BigDecimal("0.80");
 
     private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
 
@@ -96,11 +106,16 @@ public class InsightService {
     @Transactional
     public List<Insight> evaluate(TransactionCreatedEvent event) {
         List<Insight> generated = new ArrayList<>();
-        if (!EXPENSE.equals(event.type())) {
+        LocalDate transactionDate = EventTimes.parseDate(event.transactionDate());
+        if (transactionDate == null) {
             return generated;
         }
-        LocalDate transactionDate = parseDate(event.transactionDate());
-        if (transactionDate == null) {
+        // INCOME feeds LOW_SAVINGS_RATE's income side; record it but produce no insight directly.
+        if (INCOME.equals(event.type())) {
+            recordIncome(event, transactionDate);
+            return generated;
+        }
+        if (!EXPENSE.equals(event.type())) {
             return generated;
         }
 
@@ -109,6 +124,7 @@ public class InsightService {
                 .ifPresent(generated::add);
         generated.addAll(evaluateBudgetRisk(
                 event.userId(), event.categoryId(), event.currency(), transactionDate));
+        evaluateLowSavingsRate(event.userId(), transactionDate).ifPresent(generated::add);
         return generated;
     }
 
@@ -147,6 +163,45 @@ public class InsightService {
         return persist(InsightType.CATEGORY_SURGE, userId, current.toString(), categoryId,
                 String.valueOf(categoryId), previousTotal, currentTotal,
                 increasePct(previousTotal, currentTotal));
+    }
+
+    // --- LOW_SAVINGS_RATE (user-level, current-month expenses vs income) ----------------------
+
+    private Optional<Insight> evaluateLowSavingsRate(Long userId, LocalDate date) {
+        YearMonth current = YearMonth.from(date);
+        BigDecimal income = monthIncome(userId, current);
+        if (income.signum() <= 0) {
+            return Optional.empty();
+        }
+        BigDecimal expenses = monthTotal(userId, current);
+        if (expenses.compareTo(income.multiply(LOW_SAVINGS_EXPENSE_RATIO)) < 0) {
+            return Optional.empty();
+        }
+        // pct is the share of income consumed by expenses, e.g. 85.00 for "spent 85% of income".
+        BigDecimal spendPct = expenses.multiply(HUNDRED).divide(income, 2, RoundingMode.HALF_UP);
+        return persist(InsightType.LOW_SAVINGS_RATE, userId, current.toString(), null,
+                USER_SUBJECT, income, expenses, spendPct);
+    }
+
+    /** Records a consumed INCOME transaction into observed_expenses (idempotent by event id). */
+    private void recordIncome(TransactionCreatedEvent event, LocalDate transactionDate) {
+        if (event.amount() == null) {
+            return;
+        }
+        Instant occurredAt = EventTimes.parseInstant(event.occurredAt());
+        if (occurredAt == null) {
+            return;
+        }
+        UUID id = event.eventId();
+        if (id != null) {
+            if (expenseRepository.existsById(id)) {
+                return;
+            }
+        } else {
+            id = UUID.randomUUID();
+        }
+        expenseRepository.save(new ExpenseObservation(id, event.userId(), ExpenseObservation.INCOME,
+                event.categoryId(), event.amount(), event.currency(), occurredAt, transactionDate));
     }
 
     // --- BUDGET_RISK (per matching budget, utilization > 80% within the period) ---------------
@@ -210,6 +265,11 @@ public class InsightService {
                 userId, categoryId, month.atDay(1), month.plusMonths(1).atDay(1)));
     }
 
+    private BigDecimal monthIncome(Long userId, YearMonth month) {
+        return nz(expenseRepository.sumIncomeInDateRange(
+                userId, month.atDay(1), month.plusMonths(1).atDay(1)));
+    }
+
     /** True when {@code current >= previous * threshold} and there is a positive baseline. */
     private static boolean exceedsBy(BigDecimal current, BigDecimal previous, BigDecimal threshold) {
         if (previous.signum() <= 0) {
@@ -224,16 +284,5 @@ public class InsightService {
 
     private static BigDecimal nz(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
-    }
-
-    private static LocalDate parseDate(String value) {
-        if (value == null) {
-            return null;
-        }
-        try {
-            return LocalDate.parse(value);
-        } catch (DateTimeParseException e) {
-            return null;
-        }
     }
 }
