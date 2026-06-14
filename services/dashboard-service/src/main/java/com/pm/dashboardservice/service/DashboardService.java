@@ -18,6 +18,7 @@ import com.pm.dashboardservice.dto.OverviewResponse;
 import com.pm.dashboardservice.dto.RecentTransactionResponse;
 import com.pm.dashboardservice.dto.TopCategoryResponse;
 import com.pm.dashboardservice.dto.TrendPointResponse;
+import org.slf4j.MDC;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -31,6 +32,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 /**
@@ -252,10 +256,11 @@ public class DashboardService {
      * Composite BFF view: profile + all five feature blocks for the window (defaults to the
      * current month). Each upstream dataset is fetched EXACTLY ONCE and shared across blocks
      * (budgets feed summary + budget-overview; the category summary feeds summary + budget-
-     * overview + top-categories), so there are no duplicate upstream calls. Calls run
-     * sequentially and fail-fast — the first upstream error propagates as an UpstreamException
-     * → 502. {@code limit} bounds both the recent-transactions block (clamped to 1..100 for
-     * the upstream fetch) and the top-categories block; {@code profile} is null if none exists.
+     * overview + top-categories), so there are no duplicate upstream calls. The five independent
+     * fetches run concurrently (PF-1) but still fail-fast — they are joined in fixed order and the
+     * first upstream error propagates unchanged as an UpstreamException → 502. {@code limit} bounds
+     * both the recent-transactions block (clamped to 1..100 for the upstream fetch) and the
+     * top-categories block; {@code profile} is null if none exists.
      */
     public DashboardResponse composite(String authorization, LocalDate fromDate, LocalDate toDate, int limit) {
         YearMonth currentMonth = YearMonth.now();
@@ -263,12 +268,21 @@ public class DashboardService {
         LocalDate to = toDate != null ? toDate : currentMonth.atEndOfMonth();
         int clampedLimit = Math.min(100, Math.max(1, limit));
 
-        // Fetch-once: five upstream datasets, sequential, fail-fast.
-        List<BudgetDto> budgets = budgetClient.listBudgets(authorization);
-        List<CategorySummaryDto> summaries = transactionClient.categorySummary(authorization, from, to);
-        List<TrendPointDto> daily = transactionClient.trend(authorization, from, to);
-        List<TransactionDto> recent = transactionClient.recentTransactions(authorization, clampedLimit);
-        UserProfileDto profile = userClient.me(authorization);
+        // Fetch-once: five independent upstream datasets, fetched concurrently.
+        CompletableFuture<List<BudgetDto>> budgetsF = async(() -> budgetClient.listBudgets(authorization));
+        CompletableFuture<List<CategorySummaryDto>> summariesF =
+                async(() -> transactionClient.categorySummary(authorization, from, to));
+        CompletableFuture<List<TrendPointDto>> dailyF = async(() -> transactionClient.trend(authorization, from, to));
+        CompletableFuture<List<TransactionDto>> recentF =
+                async(() -> transactionClient.recentTransactions(authorization, clampedLimit));
+        CompletableFuture<UserProfileDto> profileF = async(() -> userClient.me(authorization));
+
+        // Join in the original sequential order so the same upstream error surfaces first (fail-fast).
+        List<BudgetDto> budgets = join(budgetsF);
+        List<CategorySummaryDto> summaries = join(summariesF);
+        List<TrendPointDto> daily = join(dailyF);
+        List<TransactionDto> recent = join(recentF);
+        UserProfileDto profile = join(profileF);
 
         // Assemble from already-fetched data — no further upstream calls.
         return new DashboardResponse(
@@ -280,12 +294,55 @@ public class DashboardService {
                 bucketTrend(daily, "month"));
     }
 
-    /** Landing view: profile + current-month summary + budgets. */
+    /** Landing view: profile + current-month summary + budgets (the three fetches run concurrently). */
     public OverviewResponse overview(String authorization) {
-        UserProfileDto profile = userClient.me(authorization);
         YearMonth now = YearMonth.now();
-        MonthlySummaryDto currentMonth = transactionClient.monthly(authorization, now.getYear(), now.getMonthValue());
-        List<BudgetDto> budgets = budgetClient.listBudgets(authorization);
-        return new OverviewResponse(profile, currentMonth, budgets);
+        CompletableFuture<UserProfileDto> profileF = async(() -> userClient.me(authorization));
+        CompletableFuture<MonthlySummaryDto> currentMonthF =
+                async(() -> transactionClient.monthly(authorization, now.getYear(), now.getMonthValue()));
+        CompletableFuture<List<BudgetDto>> budgetsF = async(() -> budgetClient.listBudgets(authorization));
+        return new OverviewResponse(join(profileF), join(currentMonthF), join(budgetsF));
+    }
+
+    /**
+     * Runs a blocking upstream call on the common pool, carrying the current request's MDC
+     * (the correlation id the RestClient interceptor relays) onto the worker thread so the
+     * propagated id is unchanged from the previous single-threaded behaviour.
+     */
+    private static <T> CompletableFuture<T> async(Supplier<T> task) {
+        Map<String, String> context = MDC.getCopyOfContextMap();
+        return CompletableFuture.supplyAsync(() -> {
+            Map<String, String> previous = MDC.getCopyOfContextMap();
+            if (context != null) {
+                MDC.setContextMap(context);
+            } else {
+                MDC.clear();
+            }
+            try {
+                return task.get();
+            } finally {
+                if (previous != null) {
+                    MDC.setContextMap(previous);
+                } else {
+                    MDC.clear();
+                }
+            }
+        });
+    }
+
+    /**
+     * Joins a fetch, fail-fast: unwraps {@link CompletionException} so the original upstream
+     * exception (e.g. UpstreamException → 502) propagates exactly as it did when calls were
+     * sequential. Joining in a fixed order makes the surfaced error deterministic.
+     */
+    private static <T> T join(CompletableFuture<T> future) {
+        try {
+            return future.join();
+        } catch (CompletionException e) {
+            if (e.getCause() instanceof RuntimeException cause) {
+                throw cause;
+            }
+            throw e;
+        }
     }
 }

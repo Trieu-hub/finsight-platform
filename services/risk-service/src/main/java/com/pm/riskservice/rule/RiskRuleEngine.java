@@ -1,6 +1,7 @@
 package com.pm.riskservice.rule;
 
 import com.pm.riskservice.entity.ExpenseObservation;
+import com.pm.riskservice.event.EventTimes;
 import com.pm.riskservice.event.TransactionCreatedEvent;
 import com.pm.riskservice.repository.ObservedExpenseRepository;
 import org.slf4j.Logger;
@@ -12,7 +13,6 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -61,8 +61,8 @@ public class RiskRuleEngine {
         if (!EXPENSE.equals(event.type()) || event.amount() == null) {
             return List.of();
         }
-        Instant occurredAt = parseInstant(event.occurredAt());
-        LocalDate transactionDate = parseDate(event.transactionDate());
+        Instant occurredAt = EventTimes.parseInstant(event.occurredAt());
+        LocalDate transactionDate = EventTimes.parseDate(event.transactionDate());
         if (occurredAt == null || transactionDate == null) {
             return List.of();
         }
@@ -106,27 +106,5 @@ public class RiskRuleEngine {
                     event.transactionId(), event.userId(), fired);
         }
         return fired;
-    }
-
-    private static Instant parseInstant(String value) {
-        if (value == null) {
-            return null;
-        }
-        try {
-            return Instant.parse(value);
-        } catch (DateTimeParseException e) {
-            return null;
-        }
-    }
-
-    private static LocalDate parseDate(String value) {
-        if (value == null) {
-            return null;
-        }
-        try {
-            return LocalDate.parse(value);
-        } catch (DateTimeParseException e) {
-            return null;
-        }
     }
 }
