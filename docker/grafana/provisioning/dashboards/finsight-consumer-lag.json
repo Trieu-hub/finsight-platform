@@ -10,8 +10,8 @@
     {
       "id": 1,
       "type": "stat",
-      "title": "Max consumer lag (records, all groups)",
-      "description": "Highest per-consumer records-lag-max across every consuming service. Sustained non-zero = a consumer is falling behind its topic.",
+      "title": "Current max consumer lag (records)",
+      "description": "Worst current per-partition lag across every consumer group. Uses records_lag (the 'latest lag' gauge), which is 0 at idle — not records_lag_max, which is NaN until a fetch returns records. The topic=~\".+[.].+\" filter keeps only the canonical dotted topic series and drops the deprecated dots->underscores duplicate Kafka also emits (otherwise sums double-count).",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 5, "w": 8, "x": 0, "y": 0 },
       "fieldConfig": {
@@ -28,14 +28,14 @@
       },
       "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "area" },
       "targets": [
-        { "refId": "A", "expr": "max(kafka_consumer_fetch_manager_records_lag_max)" }
+        { "refId": "A", "expr": "max(kafka_consumer_fetch_manager_records_lag{topic=~\".+[.].+\"})" }
       ]
     },
     {
       "id": 2,
       "type": "stat",
-      "title": "Total consumer lag (records, all groups)",
-      "description": "Sum of current per-partition lag across all assigned partitions of every consumer.",
+      "title": "Total current lag (records)",
+      "description": "Sum of current per-partition lag across all assigned partitions of every consumer group (dotted-topic series only, so partitions are not double-counted).",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 5, "w": 8, "x": 8, "y": 0 },
       "fieldConfig": {
@@ -52,34 +52,34 @@
       },
       "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "area" },
       "targets": [
-        { "refId": "A", "expr": "sum(kafka_consumer_fetch_manager_records_lag)" }
+        { "refId": "A", "expr": "sum(kafka_consumer_fetch_manager_records_lag{topic=~\".+[.].+\"})" }
       ]
     },
     {
       "id": 3,
       "type": "stat",
-      "title": "Consuming services reporting lag",
-      "description": "Number of scrape targets currently exporting the consumer-lag metric (sanity check that instrumentation is live).",
+      "title": "Consumer groups reporting",
+      "description": "Distinct (job, client_id) pairs exporting the lag metric — a sanity check that every consumer group's instrumentation is live (expected: budget-service x1, risk-service x2 groups).",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 5, "w": 8, "x": 16, "y": 0 },
       "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "blue" } }, "overrides": [] },
       "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
       "targets": [
-        { "refId": "A", "expr": "count(count by (job) (kafka_consumer_fetch_manager_records_lag_max))" }
+        { "refId": "A", "expr": "count(count by (job, client_id) (kafka_consumer_fetch_manager_records_lag{topic=~\".+[.].+\"}))" }
       ]
     },
     {
       "id": 4,
       "type": "timeseries",
-      "title": "Max consumer lag by service (records)",
-      "description": "kafka_consumer_fetch_manager_records_lag_max per consuming service (job). The primary backlog SLI.",
+      "title": "Max lag by service (records)",
+      "description": "Worst current partition lag per consuming service (job). The primary backlog SLI — sustained growth means a consumer is falling behind.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 9, "w": 12, "x": 0, "y": 5 },
       "fieldConfig": { "defaults": { "unit": "short", "min": 0, "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 } }, "overrides": [] },
       "targets": [
         {
           "refId": "A",
-          "expr": "max by (job) (kafka_consumer_fetch_manager_records_lag_max)",
+          "expr": "max by (job) (kafka_consumer_fetch_manager_records_lag{topic=~\".+[.].+\"})",
           "legendFormat": "{{job}}"
         }
       ]
@@ -87,16 +87,16 @@
     {
       "id": 5,
       "type": "timeseries",
-      "title": "Total partition lag by service (records)",
-      "description": "sum by (job) of kafka_consumer_fetch_manager_records_lag — aggregate of every assigned partition's lag per service.",
+      "title": "Max lag by consumer group (records)",
+      "description": "Per consumer group (job + client_id). risk-service runs two groups: the TransactionCreated consumer and the budgets read-model consumer.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 9, "w": 12, "x": 12, "y": 5 },
       "fieldConfig": { "defaults": { "unit": "short", "min": 0, "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 } }, "overrides": [] },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (job) (kafka_consumer_fetch_manager_records_lag)",
-          "legendFormat": "{{job}}"
+          "expr": "max by (job, client_id) (kafka_consumer_fetch_manager_records_lag{topic=~\".+[.].+\"})",
+          "legendFormat": "{{job}} / {{client_id}}"
         }
       ]
     },
@@ -104,15 +104,15 @@
       "id": 6,
       "type": "timeseries",
       "title": "Per-partition lag (records) — job / topic / partition",
-      "description": "Fine-grained lag for drill-down: one series per consumer/topic/partition.",
+      "description": "Fine-grained lag for drill-down: one series per consumer/topic/partition (canonical dotted topics only).",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 14 },
       "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
       "targets": [
         {
           "refId": "A",
-          "expr": "kafka_consumer_fetch_manager_records_lag",
-          "legendFormat": "{{job}} / {{topic}} / {{partition}}"
+          "expr": "kafka_consumer_fetch_manager_records_lag{topic=~\".+[.].+\"}",
+          "legendFormat": "{{job}} / {{topic}} / p{{partition}}"
         }
       ]
     }
