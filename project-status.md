@@ -1,7 +1,12 @@
 # FinSight — Project Status
 
+<<<<<<< HEAD
 _Last updated: 2026-06-28_
 _Repo: `D:\finsight` · Branch: `feat/web-frontend`_
+=======
+_Last updated: 2026-06-15_
+_Repo: `D:\finsight` · Branch: `feature/ci-github-actions` merged into `main`_
+>>>>>>> 2f0fecc (docs: add portfolio evidence and runtime validation)
 
 > **Looking for the two scorecards?** Jump to **[§9 CV / Portfolio readiness](#9-cv--portfolio-readiness-detailed-scorecard)**
 > and **[§10 Deploy-to-internet readiness](#10-deploy-to-internet-readiness-detailed-scorecard)**.
@@ -54,6 +59,11 @@ analytics-service), plus an **ADMIN-only user-management console** with role-bas
 control — making FinSight a full-stack, clickable demo rather than an API-only backend.
 A **notification bell** in the header surfaces risk alerts (unread badge + dropdown, mark-read),
 giving the `RiskDetected` → notification-service pipeline a visible end-to-end UI.
+
+**Runtime evidence (new):** FinSight is **no longer an architecture-only project** — the
+end-to-end happy path has been exercised manually and captured. The intelligence layer is proven
+with **real runtime data**: Grafana shows `HIGH_AMOUNT_EXPENSE` = 1 and `RAPID_SPENDING` = 1,
+confirming **transactions → Kafka → risk-service → Grafana** works live. See §9.1.
 
 ---
 
@@ -295,15 +305,29 @@ deployment target are absent.
 and if not 100%, exactly what closes the gap. This is *separate* from "is it deployed" (§10): a
 project can be fully CV-worthy without ever being publicly hosted.
 
-**Overall CV readiness: ~85% — already a strong portfolio centerpiece.** You can put it on a CV
-**today**. The remaining 15% is polish that makes it *interview-proof* and visually convincing
-(a live demo or screenshots, a green CI badge, a 60-second walkthrough).
+**Overall CV readiness: ~92% — a strong, demonstrable portfolio centerpiece.** You can put it on
+a CV **today**. The jump from ~85% reflects the completed **evidence package** (§9.1): the four
+Grafana screenshots now exist and the end-to-end flow is verified with real runtime data, closing
+the biggest gap (demonstrability). The remaining ~8% is a hosted live-demo URL and a recorded
+walkthrough — nice-to-have, not blocking.
+
+### 9.1 Evidence package (completed)
+
+Manually verified and captured for portfolio use:
+- **4 Grafana dashboard screenshots** in `docs/images/` (`grafana-platform-overview.png`,
+  `grafana-event-pipeline.png`, `grafana-risk.png`, `grafana-consumer-lag.png`).
+- **End-to-end demo flow verified** (not paper-only): register → login → create budget →
+  5 expense transactions → Kafka propagation → dashboard aggregation → Grafana visualization.
+- **Intelligence layer proven with real runtime data:** Grafana *FinSight Risk* shows
+  `HIGH_AMOUNT_EXPENSE` = 1 and `RAPID_SPENDING` = 1 — concrete proof that
+  transactions → Kafka → risk-service → Grafana operates end-to-end.
 
 | # | What a reviewer looks for | Status | Evidence / Gap |
 |---|---|---|---|
 | 1 | **Real architecture, not a toy** | ✅ ~95% | 7 Spring Boot 4 / Java 21 services, DB-per-service, BFF, Kafka backbone (3 topics, 2 producers, 2 idempotent consumers), enforced service boundaries. This is the headline strength. |
 | 2 | **Non-trivial domain logic** | ✅ ~85% | Rule-based risk / insights / anomaly layer (Phases D–F), event-sourced read-models, idempotency inbox. Demonstrates more than CRUD. |
 | 3 | **Testing discipline** | ✅ ~85% | Unit + Testcontainers integration tests per service (real MySQL + Kafka); consumer-lag metric assertions. Shows you test the hard parts. |
+<<<<<<< HEAD
 | 4 | **CI** | ✅ ~80% | GitHub Actions matrix builds+tests all 9 services on every PR/push (JDK 21). Gap: branch not merged to `main` with a visible **green run + README badge** (see §10 #2). |
 | 5 | **Documentation** | ✅ ~95% | README, architecture.md, event-catalog.md, intelligence.md, runbook.md, ADR-0004, this status doc. Far above typical portfolio level. |
 | 6 | **Security awareness** | ✅ ~80% | JWT algorithm pinning + iss/aud, account lockout, least-privilege DB users, secret externalization, rotation runbook. Honest about the shared-HMAC weakness — *good* interview material. |
@@ -316,6 +340,20 @@ project can be fully CV-worthy without ever being publicly hosted.
 1. **Add visual proof** (partly done — closes most of #8): ✅ 4 Grafana screenshots committed to
    `docs/images/` and embedded in the README. ⬜ Still record a ~60s GIF/video of the end-to-end
    flow (register → login → create transaction → see budget utilization update → see a risk alert).
+=======
+| 4 | **CI** | ✅ ~85% | GitHub Actions matrix builds+tests all 7 services on every PR/push (JDK 21); `feature/ci-github-actions` **merged into `main`**. Remaining gap: README CI badge. |
+| 5 | **Documentation** | ✅ ~95% | README, architecture.md, event-catalog.md, intelligence.md, runbook.md, ADR-0004, this status doc. Far above typical portfolio level. |
+| 6 | **Security awareness** | ✅ ~80% | JWT algorithm pinning + iss/aud, account lockout, least-privilege DB users, secret externalization, rotation runbook. Honest about the shared-HMAC weakness — *good* interview material. |
+| 7 | **Observability** | ✅ ~85% | Prometheus scrape of all 7 services, 4 Grafana dashboards (incl. consumer lag), ECS JSON logging + correlation IDs. |
+| 8 | **Demonstrability** | ✅ ~85% | 4 Grafana screenshots in `docs/images/` + end-to-end flow verified with real runtime data (§9.1). Remaining: a hosted live-demo URL and a recorded walkthrough. |
+| 9 | **Repo hygiene & narrative** | ✅ ~80% | Clean commit history, conventional commits, ADRs. Gap: several stale top-level `*_REVIEW_REPORT.md` files clutter the root and a stale "six/four services" comment lingers — minor cleanup. |
+| 10 | **Honest framing** | ✅ 100% | Status docs already state plainly: portfolio project, rule-based (not ML), not production-deployed, gRPC/Notification absent. This honesty is an asset in interviews. |
+
+### To push CV readiness from ~92% → ~95% (highest leverage first)
+1. ✅ **Add visual proof** (closed #8): 4 Grafana screenshots captured in `docs/images/` and the
+   end-to-end flow verified with real runtime data (§9.1). Optional remaining polish: a recorded
+   ~60s GIF/video of the flow.
+>>>>>>> 2f0fecc (docs: add portfolio evidence and runtime validation)
 2. **Merge to `main` + add a CI status badge** to the README (closes #4) — a green badge is the
    single most credible "it really builds and tests" signal on a CV repo.
 3. *(Optional, high impact)* a **live demo URL** — but that is the §10 deploy track; a hosted
@@ -409,10 +447,16 @@ Architecture · Domain logic · Testing · Observability. (See §1–§4.)
 
 ### Phase 2 — Make it presentable (NOW · highest ROI · ~1 day)
 Order matters: **merge first so the badge is meaningful.**
-1. ⬜ **Merge `feature/ci-github-actions` → `main`** — establish a clean release line.
+1. ✅ **Merge `feature/ci-github-actions` → `main`** — done; `main` carries consumer-lag
+   observability, dashboard fixes, runbook + earlier project-status updates.
 2. ⬜ **CI status badge** in the README (points at `main`; only credible once #1 is done).
+<<<<<<< HEAD
 3. ✅ **Screenshot package** → 4 Grafana screenshots committed to `docs/images/` and embedded in
    the README (Platform Overview, Event Pipeline, Risk, Consumer Lag).
+=======
+3. ✅ **Screenshot package** → `docs/images/`: the 4 Grafana dashboards
+   (Platform Overview, Event Pipeline, Risk, Consumer Lag) — captured (§9.1).
+>>>>>>> 2f0fecc (docs: add portfolio evidence and runtime validation)
 4. ⬜ **Demo video / GIF** (~60s): register → login → create transaction → budget utilization
    updates → risk alert appears. (#3 and #4 can run in parallel with #1–#2.)
 
