@@ -151,13 +151,85 @@ Open <http://localhost:3000> (anonymous admin in the dev stack — no login).
   - **FinSight Platform Overview** — request rate, 5xx rate, p95 latency, JVM heap, GC, CPU.
   - **FinSight Event Pipeline** — budget consumer processed / duplicate / ignored / failed.
   - **FinSight Risk** — detected risks by type and severity.
+  - **FinSight Consumer Lag** — Kafka consumer lag by service / group / partition (see §6).
 
 If a panel is empty, the underlying metric simply hasn't been produced yet — generate activity
 (create transactions/budgets) and re-check.
 
 ---
 
-## 6. Troubleshooting
+## 6. Kafka consumer lag monitoring
+
+Consumer lag — how far each consumer group trails the head of its topic — is the primary
+event-pipeline SLI. It is exported **natively by the Kafka client** and bound to Micrometer (no
+custom metric): Spring Boot's `KafkaMetricsAutoConfiguration` instruments the auto-configured
+consumer factories, and risk-service's hand-built budget read-model factory attaches a
+`MicrometerConsumerListener` explicitly (`KafkaConsumerConfig`), so **all three consumer groups**
+report.
+
+**Consuming services / groups:**
+
+| Service (Prometheus `job`) | Consumer group (`client_id` prefix) | Topic |
+|---|---|---|
+| budget-service | `consumer-budget-service` | `finsight.transactions.created` |
+| risk-service | `consumer-risk-service` | `finsight.transactions.created` |
+| risk-service | `consumer-risk-service-budgets` | `finsight.budgets.changed` |
+
+**Exported metrics** (gauges; Prometheus adds `job` + `instance`):
+
+| Metric | Meaning | At idle |
+|---|---|---|
+| `kafka_consumer_fetch_manager_records_lag` | latest lag of an assigned partition | `0` (numeric) |
+| `kafka_consumer_fetch_manager_records_lag_max` | max lag since the last fetch | `NaN` until a fetch returns records |
+| `kafka_consumer_fetch_manager_records_lag_avg` | avg lag since the last fetch | `NaN` until a fetch returns records |
+
+Labels: `job`, `client_id`, `topic`, `partition`, `kafka_version`, `spring_id`. There is **no**
+consumer-group label — the group is identified by the `client_id` prefix.
+
+**Two gotchas (both already handled in the dashboard):**
+
+1. **Use `records_lag`, not `records_lag_max`/`_avg`.** The `_max`/`_avg` variants read `NaN` on an
+   idle/empty topic and would render as "No data"; `records_lag` (latest) is `0` at idle and rises
+   with backlog.
+2. **Deduplicate the dotted/underscore topic.** Kafka emits each partition **twice** — once with the
+   real topic name (`finsight.transactions.created`) and once with dots replaced by underscores
+   (`finsight_transactions_created`, deprecated). Any `sum()` therefore double-counts; filter to the
+   canonical series with `{topic=~".+[.].+"}` (every FinSight topic contains a dot). Verified live:
+   `count(records_lag)` is `6` unfiltered vs `3` filtered (the three real partitions).
+
+**Dashboard:** **FinSight Consumer Lag** (folder FinSight), provisioned from
+`docker/grafana/provisioning/dashboards/finsight-consumer-lag.json` — current max/total lag, max lag
+by service, max lag by consumer group, and a per-partition drill-down. **No extra Prometheus scrape
+config is needed**: the existing per-service jobs already expose these series.
+
+**Verify manually:**
+```bash
+# Exact series from a service's scrape endpoint (risk-service has no host port):
+docker compose exec risk-service   curl -s localhost:8086/actuator/prometheus | grep records_lag
+docker compose exec budget-service curl -s localhost:8084/actuator/prometheus | grep records_lag
+
+# Deduplicated total lag, exactly as the dashboard queries it:
+curl -s http://localhost:9090/api/v1/query \
+  --data-urlencode 'query=sum(kafka_consumer_fetch_manager_records_lag{topic=~".+[.].+"})'
+
+# Cross-check against Kafka's own group view:
+docker compose exec kafka /opt/kafka/bin/kafka-consumer-groups.sh \
+  --bootstrap-server localhost:9092 --describe --group risk-service
+```
+
+**Troubleshooting:**
+
+| Symptom | Likely cause | Action |
+|---|---|---|
+| No lag series for a group | the consumer has no partition assignment yet (topic absent / no producer has run) | create the topic or produce one event; series appear after assignment |
+| `records_lag_max` shows "No data" / NaN | expected on an idle/empty topic | use `records_lag` (the dashboard already does) |
+| Total lag looks ~2× too high | querying without the dotted-topic filter (the duplicate `_`-topic series) | add `{topic=~".+[.].+"}` |
+| Lag climbing and not draining | a consumer is stuck / slow / erroring | check service logs; after retries risk/budget increment `finsight_*_events_failed_total` and skip (no DLT) |
+| Series vanished for a live group | consumer crashed/unassigned (lag stops exporting rather than spiking) | also alert on **absence** (e.g. `kafka_consumer_coordinator_assigned_partitions`), not only high lag |
+
+---
+
+## 7. Troubleshooting
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
@@ -172,7 +244,7 @@ If a panel is empty, the underlying metric simply hasn't been produced yet — g
 
 ---
 
-## 7. Common local-development notes
+## 8. Common local-development notes
 
 - **Build/verify** a single service with the wrapper (no system Maven needed):
   ```bash
