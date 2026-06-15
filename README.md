@@ -1,5 +1,7 @@
 # FinSight
 
+[![CI](https://github.com/Trieu-hub/finsight-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/Trieu-hub/finsight-platform/actions/workflows/ci.yml)
+
 **Financial Intelligence & Risk Monitoring Platform** — a Spring Boot 4 / Java 21
 microservice monorepo.
 
@@ -156,19 +158,27 @@ probes at `/actuator/health/{liveness,readiness}`.
 
 - **Prometheus** — <http://localhost:9090> — scrapes all seven services every 15s
   (`docker/prometheus/prometheus.yml`); check *Status → Targets*.
-- **Grafana** — <http://localhost:3000> — auto-provisions the Prometheus datasource and three
+- **Grafana** — <http://localhost:3000> — auto-provisions the Prometheus datasource and four
   dashboards (folder **FinSight**, from `docker/grafana/provisioning/`):
   - **FinSight Platform Overview** — request rate, 5xx rate, p95 latency, JVM heap, GC, CPU.
   - **FinSight Event Pipeline** — budget consumer `processed` / `duplicate` / `ignored` / `failed`.
   - **FinSight Risk** — detected risks by type and severity.
+  - **FinSight Consumer Lag** — Kafka consumer lag per service / group / partition.
 
 > Dev-stack posture, on purpose: Grafana allows anonymous admin and the scrape endpoint is
 > unauthenticated — acceptable on a local compose network, not a production posture.
 
-<!-- Screenshot placeholders — add images under docs/images/ when available:
+### Dashboard screenshots
+
+Screenshots live under [`docs/images/`](docs/images/). Add the four PNGs below, then uncomment
+this block to render them (kept commented so the README shows no broken images until the files
+exist):
+
+<!--
 ![Grafana — Platform Overview](docs/images/grafana-platform-overview.png)
 ![Grafana — Event Pipeline](docs/images/grafana-event-pipeline.png)
 ![Grafana — Risk](docs/images/grafana-risk.png)
+![Grafana — Consumer Lag](docs/images/grafana-consumer-lag.png)
 -->
 
 ## Local startup (Docker Compose)
