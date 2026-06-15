@@ -1,7 +1,12 @@
 # FinSight — Project Status
 
-_Last updated: 2026-06-14_
-_Repo: `D:\finsight` · Branch: `feature/ci-github-actions`_
+_Last updated: 2026-06-15_
+_Repo: `D:\finsight` · Branch: `feature/ci-github-actions` · Working tree: clean_
+
+> **Looking for the two scorecards?** Jump to **[§9 CV / Portfolio readiness](#9-cv--portfolio-readiness-detailed-scorecard)**
+> and **[§10 Deploy-to-internet readiness](#10-deploy-to-internet-readiness-detailed-scorecard)**.
+> They answer, item by item: *what is done, what is missing, how far off, and what to do next*
+> for the two goals — **putting this on a CV** and **getting it live on the internet**.
 
 FinSight's **original vision** is a *Financial Intelligence & Risk Monitoring Platform* —
 explicitly **not** just an expense tracker. This document measures progress against that
@@ -252,3 +257,164 @@ deployment target are absent.
 5. Transaction `TRANSFER` type; in-service audit logging.
 6. RS256/JWKS migration; edge rate limiting; transactional outbox.
 7. Distributed tracing + Prometheus alerting.
+
+---
+
+## 9. CV / Portfolio readiness (detailed scorecard)
+
+**Goal of this section:** is the project good enough to put on a CV and defend in an interview —
+and if not 100%, exactly what closes the gap. This is *separate* from "is it deployed" (§10): a
+project can be fully CV-worthy without ever being publicly hosted.
+
+**Overall CV readiness: ~85% — already a strong portfolio centerpiece.** You can put it on a CV
+**today**. The remaining 15% is polish that makes it *interview-proof* and visually convincing
+(a live demo or screenshots, a green CI badge, a 60-second walkthrough).
+
+| # | What a reviewer looks for | Status | Evidence / Gap |
+|---|---|---|---|
+| 1 | **Real architecture, not a toy** | ✅ ~95% | 7 Spring Boot 4 / Java 21 services, DB-per-service, BFF, Kafka backbone (3 topics, 2 producers, 2 idempotent consumers), enforced service boundaries. This is the headline strength. |
+| 2 | **Non-trivial domain logic** | ✅ ~85% | Rule-based risk / insights / anomaly layer (Phases D–F), event-sourced read-models, idempotency inbox. Demonstrates more than CRUD. |
+| 3 | **Testing discipline** | ✅ ~85% | Unit + Testcontainers integration tests per service (real MySQL + Kafka); consumer-lag metric assertions. Shows you test the hard parts. |
+| 4 | **CI** | ✅ ~80% | GitHub Actions matrix builds+tests all 7 services on every PR/push (JDK 21). Gap: branch not merged to `main` with a visible **green run + README badge** (see §10 #2). |
+| 5 | **Documentation** | ✅ ~95% | README, architecture.md, event-catalog.md, intelligence.md, runbook.md, ADR-0004, this status doc. Far above typical portfolio level. |
+| 6 | **Security awareness** | ✅ ~80% | JWT algorithm pinning + iss/aud, account lockout, least-privilege DB users, secret externalization, rotation runbook. Honest about the shared-HMAC weakness — *good* interview material. |
+| 7 | **Observability** | ✅ ~85% | Prometheus scrape of all 7 services, 4 Grafana dashboards (incl. consumer lag), ECS JSON logging + correlation IDs. |
+| 8 | **Demonstrability** | ⚠️ ~50% | **Biggest CV gap.** No screenshots committed (placeholders only in README), no live demo URL, no short demo video/GIF. A reviewer cannot *see* it works without cloning + running. |
+| 9 | **Repo hygiene & narrative** | ✅ ~80% | Clean commit history, conventional commits, ADRs. Gap: several stale top-level `*_REVIEW_REPORT.md` files clutter the root and a stale "six/four services" comment lingers — minor cleanup. |
+| 10 | **Honest framing** | ✅ 100% | Status docs already state plainly: portfolio project, rule-based (not ML), not production-deployed, gRPC/Notification absent. This honesty is an asset in interviews. |
+
+### To push CV readiness from ~85% → ~95% (highest leverage first)
+1. **Add visual proof** (closes #8): capture 3–4 Grafana screenshots into `docs/images/` (README
+   already has the placeholders), and record a ~60s GIF/video of the end-to-end flow
+   (register → login → create transaction → see budget utilization update → see a risk alert).
+2. **Merge to `main` + add a CI status badge** to the README (closes #4) — a green badge is the
+   single most credible "it really builds and tests" signal on a CV repo.
+3. *(Optional, high impact)* a **live demo URL** — but that is the §10 deploy track; a hosted
+   demo turns "portfolio project" into "I shipped it."
+4. **Tidy the repo root** (closes part of #9): move/delete the stale `*_REVIEW_REPORT.md`,
+   `VALIDATION_REPORT.md`, etc. into an `archive/` folder or remove — keep the root to README +
+   project-status + docs/.
+
+### One-line CV bullet (ready to use)
+> *Built **FinSight**, an event-driven financial-intelligence platform — 7 Java 21 / Spring Boot 4
+> microservices, DB-per-service, a Kafka event backbone with idempotent consumers and read-models,
+> a rule-based risk/insight/anomaly engine, full Prometheus/Grafana observability, and a
+> Testcontainers-backed GitHub Actions CI pipeline.*
+
+---
+
+## 10. Deploy-to-internet readiness (detailed scorecard)
+
+**Goal of this section:** what stands between the current repo and a URL a stranger can open. This
+is the harder, more expensive track than §9.
+
+**Overall deploy readiness: ~35% — buildable and containerized, but not yet internet-safe or
+hosted.** Every service has a Dockerfile and the whole stack runs under Docker Compose locally;
+what is missing is a *host*, *TLS*, *real secret management*, and hardening the dev-only security
+posture before anything faces the public internet.
+
+### What already exists (the foundation)
+
+| Capability | Status | Evidence |
+|---|---|---|
+| Per-service container images | ✅ | 7 `services/*/Dockerfile` (multi-stage `mvn` builds) |
+| Full local orchestration | ✅ | root `docker-compose.yml` — 12 services incl. MySQL, Redis, Kafka, Prometheus, Grafana |
+| Readiness-gated startup | ✅ | healthchecks + `depends_on: condition: service_healthy` |
+| Secrets externalized (not in compose) | ✅ | gitignored `.env`, interpolated; compose refuses to start if unset |
+| Least-privilege DB users | ✅ | one single-DB user per service at MySQL init |
+| Build+test automation | ✅ | GitHub Actions matrix (does **not** yet publish images) |
+| Internal-only risk-service | ✅ | port 8086 not host-published (SE-2) |
+
+### Blocking gaps (must close before public exposure)
+
+| # | Gap | Status | Effort | Why it blocks |
+|---|---|---|---|---|
+| 1 | **No host / deploy target** | ❌ 0% | M | Nothing runs anywhere but localhost. Need a VPS, or a managed container platform. |
+| 2 | **Branch not merged + no published images** | ⚠️ | S | CI builds & tests but doesn't push images to a registry (GHCR/Docker Hub); deploy needs pullable artifacts. Also merge `feature/ci-github-actions` → `main` for a clean release line. |
+| 3 | **No TLS / HTTPS** | ❌ 0% | S–M | Browsers and JWT-over-the-wire need HTTPS. Need a reverse proxy with auto-certs (Caddy/Traefik + Let's Encrypt) or a platform that terminates TLS. |
+| 4 | **No managed secrets** | ⚠️ | S | `.env` on a server is acceptable for a hobby demo but not real; a public deploy wants a secrets store or at least locked-down env injection. |
+| 5 | **Dev-only security posture** | ⚠️ | M | Grafana allows **anonymous admin**; `/actuator/prometheus` is unauthenticated; **no edge rate limiting**; shared symmetric **HMAC** secret (every service can mint tokens). All fine on localhost, unsafe on the open internet. |
+| 6 | **Single shared MySQL, no backup** | ⚠️ | M | One instance = shared failure domain; no backup/restore. For a demo, snapshot the volume; for real, a managed DB. |
+| 7 | **No domain / DNS** | ❌ 0% | S | Need a domain (or a platform-provided subdomain) to point at the host. |
+| 8 | **Resource sizing** | ⚠️ | S | 7 JVMs + Kafka + MySQL + Redis + Prometheus + Grafana is heavy — realistically needs a host with **≥ 4 GB (ideally 8 GB) RAM**. Don't try a 1 GB free tier. |
+
+Legend: effort S = hours, M = a day or two, L = more.
+
+### Two realistic deploy paths
+
+**Path A — "Demo on the internet" (fastest, ~1–2 days, recommended for a CV link)**
+A single VPS (e.g. 8 GB droplet/VM) running the existing `docker-compose.yml`, fronted by
+**Caddy** or **Traefik** for automatic HTTPS:
+1. Merge to `main`; have CI **build & push images to GHCR** (add a publish job).
+2. Provision one VPS; install Docker + Compose; open only 80/443 in the firewall.
+3. Add a reverse proxy (Caddy) terminating TLS for a domain → `api-gateway:8080`.
+4. Put the real `.env` on the box (chmod 600); keep MySQL/Kafka/Redis/risk-service **off** the
+   public network (only the gateway and, optionally, a password-protected Grafana exposed).
+5. Harden: turn off Grafana anon-admin, set a strong admin password; add basic rate limiting at
+   the proxy; restrict `/actuator/**` to localhost.
+6. Schedule a nightly `mysqldump`/volume snapshot.
+→ Closes #1, #3, #4(partial), #5(partial), #6(partial), #7. Good enough for a portfolio demo URL.
+
+**Path B — "Production-grade" (weeks, only if the goal is true production)**
+Managed Kubernetes/ECS, managed MySQL + managed Kafka (MSK/Confluent), RS256/JWKS for JWT,
+HashiCorp Vault / cloud secrets manager, ingress + WAF + rate limiting, Prometheus alerting +
+distributed tracing, blue/green or rolling deploys, IaC (Terraform). This is the §5–§6 roadmap;
+**out of scope for a portfolio** unless deployment itself is the thing you want to showcase.
+
+### Recommendation
+For the stated goals (CV + a live link), do **§9 #1–#2** then **Path A**. That yields a
+screenshot-rich, badge-bearing repo *and* a working `https://…` demo — the maximum CV return for
+the least operational cost — without taking on the full production-hardening backlog (§6), which
+can stay explicitly future-scoped.
+
+---
+
+## 11. Refined execution roadmap (ROI-ordered)
+
+This is the agreed plan for the two goals (CV + live demo), sequenced cheapest-high-impact first.
+**Recommended stop line for a portfolio is the end of Phase 3** — that already delivers a
+screenshot-rich, CI-badged repo *and* a public `https://…` demo. Phase 4 is optional depth.
+
+### Phase 1 — Foundation ✅ DONE
+Architecture · Domain logic · Testing · Observability. (See §1–§4.)
+
+### Phase 2 — Make it presentable (NOW · highest ROI · ~1 day)
+Order matters: **merge first so the badge is meaningful.**
+1. ⬜ **Merge `feature/ci-github-actions` → `main`** — establish a clean release line.
+2. ⬜ **CI status badge** in the README (points at `main`; only credible once #1 is done).
+3. ⬜ **Screenshot package** → `docs/images/` (README placeholders already exist): the 4 Grafana
+   dashboards (Platform Overview, Event Pipeline, Risk, Consumer Lag).
+4. ⬜ **Demo video / GIF** (~60s): register → login → create transaction → budget utilization
+   updates → risk alert appears. (#3 and #4 can run in parallel with #1–#2.)
+
+### Phase 3 — Put it on the internet (Path A · ~1–2 days)
+**Includes the security hardening that the original plan was missing — non-negotiable before any
+public exposure.**
+1. ⬜ **Publish images** — add a CI job that builds & pushes to GHCR (so the VPS can pull).
+2. ⬜ **VPS** — provision a host with **≥ 4 GB (ideally 8 GB) RAM**; install Docker + Compose;
+   firewall open only on 80/443.
+3. ⬜ **Domain** — point a domain/subdomain at the host.
+4. ⬜ **HTTPS** — reverse proxy (Caddy/Traefik) with Let's Encrypt auto-certs → `api-gateway:8080`.
+5. ⬜ **Security hardening (BLOCKER before public exposure):**
+   - Disable Grafana anonymous admin; set a strong admin password.
+   - Expose **only** the gateway (and optionally a password-protected Grafana); keep
+     MySQL / Kafka / Redis / risk-service on the internal network only.
+   - Restrict `/actuator/**` to localhost / internal.
+   - Basic rate limiting at the reverse proxy.
+   - Real `.env` on the box, `chmod 600`.
+6. ⬜ **Backup** — nightly `mysqldump` or volume snapshot.
+
+> ⛳ **Stop line for the portfolio goal.** After Phase 3 you have maximum CV return for minimum
+> operational cost. Everything below is optional depth, not required for CV or demo.
+
+### Phase 4 — Optional ops depth (only to showcase more, or to pursue production)
+Priority order (diminishing returns for a no-real-load demo):
+1. ⬜ **Distributed tracing** — best single talking point; visualizes the multi-service flow.
+2. ⬜ **Alertmanager** — natural next step on the existing Prometheus + consumer-lag dashboard.
+3. ⬜ **Resilience4j** (circuit breakers/retries) — last; value is hard to demo without real
+   load/failures.
+
+> **Deliberately *not* in this roadmap** (kept as documented future work / interview talking
+> points, see §5–§6): RS256/JWKS migration and the transactional outbox. Leave them scoped-out
+> unless the goal becomes true production — explaining *why* you accepted those trade-offs is
+> stronger in an interview than half-building them.
