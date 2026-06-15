@@ -2,6 +2,7 @@
 
 **Financial Intelligence & Risk Monitoring Platform** — a Spring Boot 4 / Java 21
 microservice monorepo.
+[![CI](https://github.com/Trieu-hub/finsight-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/Trieu-hub/finsight-platform/actions/workflows/ci.yml)
 
 FinSight is an event-driven finance platform: users record transactions and budgets over a
 REST API, and an asynchronous Kafka backbone feeds a **risk-intelligence** service that
