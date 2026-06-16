@@ -279,14 +279,14 @@ project can be fully CV-worthy without ever being publicly hosted.
 | 5 | **Documentation** | ✅ ~95% | README, architecture.md, event-catalog.md, intelligence.md, runbook.md, ADR-0004, this status doc. Far above typical portfolio level. |
 | 6 | **Security awareness** | ✅ ~80% | JWT algorithm pinning + iss/aud, account lockout, least-privilege DB users, secret externalization, rotation runbook. Honest about the shared-HMAC weakness — *good* interview material. |
 | 7 | **Observability** | ✅ ~85% | Prometheus scrape of all 7 services, 4 Grafana dashboards (incl. consumer lag), ECS JSON logging + correlation IDs. |
-| 8 | **Demonstrability** | ⚠️ ~50% | **Biggest CV gap.** No screenshots committed (placeholders only in README), no live demo URL, no short demo video/GIF. A reviewer cannot *see* it works without cloning + running. |
+| 8 | **Demonstrability** | ⚠️ ~70% | 4 Grafana dashboard screenshots now committed to `docs/images/` and embedded in the README. Remaining gap: no live demo URL and no short demo video/GIF. |
 | 9 | **Repo hygiene & narrative** | ✅ ~80% | Clean commit history, conventional commits, ADRs. Gap: several stale top-level `*_REVIEW_REPORT.md` files clutter the root and a stale "six/four services" comment lingers — minor cleanup. |
 | 10 | **Honest framing** | ✅ 100% | Status docs already state plainly: portfolio project, rule-based (not ML), not production-deployed, gRPC/Notification absent. This honesty is an asset in interviews. |
 
 ### To push CV readiness from ~85% → ~95% (highest leverage first)
-1. **Add visual proof** (closes #8): capture 3–4 Grafana screenshots into `docs/images/` (README
-   already has the placeholders), and record a ~60s GIF/video of the end-to-end flow
-   (register → login → create transaction → see budget utilization update → see a risk alert).
+1. **Add visual proof** (partly done — closes most of #8): ✅ 4 Grafana screenshots committed to
+   `docs/images/` and embedded in the README. ⬜ Still record a ~60s GIF/video of the end-to-end
+   flow (register → login → create transaction → see budget utilization update → see a risk alert).
 2. **Merge to `main` + add a CI status badge** to the README (closes #4) — a green badge is the
    single most credible "it really builds and tests" signal on a CV repo.
 3. *(Optional, high impact)* a **live demo URL** — but that is the §10 deploy track; a hosted
@@ -382,8 +382,8 @@ Architecture · Domain logic · Testing · Observability. (See §1–§4.)
 Order matters: **merge first so the badge is meaningful.**
 1. ⬜ **Merge `feature/ci-github-actions` → `main`** — establish a clean release line.
 2. ⬜ **CI status badge** in the README (points at `main`; only credible once #1 is done).
-3. ⬜ **Screenshot package** → `docs/images/` (README placeholders already exist): the 4 Grafana
-   dashboards (Platform Overview, Event Pipeline, Risk, Consumer Lag).
+3. ✅ **Screenshot package** → 4 Grafana screenshots committed to `docs/images/` and embedded in
+   the README (Platform Overview, Event Pipeline, Risk, Consumer Lag).
 4. ⬜ **Demo video / GIF** (~60s): register → login → create transaction → budget utilization
    updates → risk alert appears. (#3 and #4 can run in parallel with #1–#2.)
 
