@@ -171,14 +171,12 @@ probes at `/actuator/health/{liveness,readiness}`.
 
 ### Dashboard screenshots
 
-Screenshots live under [`docs/images/`](docs/images/). Add the four PNGs below, then uncomment
-this block to render them (kept commented so the README shows no broken images until the files
-exist):
+Live dashboards from the running stack (under [`docs/images/`](docs/images/)):
 
-![Grafana — Platform Overview](docs/images/grafana-platform-overview.png)
-![Grafana — Event Pipeline](docs/images/grafana-event-pipeline.png)
-![Grafana — Risk](docs/images/grafana-risk.png)
-![Grafana — Consumer Lag](docs/images/grafana-consumer-lag.png)
+![Grafana — Platform Overview](docs/images/grafana-platform-overview.jpg)
+![Grafana — Event Pipeline](docs/images/grafana-event-pipeline.jpg)
+![Grafana — Risk](docs/images/grafana-risk.jpg)
+![Grafana — Consumer Lag](docs/images/grafana-consumer-lag.jpg)
 
 ## Local startup (Docker Compose)
 
