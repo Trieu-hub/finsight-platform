@@ -175,12 +175,10 @@ Screenshots live under [`docs/images/`](docs/images/). Add the four PNGs below, 
 this block to render them (kept commented so the README shows no broken images until the files
 exist):
 
-<!--
 ![Grafana — Platform Overview](docs/images/grafana-platform-overview.png)
 ![Grafana — Event Pipeline](docs/images/grafana-event-pipeline.png)
 ![Grafana — Risk](docs/images/grafana-risk.png)
 ![Grafana — Consumer Lag](docs/images/grafana-consumer-lag.png)
--->
 
 ## Local startup (Docker Compose)
 
@@ -246,6 +244,22 @@ modules (`api-gateway`, `auth-service`, `user-service`, `transaction-service`, `
   Surefire reports as artifacts.
 
 > There is no aggregator pom; the matrix is what builds "all services" in CI.
+
+## End-to-end validation
+
+The full event-driven path is implemented and traceable in the repo (code + config). The only
+artifact not yet committed is the runtime visual capture (Grafana screenshots).
+
+| Stage | Status | Evidence in repo |
+|---|---|---|
+| Expense creation (REST) | ✅ implemented | `transaction-service` |
+| Kafka event published (`TransactionCreated`) | ✅ implemented | `transaction-service` producer → `finsight.transactions.created` |
+| Risk detection executed | ✅ implemented | `risk-service` rules ([`docs/intelligence.md`](docs/intelligence.md)) |
+| Database updated | ✅ implemented | `risk_db.risk_alerts` (Flyway-owned) |
+| Prometheus metrics updated | ✅ implemented | `/actuator/prometheus` · `finsight.risk.events.detected{type,severity}` |
+| Grafana dashboard updated | ✅ provisioned | `docker/grafana/provisioning/` (4 dashboards) |
+| CI pipeline passing | ✅ workflow + badge | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) |
+| Runtime screenshots committed | ⬜ TODO | `docs/images/` (not yet present) |
 
 ## Roadmap / not yet built
 
