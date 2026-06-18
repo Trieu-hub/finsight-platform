@@ -19,3 +19,7 @@ Thumbs.db
 
 # Maven Wrapper
 .mvn/wrapper/maven-wrapper.jar
+
+# Internal scratch / review reports (not for portfolio)
+*_REPORT.md
+*_REVIEW.md
