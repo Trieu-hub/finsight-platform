@@ -4,7 +4,6 @@
 
 **Financial Intelligence & Risk Monitoring Platform** — a Spring Boot 4 / Java 21
 microservice monorepo.
-[![CI](https://github.com/Trieu-hub/finsight-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/Trieu-hub/finsight-platform/actions/workflows/ci.yml)
 
 FinSight is an event-driven finance platform: users record transactions and budgets over a
 REST API, and an asynchronous Kafka backbone feeds a **risk-intelligence** service that
@@ -38,6 +37,7 @@ coupling is asynchronous over Kafka.
 - **springdoc / OpenAPI** — API docs on the user-facing REST services
 - **Micrometer + Prometheus + Grafana** — metrics and dashboards
 - **Docker / Docker Compose**, **GitHub Actions** (CI), **Testcontainers** (integration tests)
+- **React 19 + TypeScript + Vite + TailwindCSS** — single-page web client (see [Web frontend](#web-frontend))
 
 ## Architecture summary
 
@@ -178,6 +178,28 @@ Live dashboards from the running stack (under [`docs/images/`](docs/images/)):
 ![Grafana — Risk](docs/images/grafana-risk.jpg)
 ![Grafana — Consumer Lag](docs/images/grafana-consumer-lag.jpg)
 
+## Web frontend
+
+A single-page React client (in [`web/`](web/)) consumes the platform's REST API through the
+api-gateway. It is a thin presentation layer — all business logic, validation, and authorization
+stay in the backend.
+
+- **Vite + React 19 + TypeScript**, **React Router**, **Axios**, **TailwindCSS**.
+- **JWT auth**: the token from `POST /api/v1/auth/login` is stored client-side and attached to
+  every request by an Axios interceptor; a `401` clears it and redirects to `/login`. Protected
+  routes are gated client-side for UX only — the backend remains the security boundary.
+- **Pages**: Login / Register, Dashboard (income / expense / balance + recent activity + budget
+  progress), Transactions (list + create), Budgets (list + utilization bars).
+- **Dev proxy**: Vite forwards `/api` → `http://localhost:8080`, so the browser stays
+  same-origin and no backend CORS configuration is needed (a reverse proxy plays this role in
+  production).
+
+```bash
+npm install --prefix web
+npm run dev --prefix web        # http://localhost:5173 (needs the stack running on :8080)
+npm run build --prefix web      # type-check + production build to web/dist
+```
+
 ## Local startup (Docker Compose)
 
 The root `docker-compose.yml` builds all seven services and starts MySQL, Redis, Kafka,
@@ -245,8 +267,8 @@ modules (`api-gateway`, `auth-service`, `user-service`, `transaction-service`, `
 
 ## End-to-end validation
 
-The full event-driven path is implemented and traceable in the repo (code + config). The only
-artifact not yet committed is the runtime visual capture (Grafana screenshots).
+The full event-driven path is implemented and traceable in the repo (code + config), and the
+runtime is captured by the committed Grafana dashboard screenshots above.
 
 | Stage | Status | Evidence in repo |
 |---|---|---|
@@ -257,7 +279,7 @@ artifact not yet committed is the runtime visual capture (Grafana screenshots).
 | Prometheus metrics updated | ✅ implemented | `/actuator/prometheus` · `finsight.risk.events.detected{type,severity}` |
 | Grafana dashboard updated | ✅ provisioned | `docker/grafana/provisioning/` (4 dashboards) |
 | CI pipeline passing | ✅ workflow + badge | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) |
-| Runtime screenshots committed | ⬜ TODO | `docs/images/` (not yet present) |
+| Runtime screenshots committed | ✅ committed | `docs/images/` (4 Grafana dashboards, embedded above) |
 
 ## Roadmap / not yet built
 

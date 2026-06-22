@@ -1,7 +1,7 @@
 # FinSight — Project Status
 
-_Last updated: 2026-06-15_
-_Repo: `D:\finsight` · Branch: `feature/ci-github-actions` · Working tree: clean_
+_Last updated: 2026-06-23_
+_Repo: `D:\finsight` · Branch: `feat/web-frontend`_
 
 > **Looking for the two scorecards?** Jump to **[§9 CV / Portfolio readiness](#9-cv--portfolio-readiness-detailed-scorecard)**
 > and **[§10 Deploy-to-internet readiness](#10-deploy-to-internet-readiness-detailed-scorecard)**.
@@ -14,7 +14,8 @@ chartered scope, not against the current repository alone.
 
 **Stack (today):** Java 21 · Spring Boot 4.0.6 · Spring Security · Spring Data JPA · Flyway ·
 MySQL 8 · Redis · Kafka (KRaft) · JWT (HS512) · springdoc/OpenAPI · Micrometer ·
-Prometheus · Grafana · Docker Compose · GitHub Actions · Testcontainers.
+Prometheus · Grafana · Docker Compose · GitHub Actions · Testcontainers ·
+**React 19 + TypeScript + Vite + TailwindCSS** (web client).
 
 > Companion docs (added in this pass): [docs/architecture.md](docs/architecture.md),
 > [docs/event-catalog.md](docs/event-catalog.md), [docs/intelligence.md](docs/intelligence.md),
@@ -39,6 +40,10 @@ has a **real multi-topic event backbone** (3 topics, 2 producers, 2 idempotent c
 **Risk Monitoring**, **Behavioral Insights**, and **Anomaly Detection** end-to-end (Phases D–F).
 The remaining vision gaps are **gRPC** (0%), a **Notification Service** (0% — `RiskDetected` has
 no consumer), and a deeper **Analytics** engine.
+
+A **React + TypeScript web client** (Vite + Tailwind) now fronts the platform — auth,
+transactions, budgets, dashboard, plus an **ADMIN-only user-management console** with role-based
+access control — making FinSight a full-stack, clickable demo rather than an API-only backend.
 
 ---
 
@@ -88,7 +93,7 @@ incremental, not greenfield.
 | Service (charter) | Reality | Mapping / completeness |
 |---|---|---|
 | API Gateway | ✅ exists | Proxy + edge JWT validation; **no rate limiting** → ~80% |
-| Auth Service | ✅ exists | JWT, refresh, lockout, Redis-backed → ~90% |
+| Auth Service | ✅ exists | JWT, refresh, lockout, Redis-backed; **admin RBAC** console API (role/status/delete, ROLE_ADMIN-only) → ~90% |
 | User Service | ✅ exists | Profile data → ~85% |
 | Transaction Service | ✅ exists | INCOME/EXPENSE + categories/summaries; **no TRANSFER** → ~75% |
 | Budget Service | ✅ exists | Definitions + event-driven utilization → ~85% |
@@ -163,6 +168,14 @@ Full diagrams: [docs/architecture.md](docs/architecture.md).
 - OpenAPI/Swagger on every REST service.
 - Flyway-owned schemas, `validate`-only Hibernate, DB-per-service isolation.
 - Containerized stack with readiness-gated startup; CI with Testcontainers integration tests.
+- **React + TypeScript web client** (Vite + Tailwind): auth (with **silent JWT refresh** via an
+  Axios interceptor + refresh-token store), transactions, budgets, dashboard with a spending
+  breakdown, and an **ADMIN-only user-management console** (list / change role / enable-disable /
+  delete) behind role-gated routes.
+- **Role-based access control (RBAC):** the admin API (`/api/v1/auth/admin/**`) is enforced
+  server-side with `hasRole("ADMIN")` and a self-modification guard — the UI only hides the menu.
+- **Category–type validation:** transaction-service rejects a category whose type (INCOME/EXPENSE)
+  mismatches the transaction type, on both create and update (defense-in-depth with the FE).
 
 ---
 
@@ -234,7 +247,8 @@ A **6→7-service Spring Boot 4 / Java 21 platform** with real microservice deco
 explicit BFF, a working **Kafka event backbone** (idempotent consumers, read-models), a
 **rule-based intelligence layer** (risk/insights/anomaly), and an **observability stack**
 (Prometheus/Grafana, structured logging) — described as a *finance-intelligence MVP with strong
-engineering hygiene*, not a production-deployed, ML-driven platform.
+engineering hygiene*, not a production-deployed, ML-driven platform. A **React + TypeScript SPA**
+(incl. an admin RBAC console) now fronts it, so it presents as a **full-stack** project.
 
 Genuine strengths: enforced service boundaries; security depth (JWT algorithm pinning +
 issuer/audience, lockout, secret externalization, least-privilege DB users, rotation runbook);
@@ -279,7 +293,7 @@ project can be fully CV-worthy without ever being publicly hosted.
 | 5 | **Documentation** | ✅ ~95% | README, architecture.md, event-catalog.md, intelligence.md, runbook.md, ADR-0004, this status doc. Far above typical portfolio level. |
 | 6 | **Security awareness** | ✅ ~80% | JWT algorithm pinning + iss/aud, account lockout, least-privilege DB users, secret externalization, rotation runbook. Honest about the shared-HMAC weakness — *good* interview material. |
 | 7 | **Observability** | ✅ ~85% | Prometheus scrape of all 7 services, 4 Grafana dashboards (incl. consumer lag), ECS JSON logging + correlation IDs. |
-| 8 | **Demonstrability** | ⚠️ ~70% | 4 Grafana dashboard screenshots now committed to `docs/images/` and embedded in the README. Remaining gap: no live demo URL and no short demo video/GIF. |
+| 8 | **Demonstrability** | ⚠️ ~80% | A working **React web client** (auth, transactions, budgets, dashboard, admin RBAC console) makes the platform clickable, not API-only; 4 Grafana dashboard screenshots committed to `docs/images/` and embedded in the README. Remaining gap: no live demo URL and no short demo video/GIF. |
 | 9 | **Repo hygiene & narrative** | ✅ ~80% | Clean commit history, conventional commits, ADRs. Gap: several stale top-level `*_REVIEW_REPORT.md` files clutter the root and a stale "six/four services" comment lingers — minor cleanup. |
 | 10 | **Honest framing** | ✅ 100% | Status docs already state plainly: portfolio project, rule-based (not ML), not production-deployed, gRPC/Notification absent. This honesty is an asset in interviews. |
 

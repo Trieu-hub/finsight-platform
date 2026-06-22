@@ -41,6 +41,15 @@ export interface Category {
   type: TransactionType
 }
 
+export interface AdminUser {
+  id: number
+  username: string
+  email: string
+  role: string
+  enabled: boolean
+  createdAt: string
+}
+
 export interface Budget {
   id: string
   name?: string

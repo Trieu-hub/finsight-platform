@@ -1,1 +1,13 @@
 @import "tailwindcss";
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  /* neutral-950 — keeps page edges dark, no white flash */
+  background-color: #0a0a0a;
+  color: #e5e5e5;
+}

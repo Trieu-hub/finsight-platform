@@ -1,5 +1,6 @@
 import { api } from './client'
 import type {
+  AdminUser,
   ApiResponse,
   AuthResponse,
   Budget,
@@ -22,6 +23,26 @@ export async function register(username: string, email: string, password: string
     password,
   })
   return data
+}
+
+// ---- Admin (ROLE_ADMIN only; backend returns the entity directly, no envelope) ----
+export async function listUsers(): Promise<AdminUser[]> {
+  const { data } = await api.get<AdminUser[]>('/auth/admin/users')
+  return data
+}
+
+export async function updateUserRole(id: number, role: string): Promise<AdminUser> {
+  const { data } = await api.patch<AdminUser>(`/auth/admin/users/${id}/role`, { role })
+  return data
+}
+
+export async function updateUserStatus(id: number, enabled: boolean): Promise<AdminUser> {
+  const { data } = await api.patch<AdminUser>(`/auth/admin/users/${id}/status`, { enabled })
+  return data
+}
+
+export async function deleteUser(id: number): Promise<void> {
+  await api.delete(`/auth/admin/users/${id}`)
 }
 
 // ---- Transactions ----

@@ -1,22 +1,27 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 
-const links = [
+const baseLinks = [
   { to: '/', label: 'Dashboard', end: true },
   { to: '/transactions', label: 'Transactions' },
   { to: '/budgets', label: 'Budgets' },
 ]
 
 export default function Layout() {
-  const { signOut } = useAuth()
+  const { signOut, isAdmin } = useAuth()
   const navigate = useNavigate()
 
+  // Admin link is shown only to ROLE_ADMIN (UX only; backend enforces access).
+  const links = isAdmin ? [...baseLinks, { to: '/admin', label: 'Admin' }] : baseLinks
+
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800">
-      <header className="border-b border-slate-200 bg-white">
+    <div className="min-h-screen bg-neutral-950 text-neutral-200">
+      <header className="sticky top-0 z-10 border-b border-neutral-800 bg-neutral-950/80 backdrop-blur">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
           <div className="flex items-center gap-6">
-            <span className="text-lg font-bold text-indigo-600">FinSight</span>
+            <span className="bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-lg font-extrabold tracking-tight text-transparent">
+              FinSight
+            </span>
             <nav className="flex gap-1">
               {links.map((l) => (
                 <NavLink
@@ -24,10 +29,10 @@ export default function Layout() {
                   to={l.to}
                   end={l.end}
                   className={({ isActive }) =>
-                    `rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                    `rounded-lg px-3 py-1.5 text-sm font-medium transition ${
                       isActive
-                        ? 'bg-indigo-50 text-indigo-700'
-                        : 'text-slate-600 hover:bg-slate-100'
+                        ? 'bg-emerald-500/15 text-emerald-300'
+                        : 'text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100'
                     }`
                   }
                 >
@@ -41,15 +46,18 @@ export default function Layout() {
               signOut()
               navigate('/login')
             }}
-            className="rounded-md px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100"
+            className="rounded-lg border border-neutral-800 px-3 py-1.5 text-sm font-medium text-neutral-400 transition hover:border-neutral-700 hover:bg-neutral-800 hover:text-neutral-100"
           >
             Sign out
           </button>
         </div>
       </header>
-      <main className="mx-auto max-w-5xl px-4 py-6">
+      <main className="mx-auto max-w-5xl px-4 py-8">
         <Outlet />
       </main>
+      <footer className="mx-auto max-w-5xl px-4 py-6 text-center text-xs text-neutral-600">
+        FinSight · event-driven finance platform · Spring Boot · Kafka · React
+      </footer>
     </div>
   )
 }
