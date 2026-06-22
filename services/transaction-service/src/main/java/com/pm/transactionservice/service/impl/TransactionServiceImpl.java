@@ -4,7 +4,9 @@ import com.pm.transactionservice.dto.CreateTransactionRequest;
 import com.pm.transactionservice.dto.TransactionFilterRequest;
 import com.pm.transactionservice.dto.TransactionResponse;
 import com.pm.transactionservice.dto.UpdateTransactionRequest;
+import com.pm.transactionservice.entity.Category;
 import com.pm.transactionservice.entity.Transaction;
+import com.pm.transactionservice.enums.TransactionType;
 import com.pm.transactionservice.event.TransactionCreatedEvent;
 import com.pm.transactionservice.exception.CategoryNotFoundException;
 import com.pm.transactionservice.exception.InvalidTransactionDataException;
@@ -44,7 +46,7 @@ public class TransactionServiceImpl implements TransactionService {
     @Transactional
     public TransactionResponse create(Long userId, CreateTransactionRequest request) {
         validateAmountPositive(request.getAmount());
-        validateCategoryExists(request.getCategoryId());
+        validateCategoryForType(request.getCategoryId(), request.getType());
 
         Transaction transaction = Transaction.builder()
                 .id(UUID.randomUUID())
@@ -121,7 +123,6 @@ public class TransactionServiceImpl implements TransactionService {
             transaction.setCurrency(request.getCurrency());
         }
         if (request.getCategoryId() != null) {
-            validateCategoryExists(request.getCategoryId());
             transaction.setCategoryId(request.getCategoryId());
         }
         if (request.getDescription() != null) {
@@ -135,6 +136,13 @@ public class TransactionServiceImpl implements TransactionService {
         }
         if (request.getMetadata() != null) {
             transaction.setMetadata(request.getMetadata());
+        }
+
+        // Re-validate the (type, category) pair when either side changed, against the
+        // resulting state — so a partial update can't end up with, e.g., an INCOME
+        // category on an EXPENSE transaction.
+        if (request.getType() != null || request.getCategoryId() != null) {
+            validateCategoryForType(transaction.getCategoryId(), transaction.getType());
         }
 
         Transaction saved = transactionRepository.save(transaction);
@@ -161,9 +169,16 @@ public class TransactionServiceImpl implements TransactionService {
         }
     }
 
-    private void validateCategoryExists(Long categoryId) {
-        if (!categoryRepository.existsById(categoryId)) {
-            throw new CategoryNotFoundException("Category " + categoryId + " does not exist");
+    private void validateCategoryForType(Long categoryId, TransactionType type) {
+        Category category = categoryRepository.findById(categoryId)
+                .orElseThrow(() -> new CategoryNotFoundException(
+                        "Category " + categoryId + " does not exist"));
+        // A category is INCOME or EXPENSE; it must match the transaction type, so an
+        // INCOME category (e.g. Salary) can't be attached to an EXPENSE transaction.
+        if (type != null && category.getType() != type) {
+            throw new InvalidTransactionDataException(
+                    "Category '" + category.getName() + "' is a " + category.getType()
+                    + " category and cannot be used for a " + type + " transaction");
         }
     }
 
