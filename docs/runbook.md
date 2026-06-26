@@ -14,6 +14,7 @@ deployment guide (there is no production target yet)._
 | budget-service | 8084 | Kafka producer + consumer |
 | dashboard-service | 8085 | BFF, no DB |
 | risk-service | _(not published)_ | listens on 8086 inside the network; Kafka consumer + producer; risk/insight/anomaly read APIs |
+| notification-service | 8087 | Kafka consumer of RiskDetected; in-app notification read/mark-read API |
 | Prometheus | 9090 | |
 | Grafana | 3000 | anonymous admin (dev only) |
 | MySQL / Redis / Kafka | _(not published)_ | reachable only on the compose network |
@@ -122,9 +123,9 @@ qualifying expense — a `RiskDetected` record appears on `finsight.risk.detecte
 
 Open <http://localhost:9090>.
 
-- **Targets:** Status → Targets — all seven service jobs (`api-gateway`, `auth-service`,
-  `user-service`, `transaction-service`, `budget-service`, `dashboard-service`, `risk-service`)
-  plus `prometheus` should be **UP**.
+- **Targets:** Status → Targets — all eight service jobs (`api-gateway`, `auth-service`,
+  `user-service`, `transaction-service`, `budget-service`, `dashboard-service`, `risk-service`,
+  `notification-service`) plus `prometheus` should be **UP**.
 - **Sample queries:**
   ```promql
   finsight_risk_events_processed_total

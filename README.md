@@ -62,6 +62,10 @@ coupling is asynchronous over Kafka.
                                        ▼
                                  risk-service :8086  ──▶ risk_db
                                  (risk rules · insights · anomalies)
+                                       │ produces finsight.risk.detected
+                                       ▼
+                          notification-service :8087  ──▶ notification_db
+                          (in-app alerts materialized from RiskDetected)
 ```
 
 - **Synchronous** (HTTP/REST): client → gateway → owning service; the dashboard BFF fans out
@@ -69,7 +73,8 @@ coupling is asynchronous over Kafka.
   calls another at runtime.
 - **Asynchronous** (Kafka): transaction-service produces `TransactionCreated`; budget-service
   and risk-service consume it; budget-service produces `BudgetChanged` (consumed by
-  risk-service); risk-service produces `RiskDetected` (best-effort, no consumer yet).
+  risk-service); risk-service produces `RiskDetected`, consumed by notification-service,
+  which materializes per-user in-app notifications.
 
 Full diagrams (Mermaid) are in [`docs/architecture.md`](docs/architecture.md).
 
@@ -89,10 +94,11 @@ gateway).
 | `budget-service` | 8084 | `budget_db` | HTTP, Kafka | Budget definitions + utilization; **consumes** `TransactionCreated`, **produces** `BudgetChanged` |
 | `dashboard-service` | 8085 | _(none, BFF)_ | HTTP | Read-only aggregation over user/transaction/budget; relays JWT; fail-fast |
 | `risk-service` | 8086 (internal) | `risk_db` | Kafka | Risk rules, behavioral insights, anomaly detection; **consumes** `TransactionCreated` + `BudgetChanged`, **produces** `RiskDetected`; read APIs. Port not host-published (SE-2) |
+| `notification-service` | 8087 | `notification_db` | HTTP, Kafka | In-app notifications; **consumes** `RiskDetected`; user-scoped read/mark-read API |
 
 ## Databases
 
-One **MySQL 8** instance hosts five logical databases (DB-per-service isolation):
+One **MySQL 8** instance hosts six logical databases (DB-per-service isolation):
 
 | Database | Owner | Notable tables |
 |---|---|---|
@@ -101,6 +107,7 @@ One **MySQL 8** instance hosts five logical databases (DB-per-service isolation)
 | `transaction_db` | transaction-service | transactions, categories |
 | `budget_db` | budget-service | budgets (incl. `spent_amount`), `processed_events` (idempotency inbox) |
 | `risk_db` | risk-service | `risk_alerts`, `observed_expenses`, `insights`, `budget_snapshots`, `anomalies` |
+| `notification_db` | notification-service | `notifications`, `processed_events` (idempotency inbox) |
 
 `dashboard-service` owns no database. **Redis** backs only auth-service.
 
@@ -113,7 +120,7 @@ with idempotent consumers. Full payloads in [`docs/event-catalog.md`](docs/event
 |---|---|---|
 | `finsight.transactions.created` | transaction-service | budget-service, risk-service |
 | `finsight.budgets.changed` | budget-service | risk-service |
-| `finsight.risk.detected` | risk-service | _(none yet — best-effort notification)_ |
+| `finsight.risk.detected` | risk-service | notification-service |
 
 ## Implemented intelligence
 
@@ -157,7 +164,7 @@ Triggers, severities, persistence, and metrics are detailed in
 Every service exposes Micrometer metrics at `/actuator/prometheus` and liveness/readiness
 probes at `/actuator/health/{liveness,readiness}`.
 
-- **Prometheus** — <http://localhost:9090> — scrapes all seven services every 15s
+- **Prometheus** — <http://localhost:9090> — scrapes all eight services every 15s
   (`docker/prometheus/prometheus.yml`); check *Status → Targets*.
 - **Grafana** — <http://localhost:3000> — auto-provisions the Prometheus datasource and four
   dashboards (folder **FinSight**, from `docker/grafana/provisioning/`):
@@ -202,7 +209,7 @@ npm run build --prefix web      # type-check + production build to web/dist
 
 ## Local startup (Docker Compose)
 
-The root `docker-compose.yml` builds all seven services and starts MySQL, Redis, Kafka,
+The root `docker-compose.yml` builds all eight services and starts MySQL, Redis, Kafka,
 Prometheus, and Grafana. All services share one `JWT_SECRET`.
 
 **1. Secrets (`.env`) — required first.** No secrets live in compose; they are interpolated
@@ -253,7 +260,7 @@ cd services/<service>
 ## Continuous Integration
 
 GitHub Actions (`.github/workflows/ci.yml`) builds and tests every service on each
-`pull_request` and on pushes to `main`. A single matrix job fans out across all **seven**
+`pull_request` and on pushes to `main`. A single matrix job fans out across all **eight**
 modules (`api-gateway`, `auth-service`, `user-service`, `transaction-service`, `budget-service`,
 `dashboard-service`, `risk-service`):
 
@@ -286,8 +293,9 @@ runtime is captured by the committed Grafana dashboard screenshots above.
 These are **absent from the codebase** — do not assume they exist:
 
 - **gRPC** — no proto, no dependencies; all synchronous calls are REST.
-- **Notification Service** — `RiskDetected` is produced but has no consumer / delivery yet.
 - **Analytics engine** — distinct from the dashboard BFF (presentation only).
+- **External notification delivery** — notification-service creates **in-app** notifications
+  from `RiskDetected`; email/push/webhook delivery and an LLM-backed message narrator are not built.
 - **Transaction `TRANSFER`** — only INCOME/EXPENSE exist (`walletId` is scaffolded, unused).
 - **ML-based intelligence** — current rules are deterministic and threshold-based.
 - **Asymmetric JWT signing** (RS256/JWKS), **edge rate limiting**, **transactional outbox**,

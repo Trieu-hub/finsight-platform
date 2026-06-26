@@ -17,7 +17,7 @@ Every implemented Kafka event is listed here. Conventions shared by all three:
 |---|---|---|---|
 | `TransactionCreated` | `finsight.transactions.created` | transaction-service | budget-service, risk-service |
 | `BudgetChanged` | `finsight.budgets.changed` | budget-service | risk-service |
-| `RiskDetected` | `finsight.risk.detected` | risk-service | _(none yet)_ |
+| `RiskDetected` | `finsight.risk.detected` | risk-service | notification-service |
 
 ---
 
@@ -121,8 +121,9 @@ Every implemented Kafka event is listed here. Conventions shared by all three:
 - **Topic:** `finsight.risk.detected`
 - **Producer:** risk-service — `RiskDetectedEvent`, published by `RiskEventConsumer` for each
   risk rule that fires. The detection is also persisted to `risk_alerts` (the durable record);
-  the event is the best-effort notification.
-- **Consumer:** _none today._ The topic exists for a future Notification Service.
+  the event is the notification trigger.
+- **Consumer:** notification-service — creates one per-user in-app notification per detection
+  (idempotency inbox dedups Kafka redeliveries).
 - **Purpose:** announce a detected risk. Kept intentionally minimal; `riskType`/`riskSeverity`
   are plain strings so new rules don't break consumers.
 
