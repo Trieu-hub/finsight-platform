@@ -196,7 +196,11 @@ stay in the backend.
   every request by an Axios interceptor; a `401` clears it and redirects to `/login`. Protected
   routes are gated client-side for UX only — the backend remains the security boundary.
 - **Pages**: Login / Register, Dashboard (income / expense / balance + recent activity + budget
-  progress), Transactions (list + create), Budgets (list + utilization bars).
+  progress), Transactions (list + create), Budgets (list + utilization bars), Admin console
+  (RBAC user management, ROLE_ADMIN only).
+- **Notification bell**: a header bell polls `GET /api/v1/notifications/unread-count`, shows an
+  unread badge, and opens a dropdown of risk alerts (severity-coloured) with mark-read /
+  mark-all-read — the in-app surface for what notification-service materializes from `RiskDetected`.
 - **Dev proxy**: Vite forwards `/api` → `http://localhost:8080`, so the browser stays
   same-origin and no backend CORS configuration is needed (a reverse proxy plays this role in
   production).

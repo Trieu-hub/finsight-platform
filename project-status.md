@@ -46,6 +46,8 @@ deferred). The remaining vision gaps are **gRPC** (0%) and a deeper **Analytics*
 A **React + TypeScript web client** (Vite + Tailwind) now fronts the platform — auth,
 transactions, budgets, dashboard, plus an **ADMIN-only user-management console** with role-based
 access control — making FinSight a full-stack, clickable demo rather than an API-only backend.
+A **notification bell** in the header surfaces risk alerts (unread badge + dropdown, mark-read),
+giving the `RiskDetected` → notification-service pipeline a visible end-to-end UI.
 
 ---
 
