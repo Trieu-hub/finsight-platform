@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
+import NotificationBell from './NotificationBell'
 
 const baseLinks = [
   { to: '/', label: 'Dashboard', end: true },
@@ -41,15 +42,18 @@ export default function Layout() {
               ))}
             </nav>
           </div>
-          <button
-            onClick={() => {
-              signOut()
-              navigate('/login')
-            }}
-            className="rounded-lg border border-neutral-800 px-3 py-1.5 text-sm font-medium text-neutral-400 transition hover:border-neutral-700 hover:bg-neutral-800 hover:text-neutral-100"
-          >
-            Sign out
-          </button>
+          <div className="flex items-center gap-2">
+            <NotificationBell />
+            <button
+              onClick={() => {
+                signOut()
+                navigate('/login')
+              }}
+              className="rounded-lg border border-neutral-800 px-3 py-1.5 text-sm font-medium text-neutral-400 transition hover:border-neutral-700 hover:bg-neutral-800 hover:text-neutral-100"
+            >
+              Sign out
+            </button>
+          </div>
         </div>
       </header>
       <main className="mx-auto max-w-5xl px-4 py-8">
