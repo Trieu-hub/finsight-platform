@@ -6,6 +6,7 @@ import type {
   Budget,
   BudgetPeriod,
   Category,
+  Notification,
   Transaction,
   TransactionType,
 } from './types'
@@ -105,4 +106,25 @@ export async function createBudget(body: {
 }): Promise<Budget> {
   const { data } = await api.post<ApiResponse<Budget>>('/budgets', body)
   return data.data
+}
+
+// ---- Notifications (in-app; produced by notification-service) ----
+export async function listNotifications(unreadOnly = false): Promise<Notification[]> {
+  const { data } = await api.get<ApiResponse<Notification[]>>('/notifications', {
+    params: { unreadOnly, page: 1, limit: 50 },
+  })
+  return data.data
+}
+
+export async function unreadNotificationCount(): Promise<number> {
+  const { data } = await api.get<ApiResponse<{ count: number }>>('/notifications/unread-count')
+  return data.data.count
+}
+
+export async function markNotificationRead(id: string): Promise<void> {
+  await api.patch(`/notifications/${id}/read`)
+}
+
+export async function markAllNotificationsRead(): Promise<void> {
+  await api.patch('/notifications/read-all')
 }

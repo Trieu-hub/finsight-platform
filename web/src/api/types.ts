@@ -61,3 +61,18 @@ export interface Budget {
   spentAmount: number
   currency: string
 }
+
+// In-app notification materialized by notification-service from a RiskDetected event.
+// Severity mirrors the upstream risk severity (HIGH/MEDIUM/LOW).
+export type NotificationSeverity = 'HIGH' | 'MEDIUM' | 'LOW'
+
+export interface Notification {
+  id: string
+  type: string
+  severity: NotificationSeverity
+  title: string
+  message: string
+  read: boolean
+  createdAt: string
+  readAt?: string
+}
