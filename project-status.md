@@ -174,8 +174,9 @@ Full diagrams: [docs/architecture.md](docs/architecture.md).
 - Containerized stack with readiness-gated startup; CI with Testcontainers integration tests.
 - **React + TypeScript web client** (Vite + Tailwind): auth (with **silent JWT refresh** via an
   Axios interceptor + refresh-token store), transactions, budgets, dashboard with a spending
-  breakdown, and an **ADMIN-only user-management console** (list / change role / enable-disable /
-  delete) behind role-gated routes.
+  breakdown, an **ADMIN-only user-management console** (list / change role / enable-disable /
+  delete) behind role-gated routes, and a **notification bell** (unread badge + dropdown of risk
+  alerts, mark-read / mark-all) backed by notification-service.
 - **Role-based access control (RBAC):** the admin API (`/api/v1/auth/admin/**`) is enforced
   server-side with `hasRole("ADMIN")` and a self-modification guard — the UI only hides the menu.
 - **Category–type validation:** transaction-service rejects a category whose type (INCOME/EXPENSE)
@@ -297,7 +298,7 @@ project can be fully CV-worthy without ever being publicly hosted.
 | 5 | **Documentation** | ✅ ~95% | README, architecture.md, event-catalog.md, intelligence.md, runbook.md, ADR-0004, this status doc. Far above typical portfolio level. |
 | 6 | **Security awareness** | ✅ ~80% | JWT algorithm pinning + iss/aud, account lockout, least-privilege DB users, secret externalization, rotation runbook. Honest about the shared-HMAC weakness — *good* interview material. |
 | 7 | **Observability** | ✅ ~85% | Prometheus scrape of all 8 services, 4 Grafana dashboards (incl. consumer lag), ECS JSON logging + correlation IDs. |
-| 8 | **Demonstrability** | ⚠️ ~80% | A working **React web client** (auth, transactions, budgets, dashboard, admin RBAC console) makes the platform clickable, not API-only; 4 Grafana dashboard screenshots committed to `docs/images/` and embedded in the README. Remaining gap: no live demo URL and no short demo video/GIF. |
+| 8 | **Demonstrability** | ⚠️ ~80% | A working **React web client** (auth, transactions, budgets, dashboard, admin RBAC console, notification bell) makes the platform clickable, not API-only; 4 Grafana dashboard screenshots committed to `docs/images/` and embedded in the README. Remaining gap: no live demo URL and no short demo video/GIF. |
 | 9 | **Repo hygiene & narrative** | ✅ ~80% | Clean commit history, conventional commits, ADRs. Gap: several stale top-level `*_REVIEW_REPORT.md` files clutter the root and a stale "six/four services" comment lingers — minor cleanup. |
 | 10 | **Honest framing** | ✅ 100% | Status docs already state plainly: portfolio project, rule-based (not ML), not production-deployed, gRPC/Notification absent. This honesty is an asset in interviews. |
 
