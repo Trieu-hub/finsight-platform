@@ -47,6 +47,9 @@ public class SecurityConfig {
                 .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
                 .requestMatchers("/actuator/prometheus").permitAll()
                 .requestMatchers("/v3/api-docs", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                // Admin console — ROLE_ADMIN only. Authorities are granted as the role
+                // name (e.g. "ROLE_ADMIN"), so hasRole("ADMIN") matches.
+                .requestMatchers("/api/v1/auth/admin/**").hasRole("ADMIN")
                 .anyRequest().authenticated())
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 

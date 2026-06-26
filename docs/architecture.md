@@ -22,8 +22,9 @@ explicitly under [Not yet built](#not-yet-built).
 | `budget-service` | 8084 | `budget_db` | HTTP, Kafka | Budget definitions + utilization (`spent_amount`); **consumes** `TransactionCreated`, **produces** `BudgetChanged` |
 | `dashboard-service` | 8085 | _(none, BFF)_ | HTTP | Read-only aggregation over user/transaction/budget; relays the caller's JWT; fail-fast |
 | `risk-service` | 8086 | `risk_db` | Kafka | Risk rules, behavioral insights, anomaly detection; **consumes** `TransactionCreated` + `BudgetChanged`, **produces** `RiskDetected`; read APIs for risks/insights/anomalies |
+| `notification-service` | 8087 | `notification_db` | HTTP, Kafka | In-app notifications; **consumes** `RiskDetected`, idempotency inbox; user-scoped read/mark-read API |
 
-Shared infrastructure (not application services): a single **MySQL 8** instance hosting five
+Shared infrastructure (not application services): a single **MySQL 8** instance hosting six
 logical databases, **Redis** (used only by auth-service), a single-node **Kafka** (KRaft)
 broker, **Prometheus**, and **Grafana**.
 
@@ -38,7 +39,7 @@ broker, **Prometheus**, and **Grafana**.
 
 ### Risk-service API visibility (no OpenAPI/Swagger — by design)
 
-The five user-facing services ship springdoc/OpenAPI; **risk-service deliberately does not**, and
+The six user-facing services ship springdoc/OpenAPI; **risk-service deliberately does not**, and
 its read endpoints are documented here and in [intelligence.md](intelligence.md) instead of via a
 live `/v3/api-docs`:
 
@@ -107,6 +108,7 @@ One MySQL 8 instance, one logical database per owning service (DB-per-service is
 | `transaction_db` | transaction-service | transactions, categories |
 | `budget_db` | budget-service | budgets (incl. `spent_amount`), `processed_events` (idempotency inbox) |
 | `risk_db` | risk-service | `risk_alerts`, `observed_expenses`, `insights`, `budget_snapshots`, `anomalies` |
+| `notification_db` | notification-service | `notifications`, `processed_events` (idempotency inbox) |
 
 `dashboard-service` owns **no** database — it composes other services' data on read.
 **Redis** backs only auth-service (refresh tokens + brute-force lockout counters).
@@ -128,10 +130,10 @@ strings.
 |---|---|---|---|
 | `finsight.transactions.created` | transaction-service | budget-service, risk-service | `TransactionCreated` |
 | `finsight.budgets.changed` | budget-service | risk-service | `BudgetChanged` |
-| `finsight.risk.detected` | risk-service | _(none yet — best-effort notification)_ | `RiskDetected` |
+| `finsight.risk.detected` | risk-service | notification-service | `RiskDetected` |
 
-Each topic is owned by exactly one producer. `RiskDetected` is published best-effort; there is
-no consumer today (a Notification Service would be its eventual subscriber). Full payloads are
+Each topic is owned by exactly one producer. `RiskDetected` is consumed by notification-service,
+which materializes per-user in-app notifications (idempotent inbox). Full payloads are
 in [event-catalog.md](event-catalog.md).
 
 **Delivery semantics:** at-least-once. Producers publish `@TransactionalEventListener(AFTER_COMMIT)`
@@ -148,7 +150,7 @@ Every Spring Boot service exposes Micrometer metrics at `/actuator/prometheus` (
 unauthenticated — acceptable for the local stack only) and liveness/readiness probes at
 `/actuator/health/{liveness,readiness}`.
 
-- **Prometheus** (`:9090`) scrapes all seven services every 15s (static compose-DNS targets in
+- **Prometheus** (`:9090`) scrapes all eight services every 15s (static compose-DNS targets in
   `docker/prometheus/prometheus.yml`).
 - **Grafana** (`:3000`, anonymous admin in the dev stack) auto-provisions the Prometheus
   datasource and three dashboards from `docker/grafana/provisioning/`:
@@ -245,7 +247,8 @@ What each consumer does with `TransactionCreated`:
 These are **absent from the codebase** and must not be implied as present:
 
 - **gRPC** — no proto, no dependencies; all synchronous calls are REST.
-- **Notification Service** — no consumer of `RiskDetected`; no delivery mechanism.
+- **External notification delivery** — notification-service creates **in-app** notifications from
+  `RiskDetected`; email/push/webhook delivery and an LLM-backed message narrator are not built.
 - **Transaction `TRANSFER`** — only INCOME/EXPENSE exist (`walletId` is scaffolded, unused).
 - **Edge rate limiting**, **distributed tracing**, **alerting** (Prometheus has no alert rules).
 - **Asymmetric JWT signing** — a single shared HMAC secret is used platform-wide.

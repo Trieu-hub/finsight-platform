@@ -21,12 +21,14 @@ CREATE USER IF NOT EXISTS 'user_user'@'%'        IDENTIFIED BY '${USER_DB_PASSWO
 CREATE USER IF NOT EXISTS 'transaction_user'@'%' IDENTIFIED BY '${TRANSACTION_DB_PASSWORD}';
 CREATE USER IF NOT EXISTS 'budget_user'@'%'      IDENTIFIED BY '${BUDGET_DB_PASSWORD}';
 CREATE USER IF NOT EXISTS 'risk_user'@'%'        IDENTIFIED BY '${RISK_DB_PASSWORD}';
+CREATE USER IF NOT EXISTS 'notification_user'@'%' IDENTIFIED BY '${NOTIFICATION_DB_PASSWORD}';
 
 GRANT ALL PRIVILEGES ON auth_db.*        TO 'auth_user'@'%';
 GRANT ALL PRIVILEGES ON user_db.*        TO 'user_user'@'%';
 GRANT ALL PRIVILEGES ON transaction_db.* TO 'transaction_user'@'%';
 GRANT ALL PRIVILEGES ON budget_db.*      TO 'budget_user'@'%';
 GRANT ALL PRIVILEGES ON risk_db.*        TO 'risk_user'@'%';
+GRANT ALL PRIVILEGES ON notification_db.* TO 'notification_user'@'%';
 
 FLUSH PRIVILEGES;
 SQL

@@ -1,7 +1,7 @@
 # FinSight — Project Status
 
-_Last updated: 2026-06-15_
-_Repo: `D:\finsight` · Branch: `feature/ci-github-actions` · Working tree: clean_
+_Last updated: 2026-06-23_
+_Repo: `D:\finsight` · Branch: `feat/web-frontend`_
 
 > **Looking for the two scorecards?** Jump to **[§9 CV / Portfolio readiness](#9-cv--portfolio-readiness-detailed-scorecard)**
 > and **[§10 Deploy-to-internet readiness](#10-deploy-to-internet-readiness-detailed-scorecard)**.
@@ -14,7 +14,8 @@ chartered scope, not against the current repository alone.
 
 **Stack (today):** Java 21 · Spring Boot 4.0.6 · Spring Security · Spring Data JPA · Flyway ·
 MySQL 8 · Redis · Kafka (KRaft) · JWT (HS512) · springdoc/OpenAPI · Micrometer ·
-Prometheus · Grafana · Docker Compose · GitHub Actions · Testcontainers.
+Prometheus · Grafana · Docker Compose · GitHub Actions · Testcontainers ·
+**React 19 + TypeScript + Vite + TailwindCSS** (web client).
 
 > Companion docs (added in this pass): [docs/architecture.md](docs/architecture.md),
 > [docs/event-catalog.md](docs/event-catalog.md), [docs/intelligence.md](docs/intelligence.md),
@@ -30,15 +31,21 @@ A single "% complete" mixes very different goals. Progress is tracked on three i
 |---|---|---|
 | **MVP backend** | Core finance CRUD + auth + dashboard working end-to-end | **~90%** |
 | **Production-ready MVP** | The MVP, operable & secure for real deployment | **~72%** |
-| **Full FinSight vision** | The chartered Intelligence & Risk platform | **~65%** |
+| **Full FinSight vision** | The chartered Intelligence & Risk platform | **~70%** |
 
 **Headline:** The MVP (finance tracker + budgets + dashboard) is built, and the platform now
-has a **real multi-topic event backbone** (3 topics, 2 producers, 2 idempotent consumers) plus
+has a **real multi-topic event backbone** (3 topics, 2 producers, 3 idempotent consumers — every
+topic now has a consumer) plus
 **full Prometheus/Grafana observability** and **OpenAPI docs**. The product's defining half —
 *Intelligence & Risk* — is **no longer at zero**: risk-service implements rule-based
 **Risk Monitoring**, **Behavioral Insights**, and **Anomaly Detection** end-to-end (Phases D–F).
-The remaining vision gaps are **gRPC** (0%), a **Notification Service** (0% — `RiskDetected` has
-no consumer), and a deeper **Analytics** engine.
+The **Notification Service** is now built — it consumes `RiskDetected` and materializes per-user
+in-app notifications (closing the last chartered service; external email/push delivery stays
+deferred). The remaining vision gaps are **gRPC** (0%) and a deeper **Analytics** engine.
+
+A **React + TypeScript web client** (Vite + Tailwind) now fronts the platform — auth,
+transactions, budgets, dashboard, plus an **ADMIN-only user-management console** with role-based
+access control — making FinSight a full-stack, clickable demo rather than an API-only backend.
 
 ---
 
@@ -88,13 +95,13 @@ incremental, not greenfield.
 | Service (charter) | Reality | Mapping / completeness |
 |---|---|---|
 | API Gateway | ✅ exists | Proxy + edge JWT validation; **no rate limiting** → ~80% |
-| Auth Service | ✅ exists | JWT, refresh, lockout, Redis-backed → ~90% |
+| Auth Service | ✅ exists | JWT, refresh, lockout, Redis-backed; **admin RBAC** console API (role/status/delete, ROLE_ADMIN-only) → ~90% |
 | User Service | ✅ exists | Profile data → ~85% |
 | Transaction Service | ✅ exists | INCOME/EXPENSE + categories/summaries; **no TRANSFER** → ~75% |
 | Budget Service | ✅ exists | Definitions + event-driven utilization → ~85% |
 | **Analytics Service** | ⚠️ substituted | `dashboard-service` (BFF) covers presentation, not analysis → ~30% |
 | **Risk Intelligence Service** | ✅ exists | `risk-service`: Risk + Insights + Anomaly (rule-based MVP) → ~70% |
-| **Notification Service** | ❌ absent | 0% — `RiskDetected` is published but has **no consumer** yet (see §5.1) |
+| **Notification Service** | ✅ exists | `notification-service`: consumes `RiskDetected`, idempotency inbox, user-scoped in-app notification API → ~75% (external delivery deferred) |
 
 `dashboard-service` is an **extra** BFF, not one of the 8 chartered services.
 
@@ -110,13 +117,13 @@ incremental, not greenfield.
 
 | Item | Charter | Reality |
 |---|---|---|
-| MySQL (DB-per-service) | ✅ | ✅ five logical DBs (auth/user/transaction/budget/risk) on one instance |
+| MySQL (DB-per-service) | ✅ | ✅ six logical DBs (auth/user/transaction/budget/risk/notification) on one instance |
 | Redis | ✅ | ⚠️ only auth-service uses it (refresh tokens + lockout); no other service depends on Redis (the gateway has **no** Redis dependency) |
 | Kafka | ✅ | ✅ single-node KRaft broker; full producer→consumer flows (Phases 2.1–F.1) |
 | Docker | ✅ | ✅ |
 | CI/CD | ✅ | ✅ GitHub Actions (build + test) |
 | OpenAPI/Swagger | ✅ | ✅ Phase A on the 5 user-facing REST services (auth/user/transaction/budget/dashboard); gateway + internal risk-service excluded |
-| Monitoring (Prometheus/Grafana) | ✅ | ✅ Phase C — scrape of all 7 services + 3 provisioned dashboards |
+| Monitoring (Prometheus/Grafana) | ✅ | ✅ Phase C — scrape of all 8 services + 3 provisioned dashboards |
 
 ### Explicitly out-of-scope for v1 (correctly absent)
 
@@ -163,14 +170,22 @@ Full diagrams: [docs/architecture.md](docs/architecture.md).
 - OpenAPI/Swagger on every REST service.
 - Flyway-owned schemas, `validate`-only Hibernate, DB-per-service isolation.
 - Containerized stack with readiness-gated startup; CI with Testcontainers integration tests.
+- **React + TypeScript web client** (Vite + Tailwind): auth (with **silent JWT refresh** via an
+  Axios interceptor + refresh-token store), transactions, budgets, dashboard with a spending
+  breakdown, and an **ADMIN-only user-management console** (list / change role / enable-disable /
+  delete) behind role-gated routes.
+- **Role-based access control (RBAC):** the admin API (`/api/v1/auth/admin/**`) is enforced
+  server-side with `hasRole("ADMIN")` and a self-modification guard — the UI only hides the menu.
+- **Category–type validation:** transaction-service rejects a category whose type (INCOME/EXPENSE)
+  mismatches the transaction type, on both create and update (defense-in-depth with the FE).
 
 ---
 
 ## 5. Remaining roadmap (separate from completed work)
 
 **Vision-defining (the chartered "second half"):**
-1. **Notification Service** — consume `RiskDetected` and deliver alerts. The topic and producer
-   already exist; only the consumer/delivery side is missing. (Scope note in §5.1.)
+1. **External notification delivery** — notification-service now creates **in-app** notifications
+   from `RiskDetected`; email/push/webhook delivery and an LLM-backed message narrator are not built.
 2. **gRPC (internal sync)** — architectural pillar at 0%; no proto, no deps.
 3. **Analytics engine** — distinct from the dashboard's presentation; deeper rollups/analysis.
 4. **More intelligence rules** — incremental additions on the existing risk-service framework
@@ -211,7 +226,7 @@ Full diagrams: [docs/architecture.md](docs/architecture.md).
 - Single shared MySQL = shared failure domain; no backup/restore strategy.
 
 **Observability — now substantially addressed**
-- ✅ Micrometer/Prometheus across all 7 services; ✅ 3 Grafana dashboards; ✅ ECS JSON logging +
+- ✅ Micrometer/Prometheus across all 8 services; ✅ 3 Grafana dashboards; ✅ ECS JSON logging +
   correlation IDs (on api-gateway/transaction/dashboard).
 - ⚠️ Correlation-ID/ECS rollout to auth/user/budget pending; no distributed tracing; **no alerting**.
 
@@ -234,7 +249,8 @@ A **6→7-service Spring Boot 4 / Java 21 platform** with real microservice deco
 explicit BFF, a working **Kafka event backbone** (idempotent consumers, read-models), a
 **rule-based intelligence layer** (risk/insights/anomaly), and an **observability stack**
 (Prometheus/Grafana, structured logging) — described as a *finance-intelligence MVP with strong
-engineering hygiene*, not a production-deployed, ML-driven platform.
+engineering hygiene*, not a production-deployed, ML-driven platform. A **React + TypeScript SPA**
+(incl. an admin RBAC console) now fronts it, so it presents as a **full-stack** project.
 
 Genuine strengths: enforced service boundaries; security depth (JWT algorithm pinning +
 issuer/audience, lockout, secret externalization, least-privilege DB users, rotation runbook);
@@ -242,7 +258,7 @@ event-driven design with idempotency and documented tradeoffs (ADR-0004); and op
 maturity (Actuator probes, Docker healthchecks, CI with Testcontainers, dashboards).
 
 **Be honest in interview:** learning/portfolio project, not production-deployed; intelligence is
-**rule-based, not ML**; gRPC and a Notification Service are not built; load/scale and a real
+**rule-based, not ML**; gRPC and external notification delivery (email/push) are not built; load/scale and a real
 deployment target are absent.
 
 ---
@@ -250,8 +266,8 @@ deployment target are absent.
 ## 8. Recommended next order
 
 1. Green CI run on a merged branch.
-2. Build the **Notification Service** (consume `RiskDetected`) — closes the last chartered
-   service and gives `RiskDetected` a consumer.
+2. ✅ **Notification Service** built (consumes `RiskDetected`, in-app notifications) — last
+   chartered service now exists; external (email/push) delivery remains optional follow-up.
 3. Analytics engine (distinct from the dashboard BFF).
 4. gRPC for internal sync calls.
 5. Transaction `TRANSFER` type; in-service audit logging.
@@ -275,11 +291,11 @@ project can be fully CV-worthy without ever being publicly hosted.
 | 1 | **Real architecture, not a toy** | ✅ ~95% | 7 Spring Boot 4 / Java 21 services, DB-per-service, BFF, Kafka backbone (3 topics, 2 producers, 2 idempotent consumers), enforced service boundaries. This is the headline strength. |
 | 2 | **Non-trivial domain logic** | ✅ ~85% | Rule-based risk / insights / anomaly layer (Phases D–F), event-sourced read-models, idempotency inbox. Demonstrates more than CRUD. |
 | 3 | **Testing discipline** | ✅ ~85% | Unit + Testcontainers integration tests per service (real MySQL + Kafka); consumer-lag metric assertions. Shows you test the hard parts. |
-| 4 | **CI** | ✅ ~80% | GitHub Actions matrix builds+tests all 7 services on every PR/push (JDK 21). Gap: branch not merged to `main` with a visible **green run + README badge** (see §10 #2). |
+| 4 | **CI** | ✅ ~80% | GitHub Actions matrix builds+tests all 8 services on every PR/push (JDK 21). Gap: branch not merged to `main` with a visible **green run + README badge** (see §10 #2). |
 | 5 | **Documentation** | ✅ ~95% | README, architecture.md, event-catalog.md, intelligence.md, runbook.md, ADR-0004, this status doc. Far above typical portfolio level. |
 | 6 | **Security awareness** | ✅ ~80% | JWT algorithm pinning + iss/aud, account lockout, least-privilege DB users, secret externalization, rotation runbook. Honest about the shared-HMAC weakness — *good* interview material. |
-| 7 | **Observability** | ✅ ~85% | Prometheus scrape of all 7 services, 4 Grafana dashboards (incl. consumer lag), ECS JSON logging + correlation IDs. |
-| 8 | **Demonstrability** | ⚠️ ~70% | 4 Grafana dashboard screenshots now committed to `docs/images/` and embedded in the README. Remaining gap: no live demo URL and no short demo video/GIF. |
+| 7 | **Observability** | ✅ ~85% | Prometheus scrape of all 8 services, 4 Grafana dashboards (incl. consumer lag), ECS JSON logging + correlation IDs. |
+| 8 | **Demonstrability** | ⚠️ ~80% | A working **React web client** (auth, transactions, budgets, dashboard, admin RBAC console) makes the platform clickable, not API-only; 4 Grafana dashboard screenshots committed to `docs/images/` and embedded in the README. Remaining gap: no live demo URL and no short demo video/GIF. |
 | 9 | **Repo hygiene & narrative** | ✅ ~80% | Clean commit history, conventional commits, ADRs. Gap: several stale top-level `*_REVIEW_REPORT.md` files clutter the root and a stale "six/four services" comment lingers — minor cleanup. |
 | 10 | **Honest framing** | ✅ 100% | Status docs already state plainly: portfolio project, rule-based (not ML), not production-deployed, gRPC/Notification absent. This honesty is an asset in interviews. |
 
@@ -296,7 +312,7 @@ project can be fully CV-worthy without ever being publicly hosted.
    project-status + docs/.
 
 ### One-line CV bullet (ready to use)
-> *Built **FinSight**, an event-driven financial-intelligence platform — 7 Java 21 / Spring Boot 4
+> *Built **FinSight**, an event-driven financial-intelligence platform — 8 Java 21 / Spring Boot 4
 > microservices, DB-per-service, a Kafka event backbone with idempotent consumers and read-models,
 > a rule-based risk/insight/anomaly engine, full Prometheus/Grafana observability, and a
 > Testcontainers-backed GitHub Actions CI pipeline.*
