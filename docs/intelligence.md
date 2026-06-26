@@ -31,8 +31,8 @@ Evaluated by `RiskRuleEngine` on each consumed **EXPENSE**. The expense is first
 and a redelivered event is neither double-counted nor re-alerted.
 
 **Shared behavior for all three rules:**
-- **Generated artifact:** a `RiskDetected` event on `finsight.risk.detected` (best-effort,
-  keyed by `userId`) **and** a durable `risk_alerts` row.
+- **Generated artifact:** a `RiskDetected` event on `finsight.risk.detected` (keyed by `userId`,
+  consumed by notification-service) **and** a durable `risk_alerts` row.
 - **Persistence:** `risk_alerts` (id = the `RiskDetected` event id). Effectively idempotent —
   a redelivered `TransactionCreated` is skipped by the engine's `observed_expenses` dedup, so
   no duplicate alert is produced.
