@@ -31,8 +31,8 @@ Evaluated by `RiskRuleEngine` on each consumed **EXPENSE**. The expense is first
 and a redelivered event is neither double-counted nor re-alerted.
 
 **Shared behavior for all three rules:**
-- **Generated artifact:** a `RiskDetected` event on `finsight.risk.detected` (best-effort,
-  keyed by `userId`) **and** a durable `risk_alerts` row.
+- **Generated artifact:** a `RiskDetected` event on `finsight.risk.detected` (keyed by `userId`,
+  consumed by notification-service) **and** a durable `risk_alerts` row.
 - **Persistence:** `risk_alerts` (id = the `RiskDetected` event id). Effectively idempotent —
   a redelivered `TransactionCreated` is skipped by the engine's `observed_expenses` dedup, so
   no duplicate alert is produced.
@@ -97,6 +97,22 @@ Evaluated by `AnomalyService` on each consumed **EXPENSE**, after the rule engin
 
 ---
 
+## Notification narration (AI, optional)
+
+`notification-service` consumes `RiskDetected` and turns it into a user-facing in-app
+notification. The wording is produced by an `AlertNarrator`:
+
+- **`TemplateNarrator`** (default, always on): deterministic rule-based text keyed by `riskType`.
+  No network, used by tests.
+- **`LlmAlertNarrator`** (optional, `finsight.narrator.ai.enabled=true`): phrases the alert with
+  an LLM over any **OpenAI-compatible** Chat Completions API — default **Groq** (free tier,
+  `llama-3.1-8b-instant`), swappable to OpenAI/OpenRouter/Ollama by config. It sends only
+  `riskType`/`riskSeverity` (**no PII**), is capped by a short timeout, and on ANY failure falls
+  back to `TemplateNarrator` — the pipeline never depends on the external API. The LLM call runs
+  **outside** the DB transaction and is skipped for duplicate events.
+
+---
+
 ## Metrics summary
 
 | Metric | Tags | Meaning |
@@ -105,6 +121,8 @@ Evaluated by `AnomalyService` on each consumed **EXPENSE**, after the rule engin
 | `finsight.risk.events.detected` | `type`, `severity` | each risk detection |
 | `finsight.insights.generated` | `type` | each insight generated |
 | `finsight.anomalies.detected` | `type` | each anomaly detected |
+| `finsight.notifications.ai.success` | – | alerts narrated by the LLM |
+| `finsight.notifications.ai.fallback` | – | alerts that fell back to templates after an LLM error |
 
 The **FinSight Risk** Grafana dashboard visualizes `finsight.risk.events.detected` by type and
 severity. (There is no dedicated insights/anomaly dashboard — out of scope for this phase.)

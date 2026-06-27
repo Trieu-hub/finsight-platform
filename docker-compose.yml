@@ -32,6 +32,7 @@ services:
       TRANSACTION_DB_PASSWORD: ${TRANSACTION_DB_PASSWORD:?set TRANSACTION_DB_PASSWORD in .env}
       BUDGET_DB_PASSWORD: ${BUDGET_DB_PASSWORD:?set BUDGET_DB_PASSWORD in .env}
       RISK_DB_PASSWORD: ${RISK_DB_PASSWORD:?set RISK_DB_PASSWORD in .env}
+      NOTIFICATION_DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD:?set NOTIFICATION_DB_PASSWORD in .env}
     # DB ports are intentionally NOT published to the host: the services reach the
     # database over the compose network, and publishing 3306 collides with a
     # locally-run MySQL (which the services' own localhost defaults assume exists).
@@ -97,6 +98,9 @@ services:
       redis:
         condition: service_healthy
     environment:
+      # Cap JVM heap so 8 services starting in parallel don't each grab 25% of host RAM
+      # (the default), which overcommits memory and makes every startup swap-slow.
+      JAVA_TOOL_OPTIONS: -Xmx384m
       DB_URL: jdbc:mysql://mysql:3306/auth_db
       DB_USERNAME: auth_user
       DB_PASSWORD: ${AUTH_DB_PASSWORD:?set AUTH_DB_PASSWORD in .env}
@@ -112,7 +116,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
-      start_period: 45s
+      start_period: 240s
 
   user-service:
     build: ./services/user-service
@@ -121,6 +125,7 @@ services:
       mysql:
         condition: service_healthy
     environment:
+      JAVA_TOOL_OPTIONS: -Xmx384m
       DB_URL: jdbc:mysql://mysql:3306/user_db
       DB_USERNAME: user_user
       DB_PASSWORD: ${USER_DB_PASSWORD:?set USER_DB_PASSWORD in .env}
@@ -133,7 +138,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
-      start_period: 45s
+      start_period: 240s
 
   transaction-service:
     build: ./services/transaction-service
@@ -144,6 +149,7 @@ services:
       kafka:
         condition: service_healthy
     environment:
+      JAVA_TOOL_OPTIONS: -Xmx384m
       DB_URL: jdbc:mysql://mysql:3306/transaction_db
       DB_USERNAME: transaction_user
       DB_PASSWORD: ${TRANSACTION_DB_PASSWORD:?set TRANSACTION_DB_PASSWORD in .env}
@@ -163,7 +169,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
-      start_period: 45s
+      start_period: 240s
 
   budget-service:
     build: ./services/budget-service
@@ -174,6 +180,7 @@ services:
       kafka:
         condition: service_healthy
     environment:
+      JAVA_TOOL_OPTIONS: -Xmx384m
       DB_URL: jdbc:mysql://mysql:3306/budget_db
       DB_USERNAME: budget_user
       DB_PASSWORD: ${BUDGET_DB_PASSWORD:?set BUDGET_DB_PASSWORD in .env}
@@ -189,7 +196,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
-      start_period: 45s
+      start_period: 240s
 
   # Risk Service — Risk Intelligence MVP (Phases D.1–D.4, E.1–E.3, F.1).
   # Consumes TransactionCreated + BudgetChanged; evaluates the risk rules
@@ -212,6 +219,7 @@ services:
       kafka:
         condition: service_healthy
     environment:
+      JAVA_TOOL_OPTIONS: -Xmx384m
       DB_URL: jdbc:mysql://mysql:3306/risk_db
       DB_USERNAME: risk_user
       DB_PASSWORD: ${RISK_DB_PASSWORD:?set RISK_DB_PASSWORD in .env}
@@ -222,7 +230,44 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
-      start_period: 45s
+      start_period: 240s
+
+  # Notification Service — consumes RiskDetected and materializes per-user in-app
+  # notifications (owns notification_db; idempotency inbox dedups Kafka redeliveries).
+  # User-facing read API at /api/v1/notifications (JWT-validated locally, like the other
+  # business services); the host port is published so it is reachable behind the gateway.
+  notification-service:
+    build: ./services/notification-service
+    container_name: finsight-notification-service
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      JAVA_TOOL_OPTIONS: -Xmx384m
+      DB_URL: jdbc:mysql://mysql:3306/notification_db
+      DB_USERNAME: notification_user
+      DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD:?set NOTIFICATION_DB_PASSWORD in .env}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      # Async event backbone: consumes RiskDetected to create in-app notifications.
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      # Optional LLM-backed alert narrator on any OpenAI-compatible API (default: Groq free
+      # tier). Off unless a key is set and the flag is flipped on; the rule-based
+      # TemplateNarrator is the default and the safe fallback.
+      FINSIGHT_NARRATOR_AI_ENABLED: ${FINSIGHT_NARRATOR_AI_ENABLED:-false}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.groq.com/openai/v1}
+      LLM_MODEL: ${LLM_MODEL:-llama-3.1-8b-instant}
+    ports:
+      - "8087:8087"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8087/actuator/health/readiness"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 240s
 
   # Dashboard Service — read-only aggregation layer / BFF.
   # Owns NO database. It calls user/transaction/budget directly over the compose
@@ -240,6 +285,7 @@ services:
       budget-service:
         condition: service_healthy
     environment:
+      JAVA_TOOL_OPTIONS: -Xmx384m
       USER_SERVICE_URI: http://user-service:8082
       TRANSACTION_SERVICE_URI: http://transaction-service:8083
       BUDGET_SERVICE_URI: http://budget-service:8084
@@ -257,7 +303,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
-      start_period: 45s
+      start_period: 240s
 
   # API Gateway — V1 Phase 2 (routing + edge JWT authentication).
   # Forwards by path prefix to the four services over the compose network, and now
@@ -281,12 +327,16 @@ services:
         condition: service_healthy
       dashboard-service:
         condition: service_healthy
+      notification-service:
+        condition: service_healthy
     environment:
+      JAVA_TOOL_OPTIONS: -Xmx384m
       AUTH_SERVICE_URI: http://auth-service:8081
       USER_SERVICE_URI: http://user-service:8082
       TRANSACTION_SERVICE_URI: http://transaction-service:8083
       BUDGET_SERVICE_URI: http://budget-service:8084
       DASHBOARD_SERVICE_URI: http://dashboard-service:8085
+      NOTIFICATION_SERVICE_URI: http://notification-service:8087
       # Phase 2: the gateway validates the access token at the edge with the same
       # shared HMAC secret auth-service signs with (issuer/audience default to the
       # minted values). See docs/ADR-0002.
@@ -304,7 +354,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
-      start_period: 45s
+      start_period: 240s
 
   # ── Observability (Phase C) ─────────────────────────────────────────────────
   # Prometheus scrapes every service's /actuator/prometheus over the compose
