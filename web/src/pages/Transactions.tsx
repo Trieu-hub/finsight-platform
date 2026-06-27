@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import {
   createTransaction,
   listCategories,
@@ -6,12 +6,24 @@ import {
 } from '../api/endpoints'
 import { errorMessage } from '../api/client'
 import type { Category, Transaction, TransactionType } from '../api/types'
-import { categoryName, money } from '../lib/format'
+import { categoryName, groupThousands, money } from '../lib/format'
 
 const today = () => new Date().toISOString().slice(0, 10)
+const CURRENCIES = ['VND', 'USD'] as const
 
-const inputClass =
-  'w-full rounded-lg border border-neutral-700 bg-neutral-950/60 px-3 py-2 text-neutral-100 placeholder-neutral-500 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30'
+const fieldBase =
+  'rounded-lg border border-neutral-700 bg-neutral-950/60 px-3 py-2 text-neutral-100 placeholder-neutral-500 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30'
+const inputClass = `w-full ${fieldBase}`
+
+// Field label above each input (no helper text).
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <label className="block text-sm font-medium text-neutral-300">{label}</label>
+      {children}
+    </div>
+  )
+}
 
 export default function Transactions() {
   const [transactions, setTransactions] = useState<Transaction[]>([])
@@ -19,9 +31,10 @@ export default function Transactions() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
 
-  // form state
+  // form state — `amount` holds raw digits; it is rendered grouped (10.000.000).
   const [type, setType] = useState<TransactionType>('EXPENSE')
   const [amount, setAmount] = useState('')
+  const [currency, setCurrency] = useState<string>('VND')
   const [categoryId, setCategoryId] = useState('')
   const [description, setDescription] = useState('')
   const [date, setDate] = useState(today())
@@ -51,12 +64,17 @@ export default function Transactions() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError('')
+    const value = Number(amount)
+    if (!amount || value <= 0) {
+      setError('Enter an amount greater than 0.')
+      return
+    }
     setSubmitting(true)
     try {
       await createTransaction({
         type,
-        amount: Number(amount),
-        currency: 'USD',
+        amount: value,
+        currency,
         categoryId: Number(categoryId),
         description: description || undefined,
         transactionDate: date,
@@ -80,50 +98,88 @@ export default function Transactions() {
         </h2>
         <form
           onSubmit={handleSubmit}
-          className="space-y-3 rounded-2xl border border-neutral-800 bg-neutral-900 p-5"
+          className="space-y-4 rounded-2xl border border-neutral-800 bg-neutral-900 p-5"
         >
-          <select
-            value={type}
-            onChange={(e) => {
-              const next = e.target.value as TransactionType
-              setType(next)
-              // Reset the category to one valid for the new type, so the pair is
-              // never contradictory (e.g. EXPENSE + Salary).
-              const firstOfType = categories.find((c) => c.type === next)
-              setCategoryId(firstOfType ? String(firstOfType.id) : '')
-            }}
-            className={inputClass}
-          >
-            <option value="EXPENSE">Expense</option>
-            <option value="INCOME">Income</option>
-          </select>
-          <input
-            type="number"
-            placeholder="Amount"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            min="0.01"
-            step="0.01"
-            required
-            className={inputClass}
-          />
-          <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className={inputClass}>
-            {categories
-              .filter((c) => c.type === type)
-              .map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-          </select>
-          <input
-            type="text"
-            placeholder="Description (optional)"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            className={inputClass}
-          />
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required className={inputClass} />
+          <Field label="Type">
+            <select
+              value={type}
+              onChange={(e) => {
+                const next = e.target.value as TransactionType
+                setType(next)
+                // Reset the category to one valid for the new type, so the pair is
+                // never contradictory (e.g. EXPENSE + Salary).
+                const firstOfType = categories.find((c) => c.type === next)
+                setCategoryId(firstOfType ? String(firstOfType.id) : '')
+              }}
+              className={inputClass}
+            >
+              <option value="EXPENSE">Expense</option>
+              <option value="INCOME">Income</option>
+            </select>
+          </Field>
+
+          <Field label="Amount">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                inputMode="numeric"
+                placeholder="0"
+                value={groupThousands(amount)}
+                onChange={(e) => setAmount(e.target.value.replace(/\D/g, ''))}
+                required
+                className={`${fieldBase} min-w-0 flex-1`}
+              />
+              <select
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value)}
+                className={`${fieldBase} w-20 shrink-0`}
+                aria-label="Currency"
+              >
+                {CURRENCIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </Field>
+
+          <Field label="Category">
+            <select
+              value={categoryId}
+              onChange={(e) => setCategoryId(e.target.value)}
+              className={inputClass}
+            >
+              {categories
+                .filter((c) => c.type === type)
+                .map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+            </select>
+          </Field>
+
+          <Field label="Description">
+            <input
+              type="text"
+              placeholder="Optional"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className={inputClass}
+            />
+          </Field>
+
+          <Field label="Date">
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              required
+              className={inputClass}
+            />
+          </Field>
+
           <button
             type="submit"
             disabled={submitting}
