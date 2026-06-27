@@ -252,6 +252,13 @@ services:
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       # Async event backbone: consumes RiskDetected to create in-app notifications.
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      # Optional LLM-backed alert narrator on any OpenAI-compatible API (default: Groq free
+      # tier). Off unless a key is set and the flag is flipped on; the rule-based
+      # TemplateNarrator is the default and the safe fallback.
+      FINSIGHT_NARRATOR_AI_ENABLED: ${FINSIGHT_NARRATOR_AI_ENABLED:-false}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.groq.com/openai/v1}
+      LLM_MODEL: ${LLM_MODEL:-llama-3.1-8b-instant}
     ports:
       - "8087:8087"
     restart: unless-stopped

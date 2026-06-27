@@ -24,9 +24,13 @@ one notification per detection. notification-service is the **first consumer** o
 topic — before it, `RiskDetected` was produced with no consumer. There are no
 cross-service runtime calls.
 
-Deliberately deferred: external delivery channels (email/push/webhook — only in-app for
-now) and an LLM-backed message narrator (the `AlertNarrator` seam exists; the default
-`TemplateNarrator` is rule-based).
+The message wording comes from an `AlertNarrator`. The default `TemplateNarrator` is rule-based
+and always on. An optional `LlmAlertNarrator` (off by default, `finsight.narrator.ai.enabled`)
+phrases the alert with an LLM over any **OpenAI-compatible** Chat Completions API — default Groq
+(free tier), swappable to OpenAI/OpenRouter/Ollama by config alone. It is `@Primary` when enabled
+and falls back to `TemplateNarrator` on any error, so the pipeline never depends on the API.
+
+Deliberately deferred: external delivery channels (email/push/webhook — only in-app for now).
 
 ## Commands
 
@@ -76,8 +80,17 @@ Layering is strict and one-directional: `controller → service → repository`.
 
 ### Narration
 - `AlertNarrator` turns a `RiskDetectedEvent` into title + message. `TemplateNarrator` is the
-  default, rule-based, deterministic implementation. It is a seam: an LLM-backed narrator can
-  be added behind a feature flag with the rule-based one as the safe fallback.
+  default, rule-based, deterministic implementation (used by tests — no network).
+- `LlmAlertNarrator` (gated by `finsight.narrator.ai.enabled`, `@Primary` when on) calls an
+  OpenAI-compatible Chat Completions API (default Groq, free tier) and parses a JSON
+  `{title, message}`. It sends only `riskType`/`riskSeverity` — **no PII** — caps the call with a
+  short timeout, and on ANY failure (timeout, non-2xx, bad JSON, empty fields) returns
+  `TemplateNarrator.narrate(...)`. Config: `finsight.narrator.ai.{enabled,base-url,api-key,model,
+  timeout-ms,max-tokens}` (env `FINSIGHT_NARRATOR_AI_ENABLED`, `LLM_API_KEY`, `LLM_BASE_URL`,
+  `LLM_MODEL`). Outcome counters: `finsight.notifications.ai.{success,fallback}`.
+- **Narration runs OUTSIDE the DB transaction** (`NotificationServiceImpl`): the inbox dedup
+  check short-circuits first (no LLM call for duplicates), then narrate, then only the two
+  inserts run in a `TransactionTemplate` — so an external call never holds a DB connection open.
 
 ### API contract
 - Pagination is 1-based in the API, 0-based in Spring Data — the controller subtracts 1.

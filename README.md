@@ -94,7 +94,7 @@ gateway).
 | `budget-service` | 8084 | `budget_db` | HTTP, Kafka | Budget definitions + utilization; **consumes** `TransactionCreated`, **produces** `BudgetChanged` |
 | `dashboard-service` | 8085 | _(none, BFF)_ | HTTP | Read-only aggregation over user/transaction/budget; relays JWT; fail-fast |
 | `risk-service` | 8086 (internal) | `risk_db` | Kafka | Risk rules, behavioral insights, anomaly detection; **consumes** `TransactionCreated` + `BudgetChanged`, **produces** `RiskDetected`; read APIs. Port not host-published (SE-2) |
-| `notification-service` | 8087 | `notification_db` | HTTP, Kafka | In-app notifications; **consumes** `RiskDetected`; user-scoped read/mark-read API |
+| `notification-service` | 8087 | `notification_db` | HTTP, Kafka | In-app notifications; **consumes** `RiskDetected`; user-scoped read/mark-read API; optional **LLM narrator** (OpenAI-compatible, Groq free tier by default, off unless configured) |
 
 ## Databases
 
@@ -299,7 +299,9 @@ These are **absent from the codebase** — do not assume they exist:
 - **gRPC** — no proto, no dependencies; all synchronous calls are REST.
 - **Analytics engine** — distinct from the dashboard BFF (presentation only).
 - **External notification delivery** — notification-service creates **in-app** notifications
-  from `RiskDetected`; email/push/webhook delivery and an LLM-backed message narrator are not built.
+  from `RiskDetected`; email/push/webhook delivery is not built. (An optional **LLM message
+  narrator** — OpenAI-compatible, default Groq free tier, off by default with a rule-based
+  fallback — *is* built; see [Web frontend](#web-frontend) / `services/notification-service`.)
 - **Transaction `TRANSFER`** — only INCOME/EXPENSE exist (`walletId` is scaffolded, unused).
 - **ML-based intelligence** — current rules are deterministic and threshold-based.
 - **Asymmetric JWT signing** (RS256/JWKS), **edge rate limiting**, **transactional outbox**,
