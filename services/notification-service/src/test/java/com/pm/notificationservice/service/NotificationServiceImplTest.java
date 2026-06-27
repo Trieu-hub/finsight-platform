@@ -9,6 +9,7 @@ import com.pm.notificationservice.repository.ProcessedEventRepository;
 import com.pm.notificationservice.service.impl.NotificationServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -31,9 +32,12 @@ class NotificationServiceImplTest {
     void setUp() {
         notificationRepository = mock(NotificationRepository.class);
         processedEventRepository = mock(ProcessedEventRepository.class);
+        // A mock tx manager makes TransactionTemplate run the callback inline (getTransaction
+        // returns a null status, commit is a no-op) — enough to exercise the persist path.
+        PlatformTransactionManager txManager = mock(PlatformTransactionManager.class);
         // Real narrator: deterministic, no need to mock.
         service = new NotificationServiceImpl(
-                notificationRepository, processedEventRepository, new TemplateNarrator());
+                notificationRepository, processedEventRepository, new TemplateNarrator(), txManager);
     }
 
     @Test

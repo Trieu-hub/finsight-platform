@@ -53,6 +53,17 @@ finsight:
       # Consumed: owned by risk-service. notification-service is the first consumer of
       # this topic — it turns each detected risk into a user-facing in-app notification.
       risk-detected: finsight.risk.detected
+  narrator:
+    ai:
+      # Optional LLM-backed narrator on any OpenAI-compatible API (default: Groq free tier).
+      # Off by default => the rule-based TemplateNarrator is used and no external call is made.
+      # Flip on only with a key set. Swap providers by overriding LLM_BASE_URL + LLM_MODEL.
+      enabled: ${FINSIGHT_NARRATOR_AI_ENABLED:false}
+      base-url: ${LLM_BASE_URL:https://api.groq.com/openai/v1}
+      api-key: ${LLM_API_KEY:}
+      model: ${LLM_MODEL:llama-3.1-8b-instant}
+      timeout-ms: ${FINSIGHT_NARRATOR_AI_TIMEOUT_MS:6000}
+      max-tokens: ${FINSIGHT_NARRATOR_AI_MAX_TOKENS:200}
 
 management:
   endpoints:

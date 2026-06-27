@@ -25,6 +25,22 @@ mvnw.cmd spring-boot:run
 `JWT_SECRET` is required (no default). Tokens are validated locally with the secret shared
 with `auth-service`.
 
+### Optional AI narrator
+
+By default the rule-based `TemplateNarrator` writes the alert text — no key, no network. To have
+an LLM phrase the alert instead, set (any OpenAI-compatible API; default is **Groq**, free tier):
+
+```bash
+FINSIGHT_NARRATOR_AI_ENABLED=true \
+LLM_API_KEY=gsk_...                 # free key from https://console.groq.com
+# optional overrides — defaults target Groq llama-3.1-8b-instant:
+# LLM_BASE_URL=https://api.openai.com/v1   LLM_MODEL=gpt-4o-mini   (OpenAI)
+# LLM_BASE_URL=http://localhost:11434/v1   LLM_MODEL=llama3.1      (local Ollama)
+```
+
+Only `riskType`/`riskSeverity` are sent upstream (no PII). Any failure (timeout, non-2xx, bad
+JSON) silently falls back to `TemplateNarrator`, so the consumer never breaks.
+
 ## Test
 
 ```bash

@@ -41,7 +41,9 @@ topic now has a consumer) plus
 **Risk Monitoring**, **Behavioral Insights**, and **Anomaly Detection** end-to-end (Phases D–F).
 The **Notification Service** is now built — it consumes `RiskDetected` and materializes per-user
 in-app notifications (closing the last chartered service; external email/push delivery stays
-deferred). The remaining vision gaps are **gRPC** (0%) and a deeper **Analytics** engine.
+deferred). It also ships an **optional LLM narrator** that phrases alerts via any OpenAI-compatible
+API (default Groq free tier, off by default, rule-based fallback) — the first real AI integration.
+The remaining vision gaps are **gRPC** (0%) and a deeper **Analytics** engine.
 
 A **React + TypeScript web client** (Vite + Tailwind) now fronts the platform — auth,
 transactions, budgets, dashboard, plus an **ADMIN-only user-management console** with role-based
@@ -103,7 +105,7 @@ incremental, not greenfield.
 | Budget Service | ✅ exists | Definitions + event-driven utilization → ~85% |
 | **Analytics Service** | ⚠️ substituted | `dashboard-service` (BFF) covers presentation, not analysis → ~30% |
 | **Risk Intelligence Service** | ✅ exists | `risk-service`: Risk + Insights + Anomaly (rule-based MVP) → ~70% |
-| **Notification Service** | ✅ exists | `notification-service`: consumes `RiskDetected`, idempotency inbox, user-scoped in-app notification API → ~75% (external delivery deferred) |
+| **Notification Service** | ✅ exists | `notification-service`: consumes `RiskDetected`, idempotency inbox, user-scoped in-app notification API, **optional LLM narrator** (OpenAI-compatible, Groq free tier, rule-based fallback) → ~80% (external delivery deferred) |
 
 `dashboard-service` is an **extra** BFF, not one of the 8 chartered services.
 
@@ -188,7 +190,8 @@ Full diagrams: [docs/architecture.md](docs/architecture.md).
 
 **Vision-defining (the chartered "second half"):**
 1. **External notification delivery** — notification-service now creates **in-app** notifications
-   from `RiskDetected`; email/push/webhook delivery and an LLM-backed message narrator are not built.
+   from `RiskDetected` and can phrase them with an **optional LLM narrator** (OpenAI-compatible,
+   Groq free tier, off by default, rule-based fallback). Email/push/webhook delivery is not built.
 2. **gRPC (internal sync)** — architectural pillar at 0%; no proto, no deps.
 3. **Analytics engine** — distinct from the dashboard's presentation; deeper rollups/analysis.
 4. **More intelligence rules** — incremental additions on the existing risk-service framework
@@ -260,8 +263,9 @@ issuer/audience, lockout, secret externalization, least-privilege DB users, rota
 event-driven design with idempotency and documented tradeoffs (ADR-0004); and operational
 maturity (Actuator probes, Docker healthchecks, CI with Testcontainers, dashboards).
 
-**Be honest in interview:** learning/portfolio project, not production-deployed; intelligence is
-**rule-based, not ML**; gRPC and external notification delivery (email/push) are not built; load/scale and a real
+**Be honest in interview:** learning/portfolio project, not production-deployed; risk/insight
+**detection is rule-based, not ML** (the optional LLM only *phrases* alerts, it does not detect);
+gRPC and external notification delivery (email/push) are not built; load/scale and a real
 deployment target are absent.
 
 ---

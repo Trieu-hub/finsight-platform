@@ -1,17 +1,29 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { createBudget, listBudgets, listCategories } from '../api/endpoints'
 import { errorMessage } from '../api/client'
 import type { Budget, BudgetPeriod, Category } from '../api/types'
-import { categoryName, money } from '../lib/format'
+import { categoryName, groupThousands, money } from '../lib/format'
 
 const firstOfMonth = () => new Date().toISOString().slice(0, 8) + '01'
 const lastOfMonth = () => {
   const d = new Date()
   return new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().slice(0, 10)
 }
+const CURRENCIES = ['VND', 'USD'] as const
 
-const inputClass =
-  'w-full rounded-lg border border-neutral-700 bg-neutral-950/60 px-3 py-2 text-neutral-100 placeholder-neutral-500 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30'
+const fieldBase =
+  'rounded-lg border border-neutral-700 bg-neutral-950/60 px-3 py-2 text-neutral-100 placeholder-neutral-500 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30'
+const inputClass = `w-full ${fieldBase}`
+
+// Field label above each input (no helper text).
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <label className="block text-sm font-medium text-neutral-300">{label}</label>
+      {children}
+    </div>
+  )
+}
 
 export default function Budgets() {
   const [budgets, setBudgets] = useState<Budget[]>([])
@@ -22,7 +34,9 @@ export default function Budgets() {
   const [name, setName] = useState('')
   const [categoryId, setCategoryId] = useState('')
   const [periodType, setPeriodType] = useState<BudgetPeriod>('MONTHLY')
+  // `limitAmount` holds raw digits; rendered grouped (10.000.000).
   const [limitAmount, setLimitAmount] = useState('')
+  const [currency, setCurrency] = useState<string>('VND')
   const [startDate, setStartDate] = useState(firstOfMonth())
   const [endDate, setEndDate] = useState(lastOfMonth())
   const [submitting, setSubmitting] = useState(false)
@@ -50,6 +64,11 @@ export default function Budgets() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError('')
+    const value = Number(limitAmount)
+    if (!limitAmount || value <= 0) {
+      setError('Enter a limit greater than 0.')
+      return
+    }
     setSubmitting(true)
     try {
       await createBudget({
@@ -58,8 +77,8 @@ export default function Budgets() {
         periodType,
         startDate,
         endDate,
-        limitAmount: Number(limitAmount),
-        currency: 'USD',
+        limitAmount: value,
+        currency,
       })
       setName('')
       setLimitAmount('')
@@ -79,48 +98,93 @@ export default function Budgets() {
         </h2>
         <form
           onSubmit={handleSubmit}
-          className="space-y-3 rounded-2xl border border-neutral-800 bg-neutral-900 p-5"
+          className="space-y-4 rounded-2xl border border-neutral-800 bg-neutral-900 p-5"
         >
-          <input
-            type="text"
-            placeholder="Name (optional)"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className={inputClass}
-          />
-          <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className={inputClass}>
-            {categories
-              .filter((c) => c.type === 'EXPENSE')
-              .map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-          </select>
-          <select value={periodType} onChange={(e) => setPeriodType(e.target.value as BudgetPeriod)} className={inputClass}>
-            <option value="MONTHLY">Monthly</option>
-            <option value="WEEKLY">Weekly</option>
-            <option value="YEARLY">Yearly</option>
-            <option value="CUSTOM">Custom</option>
-          </select>
-          <input
-            type="number"
-            placeholder="Limit amount"
-            value={limitAmount}
-            onChange={(e) => setLimitAmount(e.target.value)}
-            min="0.01"
-            step="0.01"
-            required
-            className={inputClass}
-          />
-          <label className="block text-sm text-neutral-400">
-            Start
-            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} required className={`mt-1 ${inputClass}`} />
-          </label>
-          <label className="block text-sm text-neutral-400">
-            End
-            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} required className={`mt-1 ${inputClass}`} />
-          </label>
+          <Field label="Name">
+            <input
+              type="text"
+              placeholder="Optional"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className={inputClass}
+            />
+          </Field>
+
+          <Field label="Category">
+            <select
+              value={categoryId}
+              onChange={(e) => setCategoryId(e.target.value)}
+              className={inputClass}
+            >
+              {categories
+                .filter((c) => c.type === 'EXPENSE')
+                .map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+            </select>
+          </Field>
+
+          <Field label="Period">
+            <select
+              value={periodType}
+              onChange={(e) => setPeriodType(e.target.value as BudgetPeriod)}
+              className={inputClass}
+            >
+              <option value="MONTHLY">Monthly</option>
+              <option value="WEEKLY">Weekly</option>
+              <option value="YEARLY">Yearly</option>
+              <option value="CUSTOM">Custom</option>
+            </select>
+          </Field>
+
+          <Field label="Limit amount">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                inputMode="numeric"
+                placeholder="0"
+                value={groupThousands(limitAmount)}
+                onChange={(e) => setLimitAmount(e.target.value.replace(/\D/g, ''))}
+                required
+                className={`${fieldBase} min-w-0 flex-1`}
+              />
+              <select
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value)}
+                className={`${fieldBase} w-20 shrink-0`}
+                aria-label="Currency"
+              >
+                {CURRENCIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </Field>
+
+          <Field label="Start">
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              required
+              className={inputClass}
+            />
+          </Field>
+
+          <Field label="End">
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              required
+              className={inputClass}
+            />
+          </Field>
+
           <button
             type="submit"
             disabled={submitting}
