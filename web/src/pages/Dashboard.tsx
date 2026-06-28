@@ -101,6 +101,8 @@ export default function Dashboard() {
 
       <TrendChart series={series} currency={currency} />
 
+      <CategoryColumns byCategory={byCategory} categories={categories} currency={currency} />
+
       <div className="grid gap-6 md:grid-cols-2">
         <section>
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-400">
@@ -150,8 +152,6 @@ export default function Dashboard() {
           )}
         </section>
       </div>
-
-      <SpendingByCategory byCategory={byCategory} total={expense} categories={categories} currency={currency} />
     </div>
   )
 }
@@ -163,47 +163,88 @@ function TrendChart({
   series: { date: string; value: number }[]
   currency: string
 }) {
-  const W = 720
-  const H = 200
-  const padY = 22
-  const padX = 8
-
-  const body = (() => {
-    if (series.length === 0) {
-      return <EmptyCard>Add transactions to see your balance trend.</EmptyCard>
-    }
-
-    const n = series.length
-    const values = series.map((s) => s.value)
-    let min = Math.min(0, ...values)
-    let max = Math.max(0, ...values)
-    if (min === max) max = min + 1 // avoid divide-by-zero on a flat line
-
-    const x = (i: number) => (n === 1 ? W / 2 : padX + (i / (n - 1)) * (W - 2 * padX))
-    const y = (v: number) => padY + (1 - (v - min) / (max - min)) * (H - 2 * padY)
-
-    const linePath = series.map((s, i) => `${i === 0 ? 'M' : 'L'}${x(i)},${y(s.value)}`).join(' ')
-    const areaPath =
-      `M${x(0)},${H - padY} ` +
-      series.map((s, i) => `L${x(i)},${y(s.value)}`).join(' ') +
-      ` L${x(n - 1)},${H - padY} Z`
-    const yZero = y(0)
-    const last = series[n - 1]
-
+  if (series.length === 0) {
     return (
+      <section>
+        <SectionTitle>Balance trend</SectionTitle>
+        <EmptyCard>Add transactions to see your balance trend.</EmptyCard>
+      </section>
+    )
+  }
+
+  const W = 720
+  const H = 220
+  const padY = 24
+  const padX = 10
+  const GUTTER = 'pl-16' // room for the HTML y-axis labels
+
+  const n = series.length
+  const values = series.map((s) => s.value)
+  let min = Math.min(0, ...values)
+  let max = Math.max(0, ...values)
+  if (min === max) max = min + 1 // avoid divide-by-zero on a flat line
+
+  const x = (i: number) => (n === 1 ? W / 2 : padX + (i / (n - 1)) * (W - 2 * padX))
+  const y = (v: number) => padY + (1 - (v - min) / (max - min)) * (H - 2 * padY)
+
+  const linePath = series.map((s, i) => `${i === 0 ? 'M' : 'L'}${x(i)},${y(s.value)}`).join(' ')
+  const areaPath =
+    `M${x(0)},${H - padY} ` +
+    series.map((s, i) => `L${x(i)},${y(s.value)}`).join(' ') +
+    ` L${x(n - 1)},${H - padY} Z`
+  const yZero = y(0)
+  const last = series[n - 1]
+  const first = series[0]
+  const delta = last.value - first.value
+
+  // Y-axis tick fractions (top→bottom); label value + position align to the SVG gridlines.
+  const ticks = [0, 0.25, 0.5, 0.75, 1]
+  const tickTop = (f: number) => ((padY + f * (H - 2 * padY)) / H) * 100
+  const tickVal = (f: number) => max - f * (max - min)
+
+  return (
+    <section>
       <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-5">
-        <div className="mb-2 flex items-baseline justify-between">
-          <span className="text-xs text-neutral-500">
-            {series[0].date} → {last.date}
-          </span>
-          <span className={`text-sm font-semibold ${last.value >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-            {money(last.value, currency)}
-          </span>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-400">
+              Balance trend
+            </h2>
+            <div
+              className={`mt-1 text-2xl font-bold tracking-tight ${
+                last.value >= 0 ? 'text-neutral-50' : 'text-rose-400'
+              }`}
+            >
+              {money(last.value, currency)}
+            </div>
+          </div>
+          <div className="text-right">
+            <span
+              className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-semibold ${
+                delta >= 0
+                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                  : 'border-rose-500/30 bg-rose-500/10 text-rose-300'
+              }`}
+            >
+              {delta >= 0 ? '▲' : '▼'} {money(Math.abs(delta), currency)}
+            </span>
+            <div className="mt-1.5 text-[11px] text-neutral-500">
+              {first.date} → {last.date}
+            </div>
+          </div>
         </div>
-        <div className="relative h-48 w-full">
-          {/* Min/max value labels live in HTML so they don't distort with the stretched SVG. */}
-          <span className="absolute left-0 top-0 text-[10px] text-neutral-600">{money(max, currency)}</span>
-          <span className="absolute bottom-0 left-0 text-[10px] text-neutral-600">{money(min, currency)}</span>
+
+        <div className={`relative mt-5 h-56 ${GUTTER}`}>
+          {/* Y-axis labels in HTML (the SVG is stretched, so SVG text would distort). */}
+          {ticks.map((f) => (
+            <span
+              key={f}
+              className="absolute left-0 w-14 -translate-y-1/2 pr-2 text-right text-[10px] text-neutral-600"
+              style={{ top: `${tickTop(f)}%` }}
+            >
+              {money(tickVal(f), currency)}
+            </span>
+          ))}
           <svg
             viewBox={`0 0 ${W} ${H}`}
             preserveAspectRatio="none"
@@ -216,15 +257,14 @@ function TrendChart({
                 <stop offset="100%" stopColor="#10b981" stopOpacity="0" />
               </linearGradient>
             </defs>
-            {/* grid */}
-            {[0.25, 0.5, 0.75].map((f) => (
+            {ticks.map((f) => (
               <line
                 key={f}
                 x1="0"
                 x2={W}
                 y1={padY + f * (H - 2 * padY)}
                 y2={padY + f * (H - 2 * padY)}
-                stroke="#262626"
+                stroke="#1f1f1f"
                 strokeWidth="1"
                 vectorEffect="non-scaling-stroke"
               />
@@ -254,15 +294,6 @@ function TrendChart({
           </svg>
         </div>
       </div>
-    )
-  })()
-
-  return (
-    <section>
-      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-400">
-        Balance trend
-      </h2>
-      {body}
     </section>
   )
 }
@@ -301,56 +332,95 @@ function MiniStat({ label, value, dot }: { label: string; value: string; dot: st
   )
 }
 
-function SpendingByCategory({
+// Vertical column chart of expense-by-category, drawn in the same visual language as the
+// balance-trend chart (dark card, y-axis gridlines + labels, gradient fills). The detailed
+// breakdown list lives on the Analytics page; this is the at-a-glance shape of spending.
+function CategoryColumns({
   byCategory,
-  total,
   categories,
   currency,
 }: {
   byCategory: { categoryId: number; total: number }[]
-  total: number
   categories: Category[]
   currency: string
 }) {
+  if (byCategory.length === 0) {
+    return (
+      <section>
+        <SectionTitle>Spending by category</SectionTitle>
+        <EmptyCard>Add an expense to see the breakdown.</EmptyCard>
+      </section>
+    )
+  }
+
+  const cols = byCategory.slice(0, 8)
+  const max = Math.max(...cols.map((c) => c.total), 1)
+  const ticks = [0, 0.25, 0.5, 0.75, 1]
+
   return (
     <section>
-      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-400">
-        Spending by category
-      </h2>
-      {byCategory.length === 0 || total <= 0 ? (
-        <EmptyCard>Add an expense to see the breakdown.</EmptyCard>
-      ) : (
-        <div className="space-y-4 rounded-2xl border border-neutral-800 bg-neutral-900 p-6">
-          {byCategory.map((c, i) => {
-            const pct = (c.total / total) * 100
-            const color = BAR_COLORS[i % BAR_COLORS.length]
-            return (
-              <div key={c.categoryId}>
-                <div className="mb-1.5 flex items-baseline justify-between gap-3 text-sm">
-                  <span className="flex min-w-0 items-center gap-2">
-                    <span
-                      className="h-2.5 w-2.5 shrink-0 rounded-full"
-                      style={{ background: color }}
-                    />
-                    <span className="truncate text-neutral-200">
-                      {categoryName(categories, c.categoryId)}
-                    </span>
-                    <span className="shrink-0 text-xs text-neutral-500">{pct.toFixed(0)}%</span>
-                  </span>
-                  <span className="shrink-0 font-medium text-neutral-300">{money(c.total, currency)}</span>
-                </div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-neutral-800">
+      <SectionTitle>Spending by category</SectionTitle>
+      <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-5">
+        <div className="relative h-56 pl-16">
+          {/* Y-axis gridlines + labels (top = max, bottom = 0). */}
+          {ticks.map((f) => (
+            <div
+              key={f}
+              className="absolute inset-x-0 flex items-center"
+              style={{ top: `${f * 100}%` }}
+            >
+              <span className="w-16 -translate-y-1/2 pr-2 text-right text-[10px] text-neutral-600">
+                {money(max * (1 - f), currency)}
+              </span>
+              <div className="h-px flex-1 bg-neutral-800/70" />
+            </div>
+          ))}
+
+          {/* Columns sit on top of the gridlines, anchored to the baseline. */}
+          <div className="absolute inset-0 flex items-end gap-2 pl-16">
+            {cols.map((c, i) => {
+              const pct = (c.total / max) * 100
+              const color = BAR_COLORS[i % BAR_COLORS.length]
+              return (
+                <div
+                  key={c.categoryId}
+                  className="flex h-full flex-1 items-end justify-center"
+                  title={`${categoryName(categories, c.categoryId)}: ${money(c.total, currency)}`}
+                >
                   <div
-                    className="h-full rounded-full transition-all"
-                    style={{ width: `${pct}%`, background: color }}
+                    className="w-full max-w-[44px] rounded-t-md transition-all hover:brightness-110"
+                    style={{
+                      height: `${Math.max(pct, 1)}%`,
+                      background: `linear-gradient(to top, ${color}, ${color}40)`,
+                    }}
                   />
                 </div>
-              </div>
-            )
-          })}
+              )
+            })}
+          </div>
         </div>
-      )}
+
+        {/* X-axis category labels, aligned under each column. */}
+        <div className="mt-2 flex gap-2 pl-16">
+          {cols.map((c) => (
+            <div
+              key={c.categoryId}
+              className="min-w-0 flex-1 truncate text-center text-[11px] text-neutral-500"
+            >
+              {categoryName(categories, c.categoryId)}
+            </div>
+          ))}
+        </div>
+      </div>
     </section>
+  )
+}
+
+function SectionTitle({ children }: { children: ReactNode }) {
+  return (
+    <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-400">
+      {children}
+    </h2>
   )
 }
 

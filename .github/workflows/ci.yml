@@ -30,6 +30,7 @@ jobs:
         # project. The matrix is the single source of build/test steps for all
         # of them — add a new service here and it is covered automatically.
         service:
+          - analytics-service
           - api-gateway
           - auth-service
           - budget-service

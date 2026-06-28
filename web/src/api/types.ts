@@ -76,3 +76,54 @@ export interface Notification {
   createdAt: string
   readAt?: string
 }
+
+// ---- Analytics (analytics-service: rollup read model) ----
+export interface CategoryMover {
+  categoryId: number
+  categoryName: string
+  amount: number
+  prevAmount: number
+  changePct: number | null
+}
+
+export interface AnalyticsOverview {
+  yearMonth: string
+  currency: string
+  income: number
+  expense: number
+  net: number
+  savingsRate: number
+  prevIncome: number
+  prevExpense: number
+  prevNet: number
+  prevSavingsRate: number
+  incomeChangePct: number | null
+  expenseChangePct: number | null
+  topMovers: CategoryMover[]
+}
+
+export interface CategorySlice {
+  categoryId: number
+  categoryName: string
+  type: TransactionType
+  total: number
+  txnCount: number
+  share: number
+}
+
+export interface SpendForecast {
+  yearMonth: string
+  currency: string
+  expenseToDate: number
+  dayOfMonth: number
+  daysInMonth: number
+  projectedExpense: number
+  dailyAverage: number
+}
+
+export interface MonthlySummary {
+  yearMonth: string
+  currency: string
+  summary: string
+  aiGenerated: boolean
+}

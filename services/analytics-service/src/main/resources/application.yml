@@ -1,0 +1,104 @@
+server:
+  port: 8088
+
+spring:
+  application:
+    name: analytics-service
+
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/analytics_db}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        # MySQL8Dialect was removed in Hibernate 7; MySQLDialect auto-detects 8.x.
+        dialect: org.hibernate.dialect.MySQLDialect
+
+  flyway:
+    enabled: true
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      # Dedicated consumer group: analytics tracks its own offsets independently of
+      # budget-service and risk-service, the other consumers of this topic.
+      group-id: analytics-service
+      # First deploy starts from the beginning of the topic so the read model is built
+      # from the full history already on the partition, not only new events (backfill).
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      # Wrap the JSON deserializer so a malformed payload becomes a handled error
+      # (DefaultErrorHandler: retry, then log-and-skip) instead of an infinite loop.
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
+        # The producer (transaction-service) omits Java type headers (language-neutral wire
+        # format), so the target type must be declared here.
+        spring.json.value.default.type: com.pm.analyticsservice.event.TransactionCreatedEvent
+        spring.json.use.type.headers: false
+        spring.json.trusted.packages: com.pm.analyticsservice.event
+
+finsight:
+  kafka:
+    # Master switch for event consumption. Off => no listener container starts (used by
+    # the default test profile, which has no broker).
+    enabled: true
+    topics:
+      # Consumed: owned by transaction-service. analytics-service builds a per-user,
+      # per-month, per-category rollup read model from it.
+      transaction-created: finsight.transactions.created
+  summarizer:
+    ai:
+      # Optional LLM-backed monthly summary on any OpenAI-compatible API (default: Groq
+      # free tier). Off by default => a deterministic TemplateSummarizer is used and no
+      # external call is made. Flip on only with a key set. Swap providers via LLM_BASE_URL.
+      #
+      # Unlike notification-service's narrator (which sends zero figures), the summary by
+      # nature sends AGGREGATED amounts + category names to the model so it can describe
+      # them. It never sends a userId, email, or individual transaction (no identity).
+      enabled: ${FINSIGHT_SUMMARIZER_AI_ENABLED:false}
+      base-url: ${LLM_BASE_URL:https://api.groq.com/openai/v1}
+      api-key: ${LLM_API_KEY:}
+      model: ${LLM_MODEL:llama-3.1-8b-instant}
+      timeout-ms: ${FINSIGHT_SUMMARIZER_AI_TIMEOUT_MS:6000}
+      max-tokens: ${FINSIGHT_SUMMARIZER_AI_MAX_TOKENS:300}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+    jmx:
+      exposure:
+        exclude: "*"
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+  endpoint:
+    health:
+      show-details: never
+      show-components: never
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,db
+    info:
+      enabled: true
+  info:
+    env:
+      enabled: false
+
+jwt:
+  secret: ${JWT_SECRET}
+  issuer: ${JWT_ISSUER:finsight-auth}
+  audience: ${JWT_AUDIENCE:finsight-api}
