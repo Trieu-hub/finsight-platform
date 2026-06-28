@@ -20,6 +20,13 @@ const icons: Record<string, ReactNode> = {
       <path d="M12 12V6m0 6 4.5 2.5" />
     </>
   ),
+  '/analytics': (
+    <>
+      <path d="M4 19V5" />
+      <path d="M4 19h16" />
+      <path d="M8 16v-4m4 4V8m4 8v-6" />
+    </>
+  ),
   '/admin': (
     <>
       <circle cx="12" cy="8" r="3.2" />
@@ -32,6 +39,7 @@ const baseLinks = [
   { to: '/', label: 'Dashboard', end: true },
   { to: '/transactions', label: 'Transactions' },
   { to: '/budgets', label: 'Budgets' },
+  { to: '/analytics', label: 'Analytics' },
 ]
 
 function NavIcon({ to }: { to: string }) {

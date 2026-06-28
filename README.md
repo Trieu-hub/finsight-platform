@@ -66,15 +66,19 @@ coupling is asynchronous over Kafka.
                                        ▼
                           notification-service :8087  ──▶ notification_db
                           (in-app alerts materialized from RiskDetected)
+
+                          analytics-service :8088  ──▶ analytics_db
+                          (per-month rollup from TransactionCreated; AI monthly summary)
 ```
 
 - **Synchronous** (HTTP/REST): client → gateway → owning service; the dashboard BFF fans out
   to user/transaction/budget, relaying the caller's JWT (fail-fast). No other business service
   calls another at runtime.
-- **Asynchronous** (Kafka): transaction-service produces `TransactionCreated`; budget-service
-  and risk-service consume it; budget-service produces `BudgetChanged` (consumed by
-  risk-service); risk-service produces `RiskDetected`, consumed by notification-service,
-  which materializes per-user in-app notifications.
+- **Asynchronous** (Kafka): transaction-service produces `TransactionCreated`; budget-service,
+  risk-service **and analytics-service** consume it; budget-service produces `BudgetChanged`
+  (consumed by risk-service); risk-service produces `RiskDetected`, consumed by
+  notification-service, which materializes per-user in-app notifications. analytics-service
+  folds `TransactionCreated` into a per-month rollup read model.
 
 Full diagrams (Mermaid) are in [`docs/architecture.md`](docs/architecture.md).
 
@@ -95,10 +99,11 @@ gateway).
 | `dashboard-service` | 8085 | _(none, BFF)_ | HTTP | Read-only aggregation over user/transaction/budget; relays JWT; fail-fast |
 | `risk-service` | 8086 (internal) | `risk_db` | Kafka | Risk rules, behavioral insights, anomaly detection; **consumes** `TransactionCreated` + `BudgetChanged`, **produces** `RiskDetected`; read APIs. Port not host-published (SE-2) |
 | `notification-service` | 8087 | `notification_db` | HTTP, Kafka | In-app notifications; **consumes** `RiskDetected`; user-scoped read/mark-read API; optional **LLM narrator** (OpenAI-compatible, Groq free tier by default, off unless configured) |
+| `analytics-service` | 8088 | `analytics_db` | HTTP, Kafka | Per-user monthly **rollup read model**; **consumes** `TransactionCreated`; overview / categories / forecast APIs; optional **AI monthly summary** (OpenAI-compatible, Groq free tier by default, off unless configured) |
 
 ## Databases
 
-One **MySQL 8** instance hosts six logical databases (DB-per-service isolation):
+One **MySQL 8** instance hosts seven logical databases (DB-per-service isolation):
 
 | Database | Owner | Notable tables |
 |---|---|---|
@@ -108,6 +113,7 @@ One **MySQL 8** instance hosts six logical databases (DB-per-service isolation):
 | `budget_db` | budget-service | budgets (incl. `spent_amount`), `processed_events` (idempotency inbox) |
 | `risk_db` | risk-service | `risk_alerts`, `observed_expenses`, `insights`, `budget_snapshots`, `anomalies` |
 | `notification_db` | notification-service | `notifications`, `processed_events` (idempotency inbox) |
+| `analytics_db` | analytics-service | `monthly_category_rollup`, `processed_events` (idempotency inbox) |
 
 `dashboard-service` owns no database. **Redis** backs only auth-service.
 
@@ -118,7 +124,7 @@ with idempotent consumers. Full payloads in [`docs/event-catalog.md`](docs/event
 
 | Topic | Producer | Consumer(s) |
 |---|---|---|
-| `finsight.transactions.created` | transaction-service | budget-service, risk-service |
+| `finsight.transactions.created` | transaction-service | budget-service, risk-service, analytics-service |
 | `finsight.budgets.changed` | budget-service | risk-service |
 | `finsight.risk.detected` | risk-service | notification-service |
 
@@ -164,7 +170,7 @@ Triggers, severities, persistence, and metrics are detailed in
 Every service exposes Micrometer metrics at `/actuator/prometheus` and liveness/readiness
 probes at `/actuator/health/{liveness,readiness}`.
 
-- **Prometheus** — <http://localhost:9090> — scrapes all eight services every 15s
+- **Prometheus** — <http://localhost:9090> — scrapes all nine services every 15s
   (`docker/prometheus/prometheus.yml`); check *Status → Targets*.
 - **Grafana** — <http://localhost:3000> — auto-provisions the Prometheus datasource and four
   dashboards (folder **FinSight**, from `docker/grafana/provisioning/`):
@@ -196,8 +202,10 @@ stay in the backend.
   every request by an Axios interceptor; a `401` clears it and redirects to `/login`. Protected
   routes are gated client-side for UX only — the backend remains the security boundary.
 - **Pages**: Login / Register, Dashboard (income / expense / balance + recent activity + budget
-  progress), Transactions (list + create), Budgets (list + utilization bars), Admin console
-  (RBAC user management, ROLE_ADMIN only).
+  progress), Transactions (list + create), Budgets (list + utilization bars), Analytics
+  (month-over-month overview, spend forecast, top movers, category breakdown, and an AI/template
+  monthly summary — served by analytics-service), Admin console (RBAC user management,
+  ROLE_ADMIN only).
 - **Notification bell**: a header bell polls `GET /api/v1/notifications/unread-count`, shows an
   unread badge, and opens a dropdown of risk alerts (severity-coloured) with mark-read /
   mark-all-read — the in-app surface for what notification-service materializes from `RiskDetected`.
@@ -297,7 +305,6 @@ runtime is captured by the committed Grafana dashboard screenshots above.
 These are **absent from the codebase** — do not assume they exist:
 
 - **gRPC** — no proto, no dependencies; all synchronous calls are REST.
-- **Analytics engine** — distinct from the dashboard BFF (presentation only).
 - **External notification delivery** — notification-service creates **in-app** notifications
   from `RiskDetected`; email/push/webhook delivery is not built. (An optional **LLM message
   narrator** — OpenAI-compatible, default Groq free tier, off by default with a rule-based

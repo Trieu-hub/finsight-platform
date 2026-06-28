@@ -1,12 +1,16 @@
 import { api } from './client'
 import type {
   AdminUser,
+  AnalyticsOverview,
   ApiResponse,
   AuthResponse,
   Budget,
   BudgetPeriod,
   Category,
+  CategorySlice,
+  MonthlySummary,
   Notification,
+  SpendForecast,
   Transaction,
   TransactionType,
 } from './types'
@@ -127,4 +131,31 @@ export async function markNotificationRead(id: string): Promise<void> {
 
 export async function markAllNotificationsRead(): Promise<void> {
   await api.patch('/notifications/read-all')
+}
+
+// ---- Analytics (analytics-service; rollup read model built from TransactionCreated) ----
+// year/month default to the current month server-side; currency is optional (the user's
+// dominant currency for the period is used when omitted).
+type MonthParams = { year?: number; month?: number; currency?: string }
+
+export async function analyticsOverview(params: MonthParams = {}): Promise<AnalyticsOverview> {
+  const { data } = await api.get<ApiResponse<AnalyticsOverview>>('/analytics/overview', { params })
+  return data.data
+}
+
+export async function analyticsCategories(
+  params: { from?: string; to?: string; currency?: string } = {},
+): Promise<CategorySlice[]> {
+  const { data } = await api.get<ApiResponse<CategorySlice[]>>('/analytics/categories', { params })
+  return data.data
+}
+
+export async function analyticsForecast(params: MonthParams = {}): Promise<SpendForecast> {
+  const { data } = await api.get<ApiResponse<SpendForecast>>('/analytics/forecast', { params })
+  return data.data
+}
+
+export async function analyticsSummary(params: MonthParams = {}): Promise<MonthlySummary> {
+  const { data } = await api.get<ApiResponse<MonthlySummary>>('/analytics/summary', { params })
+  return data.data
 }

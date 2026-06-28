@@ -33,6 +33,7 @@ services:
       BUDGET_DB_PASSWORD: ${BUDGET_DB_PASSWORD:?set BUDGET_DB_PASSWORD in .env}
       RISK_DB_PASSWORD: ${RISK_DB_PASSWORD:?set RISK_DB_PASSWORD in .env}
       NOTIFICATION_DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD:?set NOTIFICATION_DB_PASSWORD in .env}
+      ANALYTICS_DB_PASSWORD: ${ANALYTICS_DB_PASSWORD:?set ANALYTICS_DB_PASSWORD in .env}
     # DB ports are intentionally NOT published to the host: the services reach the
     # database over the compose network, and publishing 3306 collides with a
     # locally-run MySQL (which the services' own localhost defaults assume exists).
@@ -269,6 +270,45 @@ services:
       retries: 12
       start_period: 240s
 
+  # Analytics Service — CQRS read model over the TransactionCreated stream (owns
+  # analytics_db). Consumes finsight.transactions.created and folds each event into a
+  # per-user, per-month, per-category rollup (idempotency inbox dedups Kafka redeliveries).
+  # Read API at /api/v1/analytics (JWT-validated locally) serves month-over-month overview,
+  # category breakdown, spend forecast, and an optional AI monthly summary. The host port is
+  # published so it is reachable behind the gateway.
+  analytics-service:
+    build: ./services/analytics-service
+    container_name: finsight-analytics-service
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      JAVA_TOOL_OPTIONS: -Xmx384m
+      DB_URL: jdbc:mysql://mysql:3306/analytics_db
+      DB_USERNAME: analytics_user
+      DB_PASSWORD: ${ANALYTICS_DB_PASSWORD:?set ANALYTICS_DB_PASSWORD in .env}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      # Async event backbone: consumes TransactionCreated to build the rollup read model.
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      # Optional LLM-backed monthly summary on any OpenAI-compatible API (default: Groq free
+      # tier). Off unless a key is set and the flag is flipped on; a deterministic template
+      # is the default and the safe fallback. Shares the platform-wide LLM_* env contract.
+      FINSIGHT_SUMMARIZER_AI_ENABLED: ${FINSIGHT_SUMMARIZER_AI_ENABLED:-false}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.groq.com/openai/v1}
+      LLM_MODEL: ${LLM_MODEL:-llama-3.1-8b-instant}
+    ports:
+      - "8088:8088"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8088/actuator/health/readiness"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 240s
+
   # Dashboard Service — read-only aggregation layer / BFF.
   # Owns NO database. It calls user/transaction/budget directly over the compose
   # network and relays the caller's JWT (each upstream validates it). It validates the
@@ -329,6 +369,8 @@ services:
         condition: service_healthy
       notification-service:
         condition: service_healthy
+      analytics-service:
+        condition: service_healthy
     environment:
       JAVA_TOOL_OPTIONS: -Xmx384m
       AUTH_SERVICE_URI: http://auth-service:8081
@@ -337,6 +379,7 @@ services:
       BUDGET_SERVICE_URI: http://budget-service:8084
       DASHBOARD_SERVICE_URI: http://dashboard-service:8085
       NOTIFICATION_SERVICE_URI: http://notification-service:8087
+      ANALYTICS_SERVICE_URI: http://analytics-service:8088
       # Phase 2: the gateway validates the access token at the edge with the same
       # shared HMAC secret auth-service signs with (issuer/audience default to the
       # minted values). See docs/ADR-0002.

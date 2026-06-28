@@ -1,6 +1,6 @@
 # FinSight — Project Status
 
-_Last updated: 2026-06-23_
+_Last updated: 2026-06-28_
 _Repo: `D:\finsight` · Branch: `feat/web-frontend`_
 
 > **Looking for the two scorecards?** Jump to **[§9 CV / Portfolio readiness](#9-cv--portfolio-readiness-detailed-scorecard)**
@@ -31,23 +31,27 @@ A single "% complete" mixes very different goals. Progress is tracked on three i
 |---|---|---|
 | **MVP backend** | Core finance CRUD + auth + dashboard working end-to-end | **~90%** |
 | **Production-ready MVP** | The MVP, operable & secure for real deployment | **~72%** |
-| **Full FinSight vision** | The chartered Intelligence & Risk platform | **~70%** |
+| **Full FinSight vision** | The chartered Intelligence & Risk platform | **~74%** |
 
 **Headline:** The MVP (finance tracker + budgets + dashboard) is built, and the platform now
-has a **real multi-topic event backbone** (3 topics, 2 producers, 3 idempotent consumers — every
+has a **real multi-topic event backbone** (3 topics, 3 producers, 4 idempotent consumers — every
 topic now has a consumer) plus
 **full Prometheus/Grafana observability** and **OpenAPI docs**. The product's defining half —
 *Intelligence & Risk* — is **no longer at zero**: risk-service implements rule-based
 **Risk Monitoring**, **Behavioral Insights**, and **Anomaly Detection** end-to-end (Phases D–F).
 The **Notification Service** is now built — it consumes `RiskDetected` and materializes per-user
-in-app notifications (closing the last chartered service; external email/push delivery stays
-deferred). It also ships an **optional LLM narrator** that phrases alerts via any OpenAI-compatible
-API (default Groq free tier, off by default, rule-based fallback) — the first real AI integration.
-The remaining vision gaps are **gRPC** (0%) and a deeper **Analytics** engine.
+in-app notifications (external email/push delivery stays deferred). It also ships an **optional
+LLM narrator** that phrases alerts via any OpenAI-compatible API (default Groq free tier, off by
+default, rule-based fallback) — the first real AI integration. The **Analytics Service** is now
+built too: a CQRS rollup read model over `TransactionCreated` serving month-over-month overview,
+category breakdown and spend forecast, plus an **optional AI monthly summary** (same
+OpenAI-compatible seam, template fallback). The remaining vision gap is **gRPC** (0%).
 
 A **React + TypeScript web client** (Vite + Tailwind) now fronts the platform — auth,
-transactions, budgets, dashboard, plus an **ADMIN-only user-management console** with role-based
-access control — making FinSight a full-stack, clickable demo rather than an API-only backend.
+transactions, budgets, dashboard, an **Analytics** page (month-over-month overview, spend
+forecast, top movers, category breakdown, and the AI/template monthly summary from
+analytics-service), plus an **ADMIN-only user-management console** with role-based access
+control — making FinSight a full-stack, clickable demo rather than an API-only backend.
 A **notification bell** in the header surfaces risk alerts (unread badge + dropdown, mark-read),
 giving the `RiskDetected` → notification-service pipeline a visible end-to-end UI.
 
@@ -85,7 +89,7 @@ Detailed trigger conditions, severities, persistence, and metrics for D–F are 
 | Core domain | Status | Notes |
 |---|---|---|
 | Personal Finance Management | ✅ ~85% | Transactions, categories, budgets |
-| Dashboard & Analytics | ⚠️ partial | Dashboard ✅; a dedicated *Analytics* engine is still ~30% |
+| Dashboard & Analytics | ✅ ~80% | Dashboard BFF ✅; dedicated `analytics-service` ✅ (rollup read model: overview / categories / forecast + AI summary) |
 | Behavioral Insights | ✅ MVP | Rule-based: SPENDING_INCREASE, CATEGORY_SURGE, BUDGET_RISK, LOW_SAVINGS_RATE (E.1–E.3) |
 | Anomaly Detection | ✅ MVP | Rule-based: UNUSUAL_TRANSACTION_AMOUNT (F.1) |
 | Financial Risk Monitoring | ✅ MVP | Rule-based: HIGH_AMOUNT_EXPENSE, RAPID_SPENDING, LARGE_DAILY_SPEND (D.1–D.4) |
@@ -103,7 +107,7 @@ incremental, not greenfield.
 | User Service | ✅ exists | Profile data → ~85% |
 | Transaction Service | ✅ exists | INCOME/EXPENSE + categories/summaries; **no TRANSFER** → ~75% |
 | Budget Service | ✅ exists | Definitions + event-driven utilization → ~85% |
-| **Analytics Service** | ⚠️ substituted | `dashboard-service` (BFF) covers presentation, not analysis → ~30% |
+| **Analytics Service** | ✅ exists | `analytics-service`: CQRS rollup read model from `TransactionCreated`; overview / categories / forecast APIs + optional AI monthly summary (OpenAI-compatible, template fallback) → ~75% |
 | **Risk Intelligence Service** | ✅ exists | `risk-service`: Risk + Insights + Anomaly (rule-based MVP) → ~70% |
 | **Notification Service** | ✅ exists | `notification-service`: consumes `RiskDetected`, idempotency inbox, user-scoped in-app notification API, **optional LLM narrator** (OpenAI-compatible, Groq free tier, rule-based fallback) → ~80% (external delivery deferred) |
 
@@ -127,7 +131,7 @@ incremental, not greenfield.
 | Docker | ✅ | ✅ |
 | CI/CD | ✅ | ✅ GitHub Actions (build + test) |
 | OpenAPI/Swagger | ✅ | ✅ Phase A on the 5 user-facing REST services (auth/user/transaction/budget/dashboard); gateway + internal risk-service excluded |
-| Monitoring (Prometheus/Grafana) | ✅ | ✅ Phase C — scrape of all 8 services + 3 provisioned dashboards |
+| Monitoring (Prometheus/Grafana) | ✅ | ✅ Phase C — scrape of all 9 services + 3 provisioned dashboards |
 
 ### Explicitly out-of-scope for v1 (correctly absent)
 
@@ -193,7 +197,8 @@ Full diagrams: [docs/architecture.md](docs/architecture.md).
    from `RiskDetected` and can phrase them with an **optional LLM narrator** (OpenAI-compatible,
    Groq free tier, off by default, rule-based fallback). Email/push/webhook delivery is not built.
 2. **gRPC (internal sync)** — architectural pillar at 0%; no proto, no deps.
-3. **Analytics engine** — distinct from the dashboard's presentation; deeper rollups/analysis.
+3. **Analytics depth** — `analytics-service` ships the rollup read model + AI summary; deeper
+   analysis (ML forecasting, auto-categorization, persisted summary cache) stays incremental.
 4. **More intelligence rules** — incremental additions on the existing risk-service framework
    (explicitly **not** part of this documentation pass; e.g. Phase F.2 is **not** started).
 
@@ -232,7 +237,7 @@ Full diagrams: [docs/architecture.md](docs/architecture.md).
 - Single shared MySQL = shared failure domain; no backup/restore strategy.
 
 **Observability — now substantially addressed**
-- ✅ Micrometer/Prometheus across all 8 services; ✅ 3 Grafana dashboards; ✅ ECS JSON logging +
+- ✅ Micrometer/Prometheus across all 9 services; ✅ 3 Grafana dashboards; ✅ ECS JSON logging +
   correlation IDs (on api-gateway/transaction/dashboard).
 - ⚠️ Correlation-ID/ECS rollout to auth/user/budget pending; no distributed tracing; **no alerting**.
 
@@ -275,7 +280,8 @@ deployment target are absent.
 1. Green CI run on a merged branch.
 2. ✅ **Notification Service** built (consumes `RiskDetected`, in-app notifications) — last
    chartered service now exists; external (email/push) delivery remains optional follow-up.
-3. Analytics engine (distinct from the dashboard BFF).
+3. ✅ **Analytics Service** built (CQRS rollup read model from `TransactionCreated`; overview /
+   categories / forecast APIs + optional AI monthly summary) — distinct from the dashboard BFF.
 4. gRPC for internal sync calls.
 5. Transaction `TRANSFER` type; in-service audit logging.
 6. RS256/JWKS migration; edge rate limiting; transactional outbox.
@@ -298,10 +304,10 @@ project can be fully CV-worthy without ever being publicly hosted.
 | 1 | **Real architecture, not a toy** | ✅ ~95% | 7 Spring Boot 4 / Java 21 services, DB-per-service, BFF, Kafka backbone (3 topics, 2 producers, 2 idempotent consumers), enforced service boundaries. This is the headline strength. |
 | 2 | **Non-trivial domain logic** | ✅ ~85% | Rule-based risk / insights / anomaly layer (Phases D–F), event-sourced read-models, idempotency inbox. Demonstrates more than CRUD. |
 | 3 | **Testing discipline** | ✅ ~85% | Unit + Testcontainers integration tests per service (real MySQL + Kafka); consumer-lag metric assertions. Shows you test the hard parts. |
-| 4 | **CI** | ✅ ~80% | GitHub Actions matrix builds+tests all 8 services on every PR/push (JDK 21). Gap: branch not merged to `main` with a visible **green run + README badge** (see §10 #2). |
+| 4 | **CI** | ✅ ~80% | GitHub Actions matrix builds+tests all 9 services on every PR/push (JDK 21). Gap: branch not merged to `main` with a visible **green run + README badge** (see §10 #2). |
 | 5 | **Documentation** | ✅ ~95% | README, architecture.md, event-catalog.md, intelligence.md, runbook.md, ADR-0004, this status doc. Far above typical portfolio level. |
 | 6 | **Security awareness** | ✅ ~80% | JWT algorithm pinning + iss/aud, account lockout, least-privilege DB users, secret externalization, rotation runbook. Honest about the shared-HMAC weakness — *good* interview material. |
-| 7 | **Observability** | ✅ ~85% | Prometheus scrape of all 8 services, 4 Grafana dashboards (incl. consumer lag), ECS JSON logging + correlation IDs. |
+| 7 | **Observability** | ✅ ~85% | Prometheus scrape of all 9 services, 4 Grafana dashboards (incl. consumer lag), ECS JSON logging + correlation IDs. |
 | 8 | **Demonstrability** | ⚠️ ~80% | A working **React web client** (auth, transactions, budgets, dashboard, admin RBAC console, notification bell) makes the platform clickable, not API-only; 4 Grafana dashboard screenshots committed to `docs/images/` and embedded in the README. Remaining gap: no live demo URL and no short demo video/GIF. |
 | 9 | **Repo hygiene & narrative** | ✅ ~80% | Clean commit history, conventional commits, ADRs. Gap: several stale top-level `*_REVIEW_REPORT.md` files clutter the root and a stale "six/four services" comment lingers — minor cleanup. |
 | 10 | **Honest framing** | ✅ 100% | Status docs already state plainly: portfolio project, rule-based (not ML), not production-deployed, gRPC/Notification absent. This honesty is an asset in interviews. |
