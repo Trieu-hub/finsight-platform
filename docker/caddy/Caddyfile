@@ -1,0 +1,22 @@
+# Caddy edge for the Path A deploy: automatic HTTPS (Let's Encrypt) + reverse proxy.
+# The domain and ACME email are injected from the environment (see docker-compose.prod.yml).
+{
+	# ACME account email (optional but recommended for expiry notices). Empty is allowed.
+	email {$FINSIGHT_ACME_EMAIL}
+}
+
+{$FINSIGHT_DOMAIN} {
+	encode gzip zstd
+
+	# API traffic (the SPA calls a relative /api/v1/...) goes to the gateway, which
+	# validates the JWT at the edge and forwards to the services on the internal network.
+	handle /api/* {
+		reverse_proxy api-gateway:8080
+	}
+
+	# Everything else is the React single-page app, served by the nginx `web` container
+	# (which does the client-side history fallback).
+	handle {
+		reverse_proxy web:80
+	}
+}
