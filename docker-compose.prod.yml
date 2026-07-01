@@ -1,0 +1,73 @@
+# Production overlay for Path A (single VPS + Caddy TLS). Use TOGETHER with the base file:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# What it changes vs. the dev stack:
+#   * A Caddy reverse proxy is the ONLY thing published to the host (80/443). It terminates
+#     HTTPS (Let's Encrypt) and routes: /api/* -> api-gateway, everything else -> the SPA.
+#   * Every other service is UN-published (`ports: !override []`) so nothing but Caddy is
+#     reachable from outside the Docker network. This closes the well-known
+#     "Docker publishes past ufw" exposure — do not rely on the host firewall alone.
+#   * The React SPA is built and served by an nginx `web` container (dev uses the Vite server).
+#   * Grafana's anonymous-admin dev convenience is turned OFF (real login + strong password).
+#
+# Requires Docker Compose v2.24+ (for the `!override` YAML tag). Set the extra prod vars
+# in `.env`: FINSIGHT_DOMAIN, FINSIGHT_ACME_EMAIL, GF_SECURITY_ADMIN_PASSWORD.
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: finsight-caddy
+    depends_on:
+      - api-gateway
+      - web
+    environment:
+      FINSIGHT_DOMAIN: ${FINSIGHT_DOMAIN:?set FINSIGHT_DOMAIN in .env}
+      FINSIGHT_ACME_EMAIL: ${FINSIGHT_ACME_EMAIL:-}
+    volumes:
+      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    ports:
+      - "80:80"
+      - "443:443"
+    restart: unless-stopped
+
+  # The SPA, built and served by nginx. Reached only by Caddy over the internal network.
+  web:
+    build: ./web
+    container_name: finsight-web
+    restart: unless-stopped
+
+  # ── Un-publish every host port: only Caddy faces the internet ────────────────
+  auth-service:
+    ports: !override []
+  user-service:
+    ports: !override []
+  transaction-service:
+    ports: !override []
+  budget-service:
+    ports: !override []
+  notification-service:
+    ports: !override []
+  analytics-service:
+    ports: !override []
+  dashboard-service:
+    ports: !override []
+  api-gateway:
+    ports: !override []
+  prometheus:
+    ports: !override []
+
+  # Grafana: disable the dev anonymous-admin, require a real login + strong password.
+  # Not published — reach it in prod over an SSH tunnel to 127.0.0.1:3000 if needed.
+  grafana:
+    ports: !override []
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_AUTH_DISABLE_LOGIN_FORM: "false"
+      GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:?set GF_SECURITY_ADMIN_PASSWORD in .env}
+
+volumes:
+  caddy_data:
+  caddy_config:

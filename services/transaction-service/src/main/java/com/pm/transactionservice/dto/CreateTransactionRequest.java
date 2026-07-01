@@ -41,5 +41,8 @@ public class CreateTransactionRequest {
 
     private Long walletId;
 
+    /** Destination wallet for a TRANSFER (required, and must differ from walletId). */
+    private Long toWalletId;
+
     private Map<String, Object> metadata;
 }

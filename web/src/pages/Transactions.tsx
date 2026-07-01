@@ -1,11 +1,12 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import {
   createTransaction,
   listCategories,
   listTransactions,
+  listWallets,
 } from '../api/endpoints'
 import { errorMessage } from '../api/client'
-import type { Category, Transaction, TransactionType } from '../api/types'
+import type { Category, Transaction, TransactionType, Wallet } from '../api/types'
 import { categoryName, groupThousands, money } from '../lib/format'
 
 const today = () => new Date().toISOString().slice(0, 10)
@@ -28,6 +29,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 export default function Transactions() {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [categories, setCategories] = useState<Category[]>([])
+  const [wallets, setWallets] = useState<Wallet[]>([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
 
@@ -36,15 +38,28 @@ export default function Transactions() {
   const [amount, setAmount] = useState('')
   const [currency, setCurrency] = useState<string>('VND')
   const [categoryId, setCategoryId] = useState('')
+  const [walletId, setWalletId] = useState('') // source (or single) wallet; '' = none
+  const [toWalletId, setToWalletId] = useState('') // TRANSFER destination
   const [description, setDescription] = useState('')
   const [date, setDate] = useState(today())
   const [submitting, setSubmitting] = useState(false)
 
+  const isTransfer = type === 'TRANSFER'
+  const transferCat = useMemo(() => categories.find((c) => c.type === 'TRANSFER'), [categories])
+  const sourceWallet = useMemo(
+    () => wallets.find((w) => String(w.id) === walletId),
+    [wallets, walletId],
+  )
+  // A wallet fixes the transaction currency (no FX): lock it to the chosen wallet's currency.
+  const lockedCurrency = sourceWallet?.currency
+  const effectiveCurrency = lockedCurrency ?? currency
+
   async function load() {
     try {
-      const [tx, cats] = await Promise.all([listTransactions(), listCategories()])
+      const [tx, cats, ws] = await Promise.all([listTransactions(), listCategories(), listWallets()])
       setTransactions(tx)
       setCategories(cats)
+      setWallets(ws)
       // Default to the first category that MATCHES the current type (avoids the
       // contradictory "EXPENSE + Salary" default).
       const firstOfType = cats.find((c) => c.type === type)
@@ -61,6 +76,18 @@ export default function Transactions() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  function onTypeChange(next: TransactionType) {
+    setType(next)
+    if (next === 'TRANSFER') {
+      setCategoryId(transferCat ? String(transferCat.id) : '')
+    } else {
+      // Reset the category to one valid for the new type (e.g. never EXPENSE + Salary).
+      const firstOfType = categories.find((c) => c.type === next)
+      setCategoryId(firstOfType ? String(firstOfType.id) : '')
+      setToWalletId('')
+    }
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError('')
@@ -69,16 +96,44 @@ export default function Transactions() {
       setError('Enter an amount greater than 0.')
       return
     }
-    setSubmitting(true)
+
     try {
-      await createTransaction({
-        type,
-        amount: value,
-        currency,
-        categoryId: Number(categoryId),
-        description: description || undefined,
-        transactionDate: date,
-      })
+      if (isTransfer) {
+        if (!walletId || !toWalletId) {
+          setError('Choose both a source and a destination wallet.')
+          return
+        }
+        if (walletId === toWalletId) {
+          setError('Source and destination wallets must be different.')
+          return
+        }
+        if (!transferCat) {
+          setError('Transfer category is unavailable.')
+          return
+        }
+        setSubmitting(true)
+        await createTransaction({
+          type: 'TRANSFER',
+          amount: value,
+          currency: sourceWallet!.currency,
+          categoryId: transferCat.id,
+          description: description || undefined,
+          transactionDate: date,
+          walletId: Number(walletId),
+          toWalletId: Number(toWalletId),
+        })
+      } else {
+        setSubmitting(true)
+        await createTransaction({
+          type,
+          amount: value,
+          currency: effectiveCurrency,
+          categoryId: Number(categoryId),
+          description: description || undefined,
+          transactionDate: date,
+          walletId: sourceWallet ? sourceWallet.id : undefined,
+        })
+      }
       setAmount('')
       setDescription('')
       await load()
@@ -88,6 +143,11 @@ export default function Transactions() {
       setSubmitting(false)
     }
   }
+
+  // Destination options for a transfer: same currency as the source, excluding the source.
+  const destinationWallets = wallets.filter(
+    (w) => sourceWallet && w.currency === sourceWallet.currency && w.id !== sourceWallet.id,
+  )
 
   return (
     <div className="grid gap-6 md:grid-cols-3">
@@ -103,18 +163,12 @@ export default function Transactions() {
           <Field label="Type">
             <select
               value={type}
-              onChange={(e) => {
-                const next = e.target.value as TransactionType
-                setType(next)
-                // Reset the category to one valid for the new type, so the pair is
-                // never contradictory (e.g. EXPENSE + Salary).
-                const firstOfType = categories.find((c) => c.type === next)
-                setCategoryId(firstOfType ? String(firstOfType.id) : '')
-              }}
+              onChange={(e) => onTypeChange(e.target.value as TransactionType)}
               className={inputClass}
             >
               <option value="EXPENSE">Expense</option>
               <option value="INCOME">Income</option>
+              <option value="TRANSFER">Transfer</option>
             </select>
           </Field>
 
@@ -130,35 +184,95 @@ export default function Transactions() {
                 className={`${fieldBase} min-w-0 flex-1`}
               />
               <select
-                value={currency}
+                value={effectiveCurrency}
                 onChange={(e) => setCurrency(e.target.value)}
-                className={`${fieldBase} w-20 shrink-0`}
+                disabled={!!lockedCurrency}
+                className={`${fieldBase} w-20 shrink-0 disabled:opacity-60`}
                 aria-label="Currency"
+                title={lockedCurrency ? 'Currency is set by the selected wallet' : undefined}
               >
                 {CURRENCIES.map((c) => (
                   <option key={c} value={c}>
                     {c}
                   </option>
                 ))}
+                {lockedCurrency && !CURRENCIES.includes(lockedCurrency as 'VND' | 'USD') && (
+                  <option value={lockedCurrency}>{lockedCurrency}</option>
+                )}
               </select>
             </div>
           </Field>
 
-          <Field label="Category">
-            <select
-              value={categoryId}
-              onChange={(e) => setCategoryId(e.target.value)}
-              className={inputClass}
-            >
-              {categories
-                .filter((c) => c.type === type)
-                .map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-            </select>
-          </Field>
+          {isTransfer ? (
+            <>
+              <Field label="From wallet">
+                <select
+                  value={walletId}
+                  onChange={(e) => {
+                    setWalletId(e.target.value)
+                    setToWalletId('') // destination depends on source currency
+                  }}
+                  className={inputClass}
+                >
+                  <option value="">Select…</option>
+                  {wallets.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name} · {money(w.balance, w.currency)}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              <Field label="To wallet">
+                <select
+                  value={toWalletId}
+                  onChange={(e) => setToWalletId(e.target.value)}
+                  disabled={!sourceWallet}
+                  className={`${inputClass} disabled:opacity-60`}
+                >
+                  <option value="">Select…</option>
+                  {destinationWallets.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name} · {money(w.balance, w.currency)}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </>
+          ) : (
+            <>
+              <Field label="Category">
+                <select
+                  value={categoryId}
+                  onChange={(e) => setCategoryId(e.target.value)}
+                  className={inputClass}
+                >
+                  {categories
+                    .filter((c) => c.type === type)
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                </select>
+              </Field>
+
+              <Field label="Wallet">
+                <select
+                  value={walletId}
+                  onChange={(e) => setWalletId(e.target.value)}
+                  className={inputClass}
+                >
+                  <option value="">None</option>
+                  {wallets.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name} · {money(w.balance, w.currency)}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </>
+          )}
 
           <Field label="Description">
             <input
@@ -212,21 +326,26 @@ export default function Transactions() {
                 </tr>
               </thead>
               <tbody>
-                {transactions.map((t) => (
-                  <tr key={t.id} className="border-t border-neutral-800 transition hover:bg-neutral-800/40">
-                    <td className="px-4 py-2.5 text-neutral-500">{t.transactionDate}</td>
-                    <td className="px-4 py-2.5 text-neutral-200">{categoryName(categories, t.categoryId)}</td>
-                    <td className="px-4 py-2.5 text-neutral-500">{t.description ?? '—'}</td>
-                    <td
-                      className={`px-4 py-2.5 text-right font-semibold ${
-                        t.type === 'INCOME' ? 'text-emerald-400' : 'text-rose-400'
-                      }`}
-                    >
-                      {t.type === 'INCOME' ? '+' : '-'}
-                      {money(t.amount, t.currency)}
-                    </td>
-                  </tr>
-                ))}
+                {transactions.map((t) => {
+                  const xfer = t.type === 'TRANSFER'
+                  const color = xfer
+                    ? 'text-sky-400'
+                    : t.type === 'INCOME'
+                      ? 'text-emerald-400'
+                      : 'text-rose-400'
+                  const prefix = xfer ? '⇄ ' : t.type === 'INCOME' ? '+' : '-'
+                  return (
+                    <tr key={t.id} className="border-t border-neutral-800 transition hover:bg-neutral-800/40">
+                      <td className="px-4 py-2.5 text-neutral-500">{t.transactionDate}</td>
+                      <td className="px-4 py-2.5 text-neutral-200">{categoryName(categories, t.categoryId)}</td>
+                      <td className="px-4 py-2.5 text-neutral-500">{t.description ?? '—'}</td>
+                      <td className={`px-4 py-2.5 text-right font-semibold ${color}`}>
+                        {prefix}
+                        {money(t.amount, t.currency)}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>

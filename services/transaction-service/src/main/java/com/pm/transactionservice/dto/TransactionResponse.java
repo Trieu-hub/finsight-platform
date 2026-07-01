@@ -23,6 +23,7 @@ public class TransactionResponse {
     private String description;
     private LocalDate transactionDate;
     private Long walletId;
+    private Long toWalletId;
     private Map<String, Object> metadata;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

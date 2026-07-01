@@ -13,6 +13,8 @@ import type {
   SpendForecast,
   Transaction,
   TransactionType,
+  Wallet,
+  WalletKind,
 } from './types'
 
 // ---- Auth (public) ----
@@ -65,30 +67,47 @@ export async function createTransaction(body: {
   categoryId: number
   description?: string
   transactionDate: string
+  walletId?: number
+  toWalletId?: number
 }): Promise<Transaction> {
   const { data } = await api.post<ApiResponse<Transaction>>('/transactions', body)
   return data.data
 }
 
-// The gateway does not route /api/v1/categories (categories live inside
-// transaction-service but only /api/v1/transactions is proxied). Categories are
-// static seed data (V2__seed_categories.sql), so we use the known seed list.
-// Proper fix later: add a `/api/v1/categories` route to the gateway.
-const SEED_CATEGORIES: Category[] = [
-  { id: 1, name: 'Salary', type: 'INCOME' },
-  { id: 2, name: 'Investment', type: 'INCOME' },
-  { id: 3, name: 'Refund', type: 'INCOME' },
-  { id: 4, name: 'Food & Dining', type: 'EXPENSE' },
-  { id: 5, name: 'Transport', type: 'EXPENSE' },
-  { id: 6, name: 'Housing', type: 'EXPENSE' },
-  { id: 7, name: 'Utilities', type: 'EXPENSE' },
-  { id: 8, name: 'Entertainment', type: 'EXPENSE' },
-  { id: 9, name: 'Healthcare', type: 'EXPENSE' },
-  { id: 10, name: 'Other', type: 'EXPENSE' },
-]
-
+// Categories live in transaction-service and are now proxied by the gateway
+// (`/api/v1/categories` → transaction-service). They are global reference data
+// seeded via Flyway (V2__seed_categories.sql).
 export async function listCategories(): Promise<Category[]> {
-  return Promise.resolve(SEED_CATEGORIES)
+  const { data } = await api.get<ApiResponse<Category[]>>('/categories')
+  return data.data
+}
+
+// ---- Wallets (accounts with a running balance, maintained by transaction writes) ----
+export async function listWallets(): Promise<Wallet[]> {
+  const { data } = await api.get<ApiResponse<Wallet[]>>('/wallets')
+  return data.data
+}
+
+export async function createWallet(body: {
+  name: string
+  type: WalletKind
+  currency: string
+  initialBalance?: number
+}): Promise<Wallet> {
+  const { data } = await api.post<ApiResponse<Wallet>>('/wallets', body)
+  return data.data
+}
+
+export async function updateWallet(
+  id: number,
+  body: { name?: string; type?: WalletKind },
+): Promise<Wallet> {
+  const { data } = await api.put<ApiResponse<Wallet>>(`/wallets/${id}`, body)
+  return data.data
+}
+
+export async function deleteWallet(id: number): Promise<void> {
+  await api.delete(`/wallets/${id}`)
 }
 
 // ---- Budgets ----

@@ -36,6 +36,18 @@ public class GlobalExceptionHandler {
                 .body(new ErrorResponse(ex.getCode(), ex.getMessage()));
     }
 
+    @ExceptionHandler(WalletNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleWalletNotFound(WalletNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ErrorResponse("WALLET_NOT_FOUND", ex.getMessage()));
+    }
+
+    @ExceptionHandler(WalletNotEmptyException.class)
+    public ResponseEntity<ErrorResponse> handleWalletNotEmpty(WalletNotEmptyException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse("WALLET_NOT_EMPTY", ex.getMessage()));
+    }
+
     @ExceptionHandler(InvalidTransactionDataException.class)
     public ResponseEntity<ErrorResponse> handleInvalidData(InvalidTransactionDataException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)

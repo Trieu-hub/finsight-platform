@@ -9,8 +9,10 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.math.BigDecimal;
 import java.util.concurrent.atomic.AtomicLong;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -60,6 +62,32 @@ public abstract class AbstractMockMvcIntegrationTest extends AbstractMySqlIntegr
                 .andReturn().getResponse().getContentAsString();
 
         return objectMapper.readTree(response).path("data").path("id").asText();
+    }
+
+    /** Creates a wallet for the user via the API and returns its generated id. */
+    protected long createWallet(long userId, String name, String type,
+                                String currency, String initialBalance) throws Exception {
+        String body = """
+                {"name":"%s","type":"%s","currency":"%s","initialBalance":%s}
+                """.formatted(name, type, currency, initialBalance);
+
+        String response = mockMvc.perform(post("/api/v1/wallets")
+                        .header("Authorization", bearer(userId))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+
+        return objectMapper.readTree(response).path("data").path("id").asLong();
+    }
+
+    /** Reads a wallet's current balance via the API as a BigDecimal (exact, scale-independent). */
+    protected BigDecimal walletBalance(long userId, long walletId) throws Exception {
+        String response = mockMvc.perform(get("/api/v1/wallets/" + walletId)
+                        .header("Authorization", bearer(userId)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        return objectMapper.readTree(response).path("data").path("balance").decimalValue();
     }
 
     protected JsonNode asJson(String raw) throws Exception {

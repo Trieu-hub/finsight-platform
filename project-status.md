@@ -1,7 +1,7 @@
 # FinSight — Project Status
 
-_Last updated: 2026-06-28_
-_Repo: `D:\finsight` · Branch: `feat/web-frontend`_
+_Last updated: 2026-07-01_
+_Repo: `D:\finsight` · Branch: `main` (feat/web-frontend merged)_
 
 > **Looking for the two scorecards?** Jump to **[§9 CV / Portfolio readiness](#9-cv--portfolio-readiness-detailed-scorecard)**
 > and **[§10 Deploy-to-internet readiness](#10-deploy-to-internet-readiness-detailed-scorecard)**.
@@ -29,9 +29,19 @@ A single "% complete" mixes very different goals. Progress is tracked on three i
 
 | Axis | What it measures | Progress |
 |---|---|---|
-| **MVP backend** | Core finance CRUD + auth + dashboard working end-to-end | **~90%** |
+| **MVP backend** | Core finance CRUD + auth + dashboard working end-to-end | **100%** |
 | **Production-ready MVP** | The MVP, operable & secure for real deployment | **~72%** |
 | **Full FinSight vision** | The chartered Intelligence & Risk platform | **~74%** |
+
+> **MVP backend at 100% — what that means (honest).** All in-scope MVP capabilities are built and
+> tested: auth + RBAC, transactions (INCOME/EXPENSE/TRANSFER), a full **Wallet domain** with
+> atomically-maintained balances, categories (via the gateway), budgets with event-driven
+> utilization, the dashboard BFF, and in-service audit logging. Two things that look "missing" are
+> deliberate, not gaps: **negative wallet balances are allowed** (the balance model is fully
+> reversible on update/delete — a non-negative invariant would block legitimate edits like deleting
+> an already-spent income), and a **persisted audit *table*** is out of the v1 charter (in-service
+> structured audit logging is the requirement, and it exists). Deeper items (TransactionUpdated/
+> Deleted events to stop budget drift, richer categories UI) are enhancements beyond the MVP line.
 
 **Headline:** The MVP (finance tracker + budgets + dashboard) is built, and the platform now
 has a **real multi-topic event backbone** (3 topics, 3 producers, 4 idempotent consumers — every
@@ -54,6 +64,11 @@ analytics-service), plus an **ADMIN-only user-management console** with role-bas
 control — making FinSight a full-stack, clickable demo rather than an API-only backend.
 A **notification bell** in the header surfaces risk alerts (unread badge + dropdown, mark-read),
 giving the `RiskDetected` → notification-service pipeline a visible end-to-end UI.
+
+**Runtime evidence (new):** FinSight is **no longer an architecture-only project** — the
+end-to-end happy path has been exercised manually and captured. The intelligence layer is proven
+with **real runtime data**: Grafana shows `HIGH_AMOUNT_EXPENSE` = 1 and `RAPID_SPENDING` = 1,
+confirming **transactions → Kafka → risk-service → Grafana** works live. See §9.1.
 
 ---
 
@@ -88,7 +103,7 @@ Detailed trigger conditions, severities, persistence, and metrics for D–F are 
 
 | Core domain | Status | Notes |
 |---|---|---|
-| Personal Finance Management | ✅ ~85% | Transactions, categories, budgets |
+| Personal Finance Management | ✅ ~92% | Transactions (INCOME/EXPENSE/**TRANSFER**), categories, budgets, **wallets w/ balances** |
 | Dashboard & Analytics | ✅ ~80% | Dashboard BFF ✅; dedicated `analytics-service` ✅ (rollup read model: overview / categories / forecast + AI summary) |
 | Behavioral Insights | ✅ MVP | Rule-based: SPENDING_INCREASE, CATEGORY_SURGE, BUDGET_RISK, LOW_SAVINGS_RATE (E.1–E.3) |
 | Anomaly Detection | ✅ MVP | Rule-based: UNUSUAL_TRANSACTION_AMOUNT (F.1) |
@@ -105,7 +120,7 @@ incremental, not greenfield.
 | API Gateway | ✅ exists | Proxy + edge JWT validation; **no rate limiting** → ~80% |
 | Auth Service | ✅ exists | JWT, refresh, lockout, Redis-backed; **admin RBAC** console API (role/status/delete, ROLE_ADMIN-only) → ~90% |
 | User Service | ✅ exists | Profile data → ~85% |
-| Transaction Service | ✅ exists | INCOME/EXPENSE + categories/summaries; **no TRANSFER** → ~75% |
+| Transaction Service | ✅ exists | INCOME/EXPENSE/**TRANSFER** + **Wallet domain** (accounts, stored balances kept atomic, CRUD) + categories/summaries → ~90% |
 | Budget Service | ✅ exists | Definitions + event-driven utilization → ~85% |
 | **Analytics Service** | ✅ exists | `analytics-service`: CQRS rollup read model from `TransactionCreated`; overview / categories / forecast APIs + optional AI monthly summary (OpenAI-compatible, template fallback) → ~75% |
 | **Risk Intelligence Service** | ✅ exists | `risk-service`: Risk + Insights + Anomaly (rule-based MVP) → ~70% |
@@ -203,8 +218,16 @@ Full diagrams: [docs/architecture.md](docs/architecture.md).
    (explicitly **not** part of this documentation pass; e.g. Phase F.2 is **not** started).
 
 **Product features:**
-5. **Transaction `TRANSFER`** type + wallet-to-wallet semantics (`walletId` is scaffolded).
-6. **In-service audit logging** — only JPA timestamp auditing exists today (see §5.1).
+5. ✅ **Transaction `TRANSFER`** + **full Wallet domain** — done. Wallets are first-class accounts
+   (`wallets` table, CRUD API `/api/v1/wallets`, per-user, one currency each) with a stored
+   `balance` maintained **atomically in the same DB transaction** as every transaction write
+   (INCOME credits, EXPENSE debits, TRANSFER moves source→destination; update reverses-then-reapplies,
+   delete reverses). Currency + ownership are validated on each write; a non-empty wallet cannot be
+   deleted. TRANSFER uses a distinct source/destination `wallet_id`/`to_wallet_id`; downstream
+   consumers already ignore TRANSFER by design.
+6. ✅ **In-service audit logging** — done: a dedicated `AUDIT` structured logger records mutating
+   actions (transaction/budget create/update/delete, admin role/status/delete). Persisted audit
+   *table* remains out of scope (see §5.1).
 
 **Production-readiness (axis 2):**
 7. Merge the feature branch and get a **green CI run** (JDK 21).
@@ -219,9 +242,10 @@ Full diagrams: [docs/architecture.md](docs/architecture.md).
 ### 5.1 Scope clarifications (unchanged)
 
 - **Audit:** the charter keeps audit as *in-service logging*, with a separate Audit Service only
-  "if time allows." A missing Audit *Service* is not a gap; but the real requirement — action/
-  security audit logging inside each service — is **not implemented** (only JPA timestamp
-  auditing). Item is *open*.
+  "if time allows." A missing Audit *Service* is not a gap; the real requirement — action/
+  security audit logging inside each service — is now **implemented** as a dedicated `AUDIT`
+  structured logger on mutating actions (transaction/budget/admin). A *persisted* audit table is
+  still out of scope. Item is *closed for MVP*.
 - **Notification — charter conflict:** listed in the chartered architecture (1 of 8 services) and
   not in the v1 out-of-scope list, so by the written charter it is **required**. `RiskDetected`
   is already produced; building the consumer/delivery side resolves this.
@@ -295,27 +319,40 @@ deployment target are absent.
 and if not 100%, exactly what closes the gap. This is *separate* from "is it deployed" (§10): a
 project can be fully CV-worthy without ever being publicly hosted.
 
-**Overall CV readiness: ~85% — already a strong portfolio centerpiece.** You can put it on a CV
-**today**. The remaining 15% is polish that makes it *interview-proof* and visually convincing
-(a live demo or screenshots, a green CI badge, a 60-second walkthrough).
+**Overall CV readiness: ~92% — a strong, demonstrable portfolio centerpiece.** You can put it on
+a CV **today**. The jump from ~85% reflects the completed **evidence package** (§9.1): the four
+Grafana screenshots now exist and the end-to-end flow is verified with real runtime data, closing
+the biggest gap (demonstrability). The remaining ~8% is a hosted live-demo URL and a recorded
+walkthrough — nice-to-have, not blocking.
+
+### 9.1 Evidence package (completed)
+
+Manually verified and captured for portfolio use:
+- **4 Grafana dashboard screenshots** in `docs/images/` (`grafana-platform-overview.png`,
+  `grafana-event-pipeline.png`, `grafana-risk.png`, `grafana-consumer-lag.png`).
+- **End-to-end demo flow verified** (not paper-only): register → login → create budget →
+  5 expense transactions → Kafka propagation → dashboard aggregation → Grafana visualization.
+- **Intelligence layer proven with real runtime data:** Grafana *FinSight Risk* shows
+  `HIGH_AMOUNT_EXPENSE` = 1 and `RAPID_SPENDING` = 1 — concrete proof that
+  transactions → Kafka → risk-service → Grafana operates end-to-end.
 
 | # | What a reviewer looks for | Status | Evidence / Gap |
 |---|---|---|---|
 | 1 | **Real architecture, not a toy** | ✅ ~95% | 7 Spring Boot 4 / Java 21 services, DB-per-service, BFF, Kafka backbone (3 topics, 2 producers, 2 idempotent consumers), enforced service boundaries. This is the headline strength. |
 | 2 | **Non-trivial domain logic** | ✅ ~85% | Rule-based risk / insights / anomaly layer (Phases D–F), event-sourced read-models, idempotency inbox. Demonstrates more than CRUD. |
 | 3 | **Testing discipline** | ✅ ~85% | Unit + Testcontainers integration tests per service (real MySQL + Kafka); consumer-lag metric assertions. Shows you test the hard parts. |
-| 4 | **CI** | ✅ ~80% | GitHub Actions matrix builds+tests all 9 services on every PR/push (JDK 21). Gap: branch not merged to `main` with a visible **green run + README badge** (see §10 #2). |
-| 5 | **Documentation** | ✅ ~95% | README, architecture.md, event-catalog.md, intelligence.md, runbook.md, ADR-0004, this status doc. Far above typical portfolio level. |
+| 4 | **CI** | ✅ ~90% | GitHub Actions matrix builds+tests all 9 services on every PR/push (JDK 21); **merged to `main`** with a README **CI badge**. |
+| 5 | **Documentation** | ✅ ~95% | README, architecture.md, event-catalog.md, intelligence.md, runbook.md, deploy.md, ADR-0004, this status doc. Far above typical portfolio level. |
 | 6 | **Security awareness** | ✅ ~80% | JWT algorithm pinning + iss/aud, account lockout, least-privilege DB users, secret externalization, rotation runbook. Honest about the shared-HMAC weakness — *good* interview material. |
 | 7 | **Observability** | ✅ ~85% | Prometheus scrape of all 9 services, 4 Grafana dashboards (incl. consumer lag), ECS JSON logging + correlation IDs. |
-| 8 | **Demonstrability** | ⚠️ ~80% | A working **React web client** (auth, transactions, budgets, dashboard, admin RBAC console, notification bell) makes the platform clickable, not API-only; 4 Grafana dashboard screenshots committed to `docs/images/` and embedded in the README. Remaining gap: no live demo URL and no short demo video/GIF. |
-| 9 | **Repo hygiene & narrative** | ✅ ~80% | Clean commit history, conventional commits, ADRs. Gap: several stale top-level `*_REVIEW_REPORT.md` files clutter the root and a stale "six/four services" comment lingers — minor cleanup. |
-| 10 | **Honest framing** | ✅ 100% | Status docs already state plainly: portfolio project, rule-based (not ML), not production-deployed, gRPC/Notification absent. This honesty is an asset in interviews. |
+| 8 | **Demonstrability** | ✅ ~85% | A working **React web client** (auth, transactions incl. wallet transfers, budgets, wallets, dashboard, analytics, admin RBAC console, notification bell) + 4 Grafana screenshots in `docs/images/`. Remaining: a hosted live-demo URL and a recorded walkthrough. |
+| 9 | **Repo hygiene & narrative** | ✅ ~80% | Clean commit history, conventional commits, ADRs. Gap: several stale top-level `*_REVIEW_REPORT.md` files clutter the root — minor cleanup. |
+| 10 | **Honest framing** | ✅ 100% | Status docs already state plainly: portfolio project, rule-based (not ML), not production-deployed, gRPC absent. This honesty is an asset in interviews. |
 
-### To push CV readiness from ~85% → ~95% (highest leverage first)
-1. **Add visual proof** (partly done — closes most of #8): ✅ 4 Grafana screenshots committed to
-   `docs/images/` and embedded in the README. ⬜ Still record a ~60s GIF/video of the end-to-end
-   flow (register → login → create transaction → see budget utilization update → see a risk alert).
+### To push CV readiness from ~92% → ~95% (highest leverage first)
+1. ✅ **Add visual proof** (closed #8): 4 Grafana screenshots captured in `docs/images/` and the
+   end-to-end flow verified with real runtime data (§9.1). Optional remaining polish: a recorded
+   ~60s GIF/video of the flow.
 2. **Merge to `main` + add a CI status badge** to the README (closes #4) — a green badge is the
    single most credible "it really builds and tests" signal on a CV repo.
 3. *(Optional, high impact)* a **live demo URL** — but that is the §10 deploy track; a hosted
@@ -337,17 +374,22 @@ project can be fully CV-worthy without ever being publicly hosted.
 **Goal of this section:** what stands between the current repo and a URL a stranger can open. This
 is the harder, more expensive track than §9.
 
-**Overall deploy readiness: ~35% — buildable and containerized, but not yet internet-safe or
-hosted.** Every service has a Dockerfile and the whole stack runs under Docker Compose locally;
-what is missing is a *host*, *TLS*, *real secret management*, and hardening the dev-only security
-posture before anything faces the public internet.
+**Overall deploy readiness: ~55% — the Path A kit is now in-repo; what's left is a host + DNS.**
+Every service has a Dockerfile and the whole stack runs under Docker Compose. The production
+overlay (`docker-compose.prod.yml`), the Caddy TLS reverse proxy (`docker/caddy/Caddyfile`), the
+SPA image (`web/Dockerfile`), and a step-by-step runbook ([docs/deploy.md](docs/deploy.md)) are
+committed and validated (compose config + SPA image build). What remains is external and cannot
+live in the repo: a **VPS**, a **domain/DNS A record**, and filling the prod secrets in `.env`.
 
 ### What already exists (the foundation)
 
 | Capability | Status | Evidence |
 |---|---|---|
-| Per-service container images | ✅ | 7 `services/*/Dockerfile` (multi-stage `mvn` builds) |
-| Full local orchestration | ✅ | root `docker-compose.yml` — 12 services incl. MySQL, Redis, Kafka, Prometheus, Grafana |
+| Per-service container images | ✅ | 9 `services/*/Dockerfile` + `web/Dockerfile` (SPA → nginx), multi-stage builds |
+| Full local orchestration | ✅ | root `docker-compose.yml` — MySQL, Redis, Kafka, 9 services, Prometheus, Grafana |
+| **Production overlay** | ✅ | `docker-compose.prod.yml`: only Caddy publishes 80/443, all else `ports: !override []`, Grafana hardened |
+| **TLS reverse proxy** | ✅ | `docker/caddy/Caddyfile` — auto-HTTPS (Let's Encrypt), `/api/*`→gateway, else→SPA |
+| **Deploy runbook** | ✅ | [docs/deploy.md](docs/deploy.md) — DNS, firewall, `.env`, launch, verification, backup |
 | Readiness-gated startup | ✅ | healthchecks + `depends_on: condition: service_healthy` |
 | Secrets externalized (not in compose) | ✅ | gitignored `.env`, interpolated; compose refuses to start if unset |
 | Least-privilege DB users | ✅ | one single-DB user per service at MySQL init |
@@ -359,13 +401,13 @@ posture before anything faces the public internet.
 | # | Gap | Status | Effort | Why it blocks |
 |---|---|---|---|---|
 | 1 | **No host / deploy target** | ❌ 0% | M | Nothing runs anywhere but localhost. Need a VPS, or a managed container platform. |
-| 2 | **Branch not merged + no published images** | ⚠️ | S | CI builds & tests but doesn't push images to a registry (GHCR/Docker Hub); deploy needs pullable artifacts. Also merge `feature/ci-github-actions` → `main` for a clean release line. |
-| 3 | **No TLS / HTTPS** | ❌ 0% | S–M | Browsers and JWT-over-the-wire need HTTPS. Need a reverse proxy with auto-certs (Caddy/Traefik + Let's Encrypt) or a platform that terminates TLS. |
-| 4 | **No managed secrets** | ⚠️ | S | `.env` on a server is acceptable for a hobby demo but not real; a public deploy wants a secrets store or at least locked-down env injection. |
-| 5 | **Dev-only security posture** | ⚠️ | M | Grafana allows **anonymous admin**; `/actuator/prometheus` is unauthenticated; **no edge rate limiting**; shared symmetric **HMAC** secret (every service can mint tokens). All fine on localhost, unsafe on the open internet. |
-| 6 | **Single shared MySQL, no backup** | ⚠️ | M | One instance = shared failure domain; no backup/restore. For a demo, snapshot the volume; for real, a managed DB. |
-| 7 | **No domain / DNS** | ❌ 0% | S | Need a domain (or a platform-provided subdomain) to point at the host. |
-| 8 | **Resource sizing** | ⚠️ | S | 7 JVMs + Kafka + MySQL + Redis + Prometheus + Grafana is heavy — realistically needs a host with **≥ 4 GB (ideally 8 GB) RAM**. Don't try a 1 GB free tier. |
+| 2 | **No published images** | ⚠️ | S | Branch is merged to `main`. Prod builds images on the VPS from source (works today); pushing to a registry (GHCR) is an optional enhancement for faster/reproducible boots. |
+| 3 | **No TLS / HTTPS** | ✅ config shipped | S | `docker/caddy/Caddyfile` + `docker-compose.prod.yml` do auto-HTTPS via Caddy/Let's Encrypt. Just needs a real domain + host to issue the cert. |
+| 4 | **No managed secrets** | ⚠️ | S | `.env` on a server (chmod 600) is fine for a hobby demo; a real deploy wants a secrets store. Prod vars are templated in `.env.example`. |
+| 5 | **Dev-only security posture** | ✅ mostly closed | S | Prod overlay disables Grafana anon-admin (login + strong password) and un-publishes every port but Caddy's, so `/actuator/**` and internal services are no longer internet-reachable. **Still open:** edge rate limiting; shared **HMAC** secret (RS256 is future work). |
+| 6 | **Single shared MySQL, no backup** | ⚠️ | M | One instance = shared failure domain. Runbook includes a nightly `mysqldump`; managed/replicated DB is future work. |
+| 7 | **No domain / DNS** | ❌ 0% | S | External: need a domain (or platform subdomain) with an A record to the host. |
+| 8 | **Resource sizing** | ⚠️ | S | 9 JVMs + Kafka + MySQL + Redis + Prometheus + Grafana is heavy — realistically needs a host with **≥ 4 GB (ideally 8 GB) RAM**. Don't try a 1 GB free tier. |
 
 Legend: effort S = hours, M = a day or two, L = more.
 
@@ -409,29 +451,32 @@ Architecture · Domain logic · Testing · Observability. (See §1–§4.)
 
 ### Phase 2 — Make it presentable (NOW · highest ROI · ~1 day)
 Order matters: **merge first so the badge is meaningful.**
-1. ⬜ **Merge `feature/ci-github-actions` → `main`** — establish a clean release line.
-2. ⬜ **CI status badge** in the README (points at `main`; only credible once #1 is done).
+1. ✅ **Merge `feature/ci-github-actions` → `main`** — done; `main` carries consumer-lag
+   observability, dashboard fixes, runbook + earlier project-status updates.
+2. ✅ **CI status badge** in the README — present, pointing at `main`.
 3. ✅ **Screenshot package** → 4 Grafana screenshots committed to `docs/images/` and embedded in
    the README (Platform Overview, Event Pipeline, Risk, Consumer Lag).
 4. ⬜ **Demo video / GIF** (~60s): register → login → create transaction → budget utilization
    updates → risk alert appears. (#3 and #4 can run in parallel with #1–#2.)
 
 ### Phase 3 — Put it on the internet (Path A · ~1–2 days)
-**Includes the security hardening that the original plan was missing — non-negotiable before any
-public exposure.**
-1. ⬜ **Publish images** — add a CI job that builds & pushes to GHCR (so the VPS can pull).
-2. ⬜ **VPS** — provision a host with **≥ 4 GB (ideally 8 GB) RAM**; install Docker + Compose;
-   firewall open only on 80/443.
-3. ⬜ **Domain** — point a domain/subdomain at the host.
-4. ⬜ **HTTPS** — reverse proxy (Caddy/Traefik) with Let's Encrypt auto-certs → `api-gateway:8080`.
-5. ⬜ **Security hardening (BLOCKER before public exposure):**
-   - Disable Grafana anonymous admin; set a strong admin password.
-   - Expose **only** the gateway (and optionally a password-protected Grafana); keep
-     MySQL / Kafka / Redis / risk-service on the internal network only.
-   - Restrict `/actuator/**` to localhost / internal.
-   - Basic rate limiting at the reverse proxy.
-   - Real `.env` on the box, `chmod 600`.
-6. ⬜ **Backup** — nightly `mysqldump` or volume snapshot.
+**The deploy kit is now in-repo and validated** (`docker-compose.prod.yml`, `docker/caddy/Caddyfile`,
+`web/Dockerfile`, [docs/deploy.md](docs/deploy.md)). The remaining steps are external (host/DNS) or
+one command. Full walkthrough: [docs/deploy.md](docs/deploy.md).
+1. ⬜ **Publish images** *(optional)* — the VPS builds from source by default; a GHCR push job is a
+   nice-to-have for faster boots, not required.
+2. ⬜ **VPS** *(external)* — provision a host with **≥ 4 GB (ideally 8 GB) RAM**; install Docker +
+   Compose; firewall open only on 80/443.
+3. ⬜ **Domain** *(external)* — point a domain/subdomain A record at the host.
+4. ✅ **HTTPS** — Caddy auto-certs (Let's Encrypt) shipped in `docker/caddy/Caddyfile`; issues on
+   first request once the domain resolves.
+5. ✅ **Security hardening** — codified in `docker-compose.prod.yml`: Grafana anon-admin off (login +
+   strong password), **only Caddy** published (`ports: !override []` un-publishes every other
+   service, so `/actuator/**` + MySQL/Kafka/Redis/risk are internal-only). Still to add on the box:
+   basic rate limiting at the proxy, real `.env` `chmod 600`. (Edge rate limiting is a small Caddy
+   addition; RS256 stays future work.)
+6. ✅ **Backup** — nightly `mysqldump` command documented in the runbook.
+7. ⬜ **Launch** *(one command)* — `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build`.
 
 > ⛳ **Stop line for the portfolio goal.** After Phase 3 you have maximum CV return for minimum
 > operational cost. Everything below is optional depth, not required for CV or demo.

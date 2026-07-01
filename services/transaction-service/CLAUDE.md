@@ -98,3 +98,21 @@ Layering is strict and one-directional: `controller → service → repository`.
   `UpdateTransactionRequest` are applied.
 - `categoryId` is validated against the `categories` table (seeded by
   `V2__seed_categories.sql`) before a transaction is written.
+
+### Transaction types & wallets
+- `TransactionType` is `INCOME` / `EXPENSE` / `TRANSFER`. TRANSFER is a wallet-to-wallet
+  move (neither income nor expense); it requires distinct `walletId` (source) and
+  `toWalletId` (destination), and uses the seeded system `Transfer` category (type
+  `TRANSFER`, id 11 from `V5`). Downstream consumers (budget/risk/analytics) already
+  ignore non-INCOME/EXPENSE types by design — do not "fix" that.
+- **Wallets** (`wallets` table, `V6`) are first-class accounts owned by this service:
+  `WalletController` / `WalletService` expose CRUD at `/api/v1/wallets`, user-scoped, one
+  currency each. `balance` is a **stored** field maintained by transaction writes, never
+  set through the wallet API.
+- **Balance maintenance is atomic**: `WalletService.applyTransactionEffect(...)` runs inside
+  the transaction service's `@Transactional` via `WalletRepository.adjustBalance` (a single
+  SQL increment). create applies (+1), delete reverses (−1), update reverses the old effect
+  then applies the new one. A transaction's `currency` must equal the wallet's currency
+  (no FX); a wallet referenced by a transaction must be owned by the same user. A wallet
+  with a non-zero balance cannot be deleted (`WALLET_NOT_EMPTY`). `wallet_id`/`to_wallet_id`
+  remain **opaque** at the DB level (no FK) — integrity is enforced in the service.

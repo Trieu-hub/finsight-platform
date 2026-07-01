@@ -1,5 +1,6 @@
 package com.pm.authservice.service;
 
+import com.pm.authservice.audit.AuditLog;
 import com.pm.authservice.dto.admin.AdminUserResponse;
 import com.pm.authservice.entity.Role;
 import com.pm.authservice.entity.User;
@@ -27,13 +28,16 @@ public class AdminService {
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final RefreshTokenService refreshTokenService;
+    private final AuditLog auditLog;
 
     public AdminService(UserRepository userRepository,
                         RoleRepository roleRepository,
-                        RefreshTokenService refreshTokenService) {
+                        RefreshTokenService refreshTokenService,
+                        AuditLog auditLog) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.refreshTokenService = refreshTokenService;
+        this.auditLog = auditLog;
     }
 
     public List<AdminUserResponse> listUsers() {
@@ -53,6 +57,7 @@ public class AdminService {
 
         // Force the user to re-authenticate so their next JWT carries the new role.
         refreshTokenService.revokeByUser(id);
+        auditLog.record("UPDATE_ROLE", "user", id, callerEmail, target.name());
         return toResponse(user);
     }
 
@@ -66,6 +71,7 @@ public class AdminService {
         if (!enabled) {
             refreshTokenService.revokeByUser(id); // kill the disabled user's active session
         }
+        auditLog.record("SET_ENABLED", "user", id, callerEmail, enabled);
         return toResponse(user);
     }
 
@@ -76,6 +82,7 @@ public class AdminService {
 
         refreshTokenService.revokeByUser(id);
         userRepository.delete(user);
+        auditLog.record("DELETE", "user", id, callerEmail, null);
     }
 
     // --- helpers ---------------------------------------------------------------
