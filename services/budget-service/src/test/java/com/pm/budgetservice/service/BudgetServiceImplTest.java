@@ -1,5 +1,6 @@
 package com.pm.budgetservice.service;
 
+import com.pm.budgetservice.audit.AuditLog;
 import com.pm.budgetservice.dto.BudgetResponse;
 import com.pm.budgetservice.dto.CreateBudgetRequest;
 import com.pm.budgetservice.dto.UpdateBudgetRequest;
@@ -50,6 +51,9 @@ class BudgetServiceImplTest {
 
     @Mock
     private ApplicationEventPublisher eventPublisher;
+
+    @Mock
+    private AuditLog auditLog;
 
     @InjectMocks
     private BudgetServiceImpl budgetService;
