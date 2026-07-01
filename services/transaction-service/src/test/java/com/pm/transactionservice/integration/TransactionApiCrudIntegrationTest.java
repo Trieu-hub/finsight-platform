@@ -3,6 +3,9 @@ package com.pm.transactionservice.integration;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 
+import java.math.BigDecimal;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -77,13 +80,16 @@ class TransactionApiCrudIntegrationTest extends AbstractMockMvcIntegrationTest {
     }
 
     @Test
-    void createsTransferBetweenTwoWallets() throws Exception {
+    void createsTransferAndMovesTheBalanceBetweenWallets() throws Exception {
         long userId = uniqueUserId();
+        long from = createWallet(userId, "Checking", "BANK", "USD", "1000.00");
+        long to = createWallet(userId, "Savings", "SAVINGS", "USD", "0.00");
+
         // categoryId 11 is the seeded system "Transfer" category (type TRANSFER).
         String body = """
                 {"type":"TRANSFER","amount":250.00,"currency":"USD","categoryId":11,
-                 "transactionDate":"2026-06-10","walletId":1,"toWalletId":2}
-                """;
+                 "transactionDate":"2026-06-10","walletId":%d,"toWalletId":%d}
+                """.formatted(from, to);
 
         mockMvc.perform(post("/api/v1/transactions")
                         .header("Authorization", bearer(userId))
@@ -91,17 +97,22 @@ class TransactionApiCrudIntegrationTest extends AbstractMockMvcIntegrationTest {
                         .content(body))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.type").value("TRANSFER"))
-                .andExpect(jsonPath("$.data.walletId").value(1))
-                .andExpect(jsonPath("$.data.toWalletId").value(2));
+                .andExpect(jsonPath("$.data.walletId").value((int) from))
+                .andExpect(jsonPath("$.data.toWalletId").value((int) to));
+
+        // The transfer debited the source and credited the destination.
+        assertEquals(0, walletBalance(userId, from).compareTo(new BigDecimal("750.00")));
+        assertEquals(0, walletBalance(userId, to).compareTo(new BigDecimal("250.00")));
     }
 
     @Test
     void rejectsTransferMissingDestinationWallet() throws Exception {
         long userId = uniqueUserId();
+        long from = createWallet(userId, "Checking", "BANK", "USD", "1000.00");
         String body = """
                 {"type":"TRANSFER","amount":250.00,"currency":"USD","categoryId":11,
-                 "transactionDate":"2026-06-10","walletId":1}
-                """;
+                 "transactionDate":"2026-06-10","walletId":%d}
+                """.formatted(from);
         mockMvc.perform(post("/api/v1/transactions")
                         .header("Authorization", bearer(userId))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -113,16 +124,36 @@ class TransactionApiCrudIntegrationTest extends AbstractMockMvcIntegrationTest {
     @Test
     void rejectsTransferToSameWallet() throws Exception {
         long userId = uniqueUserId();
+        long wallet = createWallet(userId, "Checking", "BANK", "USD", "1000.00");
         String body = """
                 {"type":"TRANSFER","amount":250.00,"currency":"USD","categoryId":11,
-                 "transactionDate":"2026-06-10","walletId":1,"toWalletId":1}
-                """;
+                 "transactionDate":"2026-06-10","walletId":%d,"toWalletId":%d}
+                """.formatted(wallet, wallet);
         mockMvc.perform(post("/api/v1/transactions")
                         .header("Authorization", bearer(userId))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
+    }
+
+    @Test
+    void rejectsTransactionReferencingAnotherUsersWallet() throws Exception {
+        long owner = uniqueUserId();
+        long other = uniqueUserId();
+        long ownerWallet = createWallet(owner, "Cash", "CASH", "USD", "100.00");
+
+        // `other` cannot spend from a wallet they do not own.
+        String body = """
+                {"type":"EXPENSE","amount":10.00,"currency":"USD","categoryId":4,
+                 "transactionDate":"2026-06-10","walletId":%d}
+                """.formatted(ownerWallet);
+        mockMvc.perform(post("/api/v1/transactions")
+                        .header("Authorization", bearer(other))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("WALLET_NOT_FOUND"));
     }
 
     @Test

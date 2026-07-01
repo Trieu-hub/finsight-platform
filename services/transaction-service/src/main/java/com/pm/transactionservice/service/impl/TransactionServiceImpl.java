@@ -16,6 +16,7 @@ import com.pm.transactionservice.repository.CategoryRepository;
 import com.pm.transactionservice.repository.TransactionRepository;
 import com.pm.transactionservice.repository.TransactionSpecifications;
 import com.pm.transactionservice.service.TransactionService;
+import com.pm.transactionservice.service.WalletService;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -35,15 +36,18 @@ public class TransactionServiceImpl implements TransactionService {
     private final CategoryRepository categoryRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final AuditLog auditLog;
+    private final WalletService walletService;
 
     public TransactionServiceImpl(TransactionRepository transactionRepository,
                                   CategoryRepository categoryRepository,
                                   ApplicationEventPublisher eventPublisher,
-                                  AuditLog auditLog) {
+                                  AuditLog auditLog,
+                                  WalletService walletService) {
         this.transactionRepository = transactionRepository;
         this.categoryRepository = categoryRepository;
         this.eventPublisher = eventPublisher;
         this.auditLog = auditLog;
+        this.walletService = walletService;
     }
 
     @Override
@@ -52,6 +56,9 @@ public class TransactionServiceImpl implements TransactionService {
         validateAmountPositive(request.getAmount());
         validateCategoryForType(request.getCategoryId(), request.getType());
         validateTransferWallets(request.getType(), request.getWalletId(), request.getToWalletId());
+        // Wallet(s) referenced must exist, belong to the user and hold this currency.
+        walletService.validateForTransaction(userId, request.getType(), request.getCurrency(),
+                request.getWalletId(), request.getToWalletId());
 
         boolean isTransfer = request.getType() == TransactionType.TRANSFER;
         Transaction transaction = Transaction.builder()
@@ -83,6 +90,10 @@ public class TransactionServiceImpl implements TransactionService {
                 saved.getCategoryId(),
                 saved.getTransactionDate(),
                 saved.getWalletId()));
+
+        // Credit/debit the affected wallet(s) atomically, in this same DB transaction.
+        walletService.applyTransactionEffect(userId, saved.getType(), saved.getAmount(),
+                saved.getWalletId(), saved.getToWalletId(), +1);
 
         auditLog.record("CREATE", "transaction", saved.getId(), userId);
         return toResponse(saved);
@@ -120,6 +131,12 @@ public class TransactionServiceImpl implements TransactionService {
         Transaction transaction = transactionRepository
                 .findByIdAndUserIdAndIsDeletedFalse(id, userId)
                 .orElseThrow(() -> new TransactionNotFoundException("Transaction not found"));
+
+        // Snapshot the pre-update wallet effect so it can be reversed before the new one is applied.
+        TransactionType oldType = transaction.getType();
+        BigDecimal oldAmount = transaction.getAmount();
+        Long oldWalletId = transaction.getWalletId();
+        Long oldToWalletId = transaction.getToWalletId();
 
         if (request.getType() != null) {
             transaction.setType(request.getType());
@@ -166,7 +183,17 @@ public class TransactionServiceImpl implements TransactionService {
             transaction.setToWalletId(null);
         }
 
+        // Validate the resulting wallet state, then move the balances: undo the old effect and
+        // apply the new one (both atomic, same DB transaction) so a net change is reflected once.
+        walletService.validateForTransaction(userId, transaction.getType(), transaction.getCurrency(),
+                transaction.getWalletId(), transaction.getToWalletId());
+
         Transaction saved = transactionRepository.save(transaction);
+
+        walletService.applyTransactionEffect(userId, oldType, oldAmount, oldWalletId, oldToWalletId, -1);
+        walletService.applyTransactionEffect(userId, saved.getType(), saved.getAmount(),
+                saved.getWalletId(), saved.getToWalletId(), +1);
+
         auditLog.record("UPDATE", "transaction", saved.getId(), userId);
         return toResponse(saved);
     }
@@ -181,6 +208,11 @@ public class TransactionServiceImpl implements TransactionService {
         // Soft delete.
         transaction.setDeleted(true);
         transactionRepository.save(transaction);
+
+        // Undo this transaction's effect on wallet balance(s).
+        walletService.applyTransactionEffect(userId, transaction.getType(), transaction.getAmount(),
+                transaction.getWalletId(), transaction.getToWalletId(), -1);
+
         auditLog.record("DELETE", "transaction", id, userId);
     }
 

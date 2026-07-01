@@ -64,6 +64,20 @@ export interface Budget {
   currency: string
 }
 
+// ---- Wallets (transaction-service: accounts holding a running balance) ----
+export type WalletKind = 'CASH' | 'BANK' | 'CARD' | 'SAVINGS' | 'OTHER'
+
+export interface Wallet {
+  id: number
+  userId: number
+  name: string
+  type: WalletKind
+  currency: string
+  balance: number
+  createdAt: string
+  updatedAt: string
+}
+
 // In-app notification materialized by notification-service from a RiskDetected event.
 // Severity mirrors the upstream risk severity (HIGH/MEDIUM/LOW).
 export type NotificationSeverity = 'HIGH' | 'MEDIUM' | 'LOW'

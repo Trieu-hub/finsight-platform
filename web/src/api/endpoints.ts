@@ -13,6 +13,8 @@ import type {
   SpendForecast,
   Transaction,
   TransactionType,
+  Wallet,
+  WalletKind,
 } from './types'
 
 // ---- Auth (public) ----
@@ -78,6 +80,34 @@ export async function createTransaction(body: {
 export async function listCategories(): Promise<Category[]> {
   const { data } = await api.get<ApiResponse<Category[]>>('/categories')
   return data.data
+}
+
+// ---- Wallets (accounts with a running balance, maintained by transaction writes) ----
+export async function listWallets(): Promise<Wallet[]> {
+  const { data } = await api.get<ApiResponse<Wallet[]>>('/wallets')
+  return data.data
+}
+
+export async function createWallet(body: {
+  name: string
+  type: WalletKind
+  currency: string
+  initialBalance?: number
+}): Promise<Wallet> {
+  const { data } = await api.post<ApiResponse<Wallet>>('/wallets', body)
+  return data.data
+}
+
+export async function updateWallet(
+  id: number,
+  body: { name?: string; type?: WalletKind },
+): Promise<Wallet> {
+  const { data } = await api.put<ApiResponse<Wallet>>(`/wallets/${id}`, body)
+  return data.data
+}
+
+export async function deleteWallet(id: number): Promise<void> {
+  await api.delete(`/wallets/${id}`)
 }
 
 // ---- Budgets ----

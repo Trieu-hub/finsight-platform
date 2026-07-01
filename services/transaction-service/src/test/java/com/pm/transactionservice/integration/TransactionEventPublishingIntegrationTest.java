@@ -62,6 +62,7 @@ class TransactionEventPublishingIntegrationTest extends AbstractMockMvcIntegrati
     @Test
     void publishesTransactionCreatedEventAfterCommit() throws Exception {
         long userId = uniqueUserId();
+        long wallet = createWallet(userId, "Cash", "CASH", "USD", "100.00");
 
         try (Consumer<String, String> consumer = newConsumer()) {
             consumer.subscribe(List.of(TOPIC));
@@ -70,9 +71,9 @@ class TransactionEventPublishingIntegrationTest extends AbstractMockMvcIntegrati
 
             String body = """
                     {"type":"EXPENSE","amount":42.50,"currency":"USD","categoryId":4,
-                     "description":"Lunch","transactionDate":"2026-06-01","walletId":7,
+                     "description":"Lunch","transactionDate":"2026-06-01","walletId":%d,
                      "metadata":{"merchant":"Cafe"}}
-                    """;
+                    """.formatted(wallet);
 
             String response = mockMvc.perform(post("/api/v1/transactions")
                             .header("Authorization", bearer(userId))
@@ -100,7 +101,7 @@ class TransactionEventPublishingIntegrationTest extends AbstractMockMvcIntegrati
             assertThat(event.path("currency").asText()).isEqualTo("USD");
             assertThat(event.path("categoryId").asLong()).isEqualTo(4);
             assertThat(event.path("transactionDate").asText()).isEqualTo("2026-06-01");
-            assertThat(event.path("walletId").asLong()).isEqualTo(7);
+            assertThat(event.path("walletId").asLong()).isEqualTo(wallet);
         }
     }
 

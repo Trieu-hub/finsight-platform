@@ -94,7 +94,7 @@ gateway).
 | `api-gateway` | 8080 | – | HTTP | Edge routing + JWT validation (HS512/issuer/audience) |
 | `auth-service` | 8081 | `auth_db` | HTTP | Register, login, refresh, account lockout; Redis-backed tokens |
 | `user-service` | 8082 | `user_db` | HTTP | User profile data |
-| `transaction-service` | 8083 | `transaction_db` | HTTP | Transactions (INCOME/EXPENSE), categories, summaries; **produces** `TransactionCreated` |
+| `transaction-service` | 8083 | `transaction_db` | HTTP | Transactions (INCOME/EXPENSE/TRANSFER), categories, wallets (accounts + balances), summaries; **produces** `TransactionCreated` |
 | `budget-service` | 8084 | `budget_db` | HTTP, Kafka | Budget definitions + utilization; **consumes** `TransactionCreated`, **produces** `BudgetChanged` |
 | `dashboard-service` | 8085 | _(none, BFF)_ | HTTP | Read-only aggregation over user/transaction/budget; relays JWT; fail-fast |
 | `risk-service` | 8086 (internal) | `risk_db` | Kafka | Risk rules, behavioral insights, anomaly detection; **consumes** `TransactionCreated` + `BudgetChanged`, **produces** `RiskDetected`; read APIs. Port not host-published (SE-2) |
@@ -202,9 +202,10 @@ stay in the backend.
   every request by an Axios interceptor; a `401` clears it and redirects to `/login`. Protected
   routes are gated client-side for UX only — the backend remains the security boundary.
 - **Pages**: Login / Register, Dashboard (income / expense / balance + recent activity + budget
-  progress), Transactions (list + create), Budgets (list + utilization bars), Analytics
-  (month-over-month overview, spend forecast, top movers, category breakdown, and an AI/template
-  monthly summary — served by analytics-service), Admin console (RBAC user management,
+  progress), Transactions (list + create, incl. wallet selection and wallet-to-wallet transfers),
+  Budgets (list + utilization bars), Wallets (accounts with live balances, create / delete),
+  Analytics (month-over-month overview, spend forecast, top movers, category breakdown, and an
+  AI/template monthly summary — served by analytics-service), Admin console (RBAC user management,
   ROLE_ADMIN only).
 - **Notification bell**: a header bell polls `GET /api/v1/notifications/unread-count`, shows an
   unread badge, and opens a dropdown of risk alerts (severity-coloured) with mark-read /

@@ -34,7 +34,7 @@ A single "% complete" mixes very different goals. Progress is tracked on three i
 
 | Axis | What it measures | Progress |
 |---|---|---|
-| **MVP backend** | Core finance CRUD + auth + dashboard working end-to-end | **~95%** |
+| **MVP backend** | Core finance CRUD + auth + dashboard working end-to-end | **~98%** |
 | **Production-ready MVP** | The MVP, operable & secure for real deployment | **~72%** |
 | **Full FinSight vision** | The chartered Intelligence & Risk platform | **~74%** |
 
@@ -98,7 +98,7 @@ Detailed trigger conditions, severities, persistence, and metrics for D–F are 
 
 | Core domain | Status | Notes |
 |---|---|---|
-| Personal Finance Management | ✅ ~90% | Transactions (INCOME/EXPENSE/**TRANSFER**), categories, budgets |
+| Personal Finance Management | ✅ ~92% | Transactions (INCOME/EXPENSE/**TRANSFER**), categories, budgets, **wallets w/ balances** |
 | Dashboard & Analytics | ✅ ~80% | Dashboard BFF ✅; dedicated `analytics-service` ✅ (rollup read model: overview / categories / forecast + AI summary) |
 | Behavioral Insights | ✅ MVP | Rule-based: SPENDING_INCREASE, CATEGORY_SURGE, BUDGET_RISK, LOW_SAVINGS_RATE (E.1–E.3) |
 | Anomaly Detection | ✅ MVP | Rule-based: UNUSUAL_TRANSACTION_AMOUNT (F.1) |
@@ -115,7 +115,7 @@ incremental, not greenfield.
 | API Gateway | ✅ exists | Proxy + edge JWT validation; **no rate limiting** → ~80% |
 | Auth Service | ✅ exists | JWT, refresh, lockout, Redis-backed; **admin RBAC** console API (role/status/delete, ROLE_ADMIN-only) → ~90% |
 | User Service | ✅ exists | Profile data → ~85% |
-| Transaction Service | ✅ exists | INCOME/EXPENSE/**TRANSFER** (wallet-to-wallet, opaque wallet ids) + categories/summaries → ~85% |
+| Transaction Service | ✅ exists | INCOME/EXPENSE/**TRANSFER** + **Wallet domain** (accounts, stored balances kept atomic, CRUD) + categories/summaries → ~90% |
 | Budget Service | ✅ exists | Definitions + event-driven utilization → ~85% |
 | **Analytics Service** | ✅ exists | `analytics-service`: CQRS rollup read model from `TransactionCreated`; overview / categories / forecast APIs + optional AI monthly summary (OpenAI-compatible, template fallback) → ~75% |
 | **Risk Intelligence Service** | ✅ exists | `risk-service`: Risk + Insights + Anomaly (rule-based MVP) → ~70% |
@@ -213,10 +213,13 @@ Full diagrams: [docs/architecture.md](docs/architecture.md).
    (explicitly **not** part of this documentation pass; e.g. Phase F.2 is **not** started).
 
 **Product features:**
-5. ✅ **Transaction `TRANSFER`** type + wallet-to-wallet semantics — done (source/destination
-   `wallet_id`/`to_wallet_id`, distinct-wallet validation, seeded system Transfer category;
-   consumers already ignore TRANSFER by design). Wallets stay **opaque ids** — a full Wallet
-   domain (balances/CRUD) is intentionally deferred.
+5. ✅ **Transaction `TRANSFER`** + **full Wallet domain** — done. Wallets are first-class accounts
+   (`wallets` table, CRUD API `/api/v1/wallets`, per-user, one currency each) with a stored
+   `balance` maintained **atomically in the same DB transaction** as every transaction write
+   (INCOME credits, EXPENSE debits, TRANSFER moves source→destination; update reverses-then-reapplies,
+   delete reverses). Currency + ownership are validated on each write; a non-empty wallet cannot be
+   deleted. TRANSFER uses a distinct source/destination `wallet_id`/`to_wallet_id`; downstream
+   consumers already ignore TRANSFER by design.
 6. ✅ **In-service audit logging** — done: a dedicated `AUDIT` structured logger records mutating
    actions (transaction/budget create/update/delete, admin role/status/delete). Persisted audit
    *table* remains out of scope (see §5.1).
