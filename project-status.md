@@ -34,7 +34,7 @@ A single "% complete" mixes very different goals. Progress is tracked on three i
 
 | Axis | What it measures | Progress |
 |---|---|---|
-| **MVP backend** | Core finance CRUD + auth + dashboard working end-to-end | **~90%** |
+| **MVP backend** | Core finance CRUD + auth + dashboard working end-to-end | **~95%** |
 | **Production-ready MVP** | The MVP, operable & secure for real deployment | **~72%** |
 | **Full FinSight vision** | The chartered Intelligence & Risk platform | **~74%** |
 
@@ -98,7 +98,7 @@ Detailed trigger conditions, severities, persistence, and metrics for D–F are 
 
 | Core domain | Status | Notes |
 |---|---|---|
-| Personal Finance Management | ✅ ~85% | Transactions, categories, budgets |
+| Personal Finance Management | ✅ ~90% | Transactions (INCOME/EXPENSE/**TRANSFER**), categories, budgets |
 | Dashboard & Analytics | ✅ ~80% | Dashboard BFF ✅; dedicated `analytics-service` ✅ (rollup read model: overview / categories / forecast + AI summary) |
 | Behavioral Insights | ✅ MVP | Rule-based: SPENDING_INCREASE, CATEGORY_SURGE, BUDGET_RISK, LOW_SAVINGS_RATE (E.1–E.3) |
 | Anomaly Detection | ✅ MVP | Rule-based: UNUSUAL_TRANSACTION_AMOUNT (F.1) |
@@ -115,7 +115,7 @@ incremental, not greenfield.
 | API Gateway | ✅ exists | Proxy + edge JWT validation; **no rate limiting** → ~80% |
 | Auth Service | ✅ exists | JWT, refresh, lockout, Redis-backed; **admin RBAC** console API (role/status/delete, ROLE_ADMIN-only) → ~90% |
 | User Service | ✅ exists | Profile data → ~85% |
-| Transaction Service | ✅ exists | INCOME/EXPENSE + categories/summaries; **no TRANSFER** → ~75% |
+| Transaction Service | ✅ exists | INCOME/EXPENSE/**TRANSFER** (wallet-to-wallet, opaque wallet ids) + categories/summaries → ~85% |
 | Budget Service | ✅ exists | Definitions + event-driven utilization → ~85% |
 | **Analytics Service** | ✅ exists | `analytics-service`: CQRS rollup read model from `TransactionCreated`; overview / categories / forecast APIs + optional AI monthly summary (OpenAI-compatible, template fallback) → ~75% |
 | **Risk Intelligence Service** | ✅ exists | `risk-service`: Risk + Insights + Anomaly (rule-based MVP) → ~70% |
@@ -213,8 +213,13 @@ Full diagrams: [docs/architecture.md](docs/architecture.md).
    (explicitly **not** part of this documentation pass; e.g. Phase F.2 is **not** started).
 
 **Product features:**
-5. **Transaction `TRANSFER`** type + wallet-to-wallet semantics (`walletId` is scaffolded).
-6. **In-service audit logging** — only JPA timestamp auditing exists today (see §5.1).
+5. ✅ **Transaction `TRANSFER`** type + wallet-to-wallet semantics — done (source/destination
+   `wallet_id`/`to_wallet_id`, distinct-wallet validation, seeded system Transfer category;
+   consumers already ignore TRANSFER by design). Wallets stay **opaque ids** — a full Wallet
+   domain (balances/CRUD) is intentionally deferred.
+6. ✅ **In-service audit logging** — done: a dedicated `AUDIT` structured logger records mutating
+   actions (transaction/budget create/update/delete, admin role/status/delete). Persisted audit
+   *table* remains out of scope (see §5.1).
 
 **Production-readiness (axis 2):**
 7. Merge the feature branch and get a **green CI run** (JDK 21).
@@ -229,9 +234,10 @@ Full diagrams: [docs/architecture.md](docs/architecture.md).
 ### 5.1 Scope clarifications (unchanged)
 
 - **Audit:** the charter keeps audit as *in-service logging*, with a separate Audit Service only
-  "if time allows." A missing Audit *Service* is not a gap; but the real requirement — action/
-  security audit logging inside each service — is **not implemented** (only JPA timestamp
-  auditing). Item is *open*.
+  "if time allows." A missing Audit *Service* is not a gap; the real requirement — action/
+  security audit logging inside each service — is now **implemented** as a dedicated `AUDIT`
+  structured logger on mutating actions (transaction/budget/admin). A *persisted* audit table is
+  still out of scope. Item is *closed for MVP*.
 - **Notification — charter conflict:** listed in the chartered architecture (1 of 8 services) and
   not in the v1 out-of-scope list, so by the written charter it is **required**. `RiskDetected`
   is already produced; building the consumer/delivery side resolves this.

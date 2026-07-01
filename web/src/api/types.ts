@@ -1,6 +1,6 @@
 // Mirror of the backend wire contracts. Keep field names identical to the Java DTOs.
 
-export type TransactionType = 'INCOME' | 'EXPENSE'
+export type TransactionType = 'INCOME' | 'EXPENSE' | 'TRANSFER'
 export type BudgetPeriod = 'MONTHLY' | 'WEEKLY' | 'YEARLY' | 'CUSTOM'
 
 // Standard success envelope: { success, data, meta }. meta omitted when null.
@@ -32,6 +32,8 @@ export interface Transaction {
   categoryId: number
   description?: string
   transactionDate: string
+  walletId?: number
+  toWalletId?: number
   createdAt: string
 }
 

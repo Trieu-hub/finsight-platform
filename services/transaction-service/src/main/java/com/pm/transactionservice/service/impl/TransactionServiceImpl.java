@@ -4,6 +4,7 @@ import com.pm.transactionservice.dto.CreateTransactionRequest;
 import com.pm.transactionservice.dto.TransactionFilterRequest;
 import com.pm.transactionservice.dto.TransactionResponse;
 import com.pm.transactionservice.dto.UpdateTransactionRequest;
+import com.pm.transactionservice.audit.AuditLog;
 import com.pm.transactionservice.entity.Category;
 import com.pm.transactionservice.entity.Transaction;
 import com.pm.transactionservice.enums.TransactionType;
@@ -33,13 +34,16 @@ public class TransactionServiceImpl implements TransactionService {
     private final TransactionRepository transactionRepository;
     private final CategoryRepository categoryRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final AuditLog auditLog;
 
     public TransactionServiceImpl(TransactionRepository transactionRepository,
                                   CategoryRepository categoryRepository,
-                                  ApplicationEventPublisher eventPublisher) {
+                                  ApplicationEventPublisher eventPublisher,
+                                  AuditLog auditLog) {
         this.transactionRepository = transactionRepository;
         this.categoryRepository = categoryRepository;
         this.eventPublisher = eventPublisher;
+        this.auditLog = auditLog;
     }
 
     @Override
@@ -47,7 +51,9 @@ public class TransactionServiceImpl implements TransactionService {
     public TransactionResponse create(Long userId, CreateTransactionRequest request) {
         validateAmountPositive(request.getAmount());
         validateCategoryForType(request.getCategoryId(), request.getType());
+        validateTransferWallets(request.getType(), request.getWalletId(), request.getToWalletId());
 
+        boolean isTransfer = request.getType() == TransactionType.TRANSFER;
         Transaction transaction = Transaction.builder()
                 .id(UUID.randomUUID())
                 .userId(userId)
@@ -58,6 +64,8 @@ public class TransactionServiceImpl implements TransactionService {
                 .description(request.getDescription())
                 .transactionDate(request.getTransactionDate())
                 .walletId(request.getWalletId())
+                // toWalletId is only meaningful for a TRANSFER; keep it null otherwise.
+                .toWalletId(isTransfer ? request.getToWalletId() : null)
                 .isDeleted(false)
                 .metadata(request.getMetadata())
                 .build();
@@ -76,6 +84,7 @@ public class TransactionServiceImpl implements TransactionService {
                 saved.getTransactionDate(),
                 saved.getWalletId()));
 
+        auditLog.record("CREATE", "transaction", saved.getId(), userId);
         return toResponse(saved);
     }
 
@@ -134,6 +143,9 @@ public class TransactionServiceImpl implements TransactionService {
         if (request.getWalletId() != null) {
             transaction.setWalletId(request.getWalletId());
         }
+        if (request.getToWalletId() != null) {
+            transaction.setToWalletId(request.getToWalletId());
+        }
         if (request.getMetadata() != null) {
             transaction.setMetadata(request.getMetadata());
         }
@@ -145,7 +157,17 @@ public class TransactionServiceImpl implements TransactionService {
             validateCategoryForType(transaction.getCategoryId(), transaction.getType());
         }
 
+        // Keep the transfer invariant on the resulting state: a TRANSFER needs a distinct
+        // source/destination wallet; a non-TRANSFER carries no destination wallet.
+        if (transaction.getType() == TransactionType.TRANSFER) {
+            validateTransferWallets(transaction.getType(),
+                    transaction.getWalletId(), transaction.getToWalletId());
+        } else {
+            transaction.setToWalletId(null);
+        }
+
         Transaction saved = transactionRepository.save(transaction);
+        auditLog.record("UPDATE", "transaction", saved.getId(), userId);
         return toResponse(saved);
     }
 
@@ -159,6 +181,7 @@ public class TransactionServiceImpl implements TransactionService {
         // Soft delete.
         transaction.setDeleted(true);
         transactionRepository.save(transaction);
+        auditLog.record("DELETE", "transaction", id, userId);
     }
 
     private void validateAmountPositive(BigDecimal amount) {
@@ -166,6 +189,21 @@ public class TransactionServiceImpl implements TransactionService {
         // that bypass bean validation and turns the DB violation into a 400, not a 500.
         if (amount != null && amount.signum() <= 0) {
             throw new InvalidTransactionDataException("amount must be greater than 0");
+        }
+    }
+
+    private void validateTransferWallets(TransactionType type, Long walletId, Long toWalletId) {
+        // Only TRANSFER carries wallet-to-wallet semantics. INCOME/EXPENSE ignore toWalletId.
+        if (type != TransactionType.TRANSFER) {
+            return;
+        }
+        if (walletId == null || toWalletId == null) {
+            throw new InvalidTransactionDataException(
+                    "A TRANSFER requires both walletId (source) and toWalletId (destination)");
+        }
+        if (walletId.equals(toWalletId)) {
+            throw new InvalidTransactionDataException(
+                    "A TRANSFER's source and destination wallet must be different");
         }
     }
 
@@ -193,6 +231,7 @@ public class TransactionServiceImpl implements TransactionService {
                 .description(t.getDescription())
                 .transactionDate(t.getTransactionDate())
                 .walletId(t.getWalletId())
+                .toWalletId(t.getToWalletId())
                 .metadata(t.getMetadata())
                 .createdAt(t.getCreatedAt())
                 .updatedAt(t.getUpdatedAt())

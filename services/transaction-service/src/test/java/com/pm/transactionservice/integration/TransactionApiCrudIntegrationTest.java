@@ -77,6 +77,55 @@ class TransactionApiCrudIntegrationTest extends AbstractMockMvcIntegrationTest {
     }
 
     @Test
+    void createsTransferBetweenTwoWallets() throws Exception {
+        long userId = uniqueUserId();
+        // categoryId 11 is the seeded system "Transfer" category (type TRANSFER).
+        String body = """
+                {"type":"TRANSFER","amount":250.00,"currency":"USD","categoryId":11,
+                 "transactionDate":"2026-06-10","walletId":1,"toWalletId":2}
+                """;
+
+        mockMvc.perform(post("/api/v1/transactions")
+                        .header("Authorization", bearer(userId))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.type").value("TRANSFER"))
+                .andExpect(jsonPath("$.data.walletId").value(1))
+                .andExpect(jsonPath("$.data.toWalletId").value(2));
+    }
+
+    @Test
+    void rejectsTransferMissingDestinationWallet() throws Exception {
+        long userId = uniqueUserId();
+        String body = """
+                {"type":"TRANSFER","amount":250.00,"currency":"USD","categoryId":11,
+                 "transactionDate":"2026-06-10","walletId":1}
+                """;
+        mockMvc.perform(post("/api/v1/transactions")
+                        .header("Authorization", bearer(userId))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
+    }
+
+    @Test
+    void rejectsTransferToSameWallet() throws Exception {
+        long userId = uniqueUserId();
+        String body = """
+                {"type":"TRANSFER","amount":250.00,"currency":"USD","categoryId":11,
+                 "transactionDate":"2026-06-10","walletId":1,"toWalletId":1}
+                """;
+        mockMvc.perform(post("/api/v1/transactions")
+                        .header("Authorization", bearer(userId))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"));
+    }
+
+    @Test
     void rejectsNonPositiveAmountWithStructuredError() throws Exception {
         long userId = uniqueUserId();
         String body = """

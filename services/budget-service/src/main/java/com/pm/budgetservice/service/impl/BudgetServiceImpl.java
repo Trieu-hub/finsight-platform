@@ -4,6 +4,7 @@ import com.pm.budgetservice.dto.BudgetFilterRequest;
 import com.pm.budgetservice.dto.BudgetResponse;
 import com.pm.budgetservice.dto.CreateBudgetRequest;
 import com.pm.budgetservice.dto.UpdateBudgetRequest;
+import com.pm.budgetservice.audit.AuditLog;
 import com.pm.budgetservice.entity.Budget;
 import com.pm.budgetservice.entity.ProcessedEvent;
 import com.pm.budgetservice.enums.BudgetPeriod;
@@ -35,13 +36,16 @@ public class BudgetServiceImpl implements BudgetService {
     private final BudgetRepository budgetRepository;
     private final ProcessedEventRepository processedEventRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final AuditLog auditLog;
 
     public BudgetServiceImpl(BudgetRepository budgetRepository,
                              ProcessedEventRepository processedEventRepository,
-                             ApplicationEventPublisher eventPublisher) {
+                             ApplicationEventPublisher eventPublisher,
+                             AuditLog auditLog) {
         this.budgetRepository = budgetRepository;
         this.processedEventRepository = processedEventRepository;
         this.eventPublisher = eventPublisher;
+        this.auditLog = auditLog;
     }
 
     @Override
@@ -68,6 +72,7 @@ public class BudgetServiceImpl implements BudgetService {
         Budget saved = budgetRepository.save(budget);
         // Emitted to Kafka only AFTER this transaction commits (see BudgetEventListener).
         eventPublisher.publishEvent(BudgetChangedEvent.of(saved, false));
+        auditLog.record("CREATE", "budget", saved.getId(), userId);
         return toResponse(saved);
     }
 
@@ -129,6 +134,7 @@ public class BudgetServiceImpl implements BudgetService {
 
         Budget saved = budgetRepository.save(budget);
         eventPublisher.publishEvent(BudgetChangedEvent.of(saved, false));
+        auditLog.record("UPDATE", "budget", saved.getId(), userId);
         return toResponse(saved);
     }
 
@@ -141,6 +147,7 @@ public class BudgetServiceImpl implements BudgetService {
         budgetRepository.save(budget);
         // Tell consumers to stop matching this budget.
         eventPublisher.publishEvent(BudgetChangedEvent.of(budget, true));
+        auditLog.record("DELETE", "budget", id, userId);
     }
 
     @Override

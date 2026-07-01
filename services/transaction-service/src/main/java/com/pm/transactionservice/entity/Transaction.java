@@ -67,6 +67,10 @@ public class Transaction {
     @Column(name = "wallet_id")
     private Long walletId;
 
+    /** Destination wallet for a TRANSFER (source is {@link #walletId}); null otherwise. */
+    @Column(name = "to_wallet_id")
+    private Long toWalletId;
+
     @Column(name = "is_deleted", nullable = false)
     @Builder.Default
     private boolean isDeleted = false;

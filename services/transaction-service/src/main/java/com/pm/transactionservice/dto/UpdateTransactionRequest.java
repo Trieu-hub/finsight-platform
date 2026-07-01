@@ -36,5 +36,7 @@ public class UpdateTransactionRequest {
 
     private Long walletId;
 
+    private Long toWalletId;
+
     private Map<String, Object> metadata;
 }

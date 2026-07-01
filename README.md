@@ -1,8 +1,7 @@
 # FinSight
 
-[![CI](https://github.com/Trieu-hub/finsight-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/Trieu-hub/finsight-platform/actions/workflows/ci.yml)
-[![CI](https://github.com/Trieu-hub/finsight-platform/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Trieu-hub/finsight-platform/actions/workflows/ci.yml)   
-  
+[![CI](https://github.com/Trieu-hub/finsight-platform/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Trieu-hub/finsight-platform/actions/workflows/ci.yml)
+
 **Financial Intelligence & Risk Monitoring Platform** — a Spring Boot 4 / Java 21
 microservice monorepo.
 
@@ -310,7 +309,6 @@ These are **absent from the codebase** — do not assume they exist:
   from `RiskDetected`; email/push/webhook delivery is not built. (An optional **LLM message
   narrator** — OpenAI-compatible, default Groq free tier, off by default with a rule-based
   fallback — *is* built; see [Web frontend](#web-frontend) / `services/notification-service`.)
-- **Transaction `TRANSFER`** — only INCOME/EXPENSE exist (`walletId` is scaffolded, unused).
 - **ML-based intelligence** — current rules are deterministic and threshold-based.
 - **Asymmetric JWT signing** (RS256/JWKS), **edge rate limiting**, **transactional outbox**,
   **distributed tracing**, **Prometheus alerting**, and a **production deployment target**
