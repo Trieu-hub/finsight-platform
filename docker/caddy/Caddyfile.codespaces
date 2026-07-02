@@ -1,0 +1,20 @@
+# Caddy edge for the GitHub Codespaces deploy.
+#
+# Unlike the Path A Caddyfile, this listens on plain HTTP `:80` and does NOT request a
+# certificate: Codespaces terminates HTTPS itself at its forwarded-port proxy
+# (https://<codespace>-80.app.github.dev) and hands Caddy plain HTTP. So there is no domain
+# and no ACME here — Caddy's only job is to put the SPA and the API on ONE origin, which is
+# what lets the SPA call a relative /api/v1/... (same-origin, no CORS).
+:80 {
+	encode gzip zstd
+
+	# API traffic -> the gateway (edge JWT validation), forwarded to services on the net.
+	handle /api/* {
+		reverse_proxy api-gateway:8080
+	}
+
+	# Everything else -> the React SPA (nginx does the history fallback).
+	handle {
+		reverse_proxy web:80
+	}
+}

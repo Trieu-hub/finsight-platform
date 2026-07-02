@@ -1,0 +1,62 @@
+# GitHub Codespaces overlay — a free ($0, no card) way to run the whole stack in the cloud
+# and get a shareable public HTTPS URL, without renting a VPS.
+#
+# Use it ON TOP of the base file (NOT the prod overlay — Codespaces provides HTTPS itself,
+# so we don't want Caddy's Let's Encrypt / domain machinery):
+#
+#   docker compose -f docker-compose.yml -f docker-compose.codespaces.yml up -d --build
+#
+# What it does vs. the dev stack:
+#   * Adds a Caddy edge on plain HTTP :80 that puts the SPA and the API on ONE origin
+#     (/api/* -> gateway, everything else -> the nginx-served SPA). Forward THIS port 80 as
+#     "Public" in the Codespaces Ports tab to get the demo URL.
+#   * Builds + serves the React SPA (the `web` container), like prod.
+#   * Un-publishes every other service: only Caddy's port is forwarded, so the Ports tab
+#     stays clean and nothing else is exposed.
+#   * Trims Kafka's heap (the image otherwise grabs ~1 GB) to leave headroom on the
+#     16 GB Codespaces machine.
+#
+# See docs/deploy.md §"Free on GitHub Codespaces".
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: finsight-caddy
+    depends_on:
+      - api-gateway
+      - web
+    volumes:
+      - ./docker/caddy/Caddyfile.codespaces:/etc/caddy/Caddyfile:ro
+    ports:
+      - "80:80"
+    restart: unless-stopped
+
+  web:
+    build: ./web
+    container_name: finsight-web
+    restart: unless-stopped
+
+  kafka:
+    environment:
+      KAFKA_HEAP_OPTS: "-Xmx512m -Xms512m"
+
+  # ── Only Caddy faces out; un-publish every other host port ───────────────────
+  auth-service:
+    ports: !override []
+  user-service:
+    ports: !override []
+  transaction-service:
+    ports: !override []
+  budget-service:
+    ports: !override []
+  notification-service:
+    ports: !override []
+  analytics-service:
+    ports: !override []
+  dashboard-service:
+    ports: !override []
+  api-gateway:
+    ports: !override []
+  prometheus:
+    ports: !override []
+  grafana:
+    ports: !override []
