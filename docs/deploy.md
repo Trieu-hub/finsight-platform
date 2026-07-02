@@ -12,6 +12,8 @@ The repo already ships everything you need:
 |---|---|
 | `docker-compose.yml` | the base stack (dev + prod share it) |
 | `docker-compose.prod.yml` | prod overlay: adds Caddy + the SPA, un-publishes every other port, hardens Grafana |
+| `docker-compose.oracle.yml` | free-tier overlay: memory trims for the Oracle Always Free 12 GB ARM box |
+| `docker-compose.codespaces.yml` + `.devcontainer/` | free-tier: run the whole stack in a GitHub Codespace, public HTTPS URL, no card |
 | `docker/caddy/Caddyfile` | TLS reverse proxy: `/api/*` → gateway, everything else → SPA |
 | `web/Dockerfile` + `web/nginx.conf` | build + serve the React SPA |
 | `.env.example` | includes the prod vars (`FINSIGHT_DOMAIN`, …) |
@@ -21,6 +23,122 @@ The repo already ships everything you need:
 > on the internal Docker network**. This is enforced in `docker-compose.prod.yml` with
 > `ports: !override []`, *not* by the host firewall — because Docker manipulates iptables and
 > can publish past `ufw`. Requires Docker Compose **v2.24+** (for the `!override` tag).
+
+---
+
+## Free on GitHub Codespaces (no card, runs in the cloud) — easiest fallback
+
+If you **can't** rent a VPS and your laptop is too small to run the stack locally (it needs
+~8 GB just for the containers), this is the quickest $0 path: run the whole stack **inside a
+GitHub Codespace** and forward one port as a public HTTPS URL. It needs only a GitHub account —
+**no credit card**.
+
+> **Cost/quota.** Codespaces' free plan includes ~**120 core-hours + 15 GB-month** of storage.
+> The stack needs the **4-core / 16 GB** machine (the 2-core default is too small), which burns
+> 4 core-hours per running hour → ~**30 hours/month** free. It **auto-suspends after 30 min
+> idle**, so you only spend hours while actively demoing. Without a payment method on your
+> GitHub account, hitting the cap simply **stops** the Codespace — it cannot bill you.
+
+This is **on-demand**, not 24/7: the URL is live only while the Codespace is running. For an
+always-on free URL you still need Oracle (below).
+
+### Steps
+1. Make sure `.devcontainer/`, `docker-compose.codespaces.yml`, and
+   `docker/caddy/Caddyfile.codespaces` are pushed to GitHub (they're in this repo).
+2. On the repo page: **Code ▾ → Codespaces → Create codespace on `main`**. The devcontainer
+   requests the 4-core/16 GB machine and auto-generates a throwaway `.env` (random secrets, AI
+   off) via `postCreateCommand`.
+3. In the Codespace terminal, launch:
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.codespaces.yml up -d --build
+   ```
+   First build takes several minutes. Watch with `docker compose ps`.
+4. Open the **Ports** tab → row for port **80** → right-click → **Port Visibility → Public**.
+   (If your org blocks public ports, leave it Private — the URL still works for anyone signed
+   into GitHub via your shared link.) Click the globe icon to open
+   `https://<codespace>-80.app.github.dev` → register → log in.
+5. When done, **stop** the Codespace (Codespaces list → `…` → *Stop*) to save your hours.
+
+Caddy is HTTP-only here (Codespaces terminates HTTPS at its port proxy); the SPA and API share
+one origin so the relative `/api/v1` calls just work. No domain, no certificate, no `.env`
+editing needed.
+
+---
+
+## Free hosting on Oracle Cloud "Always Free" ($0, ARM 2 OCPU / 12 GB)
+
+This is the **zero-cost** way to run Path A. Oracle's Always Free tier gives an ARM
+(Ampere A1) VM that is large enough for the whole stack — unlike the ~1 GB free tiers of
+AWS/GCP/Azure, which cannot fit 9 JVMs + Kafka.
+
+> **Will I be charged? No — if you never upgrade.** Per Oracle's docs, an Always Free account
+> that has **never been upgraded to Pay As You Go cannot be charged money** ("free of charge …
+> for the life of the account"). When you hit a limit, resources are **blocked / not created**,
+> never billed. **Two rules to stay free:** (1) do **not** click *"Upgrade to Pay As You Go"*;
+> (2) only pick shapes/volumes marked **"Always Free-eligible"**.
+
+**Current Always Free limits** (reduced June 2026 from the old 4 OCPU / 24 GB):
+
+| Resource | Free amount | Our use |
+|---|---|---|
+| ARM Ampere A1 compute | **2 OCPU + 12 GB RAM** | fits (~8 GB, see below) |
+| Block storage | 200 GB | ~10 GB of images + volumes |
+| Outbound transfer | 10 TB / month | trivial for a demo |
+
+> **Reclaim note (not a concern here).** Oracle may delete an A1 instance only if CPU **and**
+> network **and** memory are *all* below 20% for 7 days. This stack holds RAM at ~66%, so the
+> AND-condition is never met — the box is never reclaimed. No keep-alive cron needed.
+
+### O.1 Create the instance
+1. Sign up at <https://cloud.oracle.com> (a card is required for identity verification;
+   an Always Free account is **not** charged). **Do not upgrade to Pay As You Go.**
+2. **Compute → Create Instance.** Choose **Ubuntu 22.04**, shape **VM.Standard.A1.Flex**,
+   set **2 OCPU / 12 GB** (must show the "Always Free-eligible" chip). Boot volume default is
+   fine. Upload/download your SSH key.
+
+### O.2 Open the ports — BOTH layers (the classic Oracle gotcha)
+Oracle Ubuntu images block everything but SSH at **two** independent layers. You must open
+80/443 in **both**, or Caddy's certificate request and the site will silently fail:
+
+1. **VCN Security List** (cloud firewall): Networking → your VCN → Security List → add
+   **ingress** rules for TCP **80** and **443** from `0.0.0.0/0`.
+2. **Instance iptables** (the image ships a restrictive INPUT chain). SSH in and insert ACCEPT
+   rules *before* the existing REJECT, then persist:
+   ```bash
+   sudo iptables -L INPUT --line-numbers        # find the REJECT line number (call it N)
+   sudo iptables -I INPUT N -p tcp --dport 443 -j ACCEPT
+   sudo iptables -I INPUT N -p tcp --dport 80  -j ACCEPT
+   sudo netfilter-persistent save
+   ```
+   On Oracle, use these iptables rules **instead of** the `ufw` block in §2 (the image manages
+   iptables directly; running ufw on top just causes confusion).
+
+### O.3 Add swap (protects the build on 2 cores / 12 GB)
+Building 9 Maven images at once is the only step that can strain 12 GB. A swap file is the
+simple safety net — add it **before** the first build:
+```bash
+sudo fallocate -l 4G /swapfile && sudo chmod 600 /swapfile
+sudo mkswap /swapfile && sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+```
+
+### O.4 Install Docker, then launch with the Oracle overlay
+```bash
+curl -fsSL https://get.docker.com | sudo sh          # installs arm64 Docker + compose plugin
+```
+Now do §1 (DNS A record → the instance's public IP) and §3 (`git clone` + fill `.env`,
+including `FINSIGHT_DOMAIN`, `FINSIGHT_ACME_EMAIL`, `GF_SECURITY_ADMIN_PASSWORD`). Then launch
+with the **third** overlay added — it pins Kafka's heap and Prometheus retention for the
+smaller box:
+```bash
+COMPOSE_PARALLEL_LIMIT=1 docker compose \
+  -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.oracle.yml \
+  up -d --build
+```
+The images are multi-arch, so building **on the A1 box** produces arm64 images with no
+Dockerfile change. `COMPOSE_PARALLEL_LIMIT=1` serializes the work so 2 cores aren't
+oversubscribed; the first build still takes several minutes. From here, §4–§8 (verify, backups,
+updates) apply unchanged — just keep all three `-f` flags on every `docker compose` command.
 
 ---
 

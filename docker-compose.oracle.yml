@@ -1,0 +1,45 @@
+# Oracle Cloud "Always Free" overlay — for the 2 OCPU / 12 GB ARM (Ampere A1) box.
+#
+# Use it ON TOP of the base file AND the prod overlay (order matters):
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.oracle.yml up -d --build
+#
+# Why a third overlay instead of editing prod:
+#   * docker-compose.prod.yml is host-agnostic (Caddy TLS, un-published ports, hardened
+#     Grafana) — it applies to ANY single-VPS Path A deploy.
+#   * This file adds ONLY the memory trims that matter on the smaller 12 GB Always-Free box
+#     (down from the 24 GB the tier used to give before June 2026). Keep them separate so a
+#     bigger box just drops this `-f`.
+#
+# What it changes vs. prod:
+#   * Kafka heap is pinned to 512m (the apache/kafka image otherwise defaults to ~1 GB).
+#   * Prometheus retention is capped to 3 days so its TSDB can't slowly eat the 200 GB disk
+#     (and RAM) over weeks of an always-on demo.
+#   * MySQL's InnoDB buffer pool is pinned small (7 tiny app DBs don't need more).
+#   The 9 service JVMs already cap themselves at -Xmx384m in the base file, which fits.
+#
+# The images are multi-arch (eclipse-temurin / mysql / apache-kafka / redis / prometheus /
+# grafana / caddy / nginx all publish arm64), so building on the A1 box natively produces
+# arm64 images — no Dockerfile change is needed. See docs/deploy.md §Oracle.
+services:
+  kafka:
+    environment:
+      # Pin the broker heap; the default (~1 GB) is wasteful for a single-node demo broker.
+      KAFKA_HEAP_OPTS: "-Xmx512m -Xms512m"
+
+  mysql:
+    # 7 small per-service databases: a 128 MB buffer pool is plenty. performance_schema off
+    # reclaims another ~100 MB. (The image entrypoint passes these straight to mysqld.)
+    command:
+      - "--innodb-buffer-pool-size=128M"
+      - "--performance-schema=OFF"
+
+  prometheus:
+    # Overriding `command` replaces the image's default CMD, so the default flags must be
+    # repeated here — plus the retention cap that bounds TSDB growth on the always-on box.
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=3d"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"

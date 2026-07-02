@@ -1,0 +1,33 @@
+{
+  // FinSight demo Codespace. Runs the full docker-compose stack in the cloud so a public
+  // HTTPS demo URL works even from a low-RAM laptop. See docs/deploy.md §"Free on Codespaces".
+  "name": "FinSight (full stack)",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+
+  // Docker + compose inside the Codespace.
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+
+  // Ask Codespaces for the 4-core / 16 GB machine — the stack is 9 JVMs + Kafka (~8 GB).
+  // The 2-core / 8 GB default is too small. (4-core burns ~4 core-hours per wall-clock hour,
+  // so the free ~120 core-hours/month is ~30 hours of runtime — plenty for demos; it also
+  // auto-suspends after 30 min idle.)
+  "hostRequirements": {
+    "cpus": 4,
+    "memory": "16gb",
+    "storage": "32gb"
+  },
+
+  // Caddy's single origin. Forward it and set its visibility to Public (Ports tab) to share.
+  "forwardPorts": [80],
+  "portsAttributes": {
+    "80": {
+      "label": "FinSight app",
+      "onAutoForward": "notify"
+    }
+  },
+
+  // Generate a throwaway .env with random secrets so the stack can boot immediately.
+  "postCreateCommand": "bash .devcontainer/setup-env.sh"
+}
