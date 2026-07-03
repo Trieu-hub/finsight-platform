@@ -36,4 +36,20 @@ public class TransactionEventListener {
         }
         publisher.publish(event);
     }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onTransactionUpdated(TransactionUpdatedEvent event) {
+        if (!kafkaEnabled) {
+            return;
+        }
+        publisher.publish(event);
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onTransactionDeleted(TransactionDeletedEvent event) {
+        if (!kafkaEnabled) {
+            return;
+        }
+        publisher.publish(event);
+    }
 }

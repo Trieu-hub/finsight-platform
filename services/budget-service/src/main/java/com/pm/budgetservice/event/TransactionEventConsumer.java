@@ -1,6 +1,7 @@
 package com.pm.budgetservice.event;
 
 import com.pm.budgetservice.service.BudgetService;
+import com.pm.budgetservice.service.ExpenseLine;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
@@ -11,11 +12,19 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.UUID;
 
 /**
- * Consumes {@code TransactionCreated} and applies EXPENSE amounts to matching budgets'
- * {@code spent_amount}. Thin by design: filtering and parsing happen here; matching,
- * idempotency and the atomic increment live in the service/repository.
+ * Consumes the three transaction-lifecycle events and keeps budgets' {@code spent_amount}
+ * accurate: {@code TransactionCreated} adds an EXPENSE, {@code TransactionDeleted} reverses
+ * one, and {@code TransactionUpdated} reverses the old slot then applies the new one. Thin
+ * by design: filtering and parsing happen here; matching, idempotency and the atomic
+ * increment live in the service/repository.
+ *
+ * <p>The created/updated/deleted events travel on separate topics; the JSON payload type
+ * per listener is pinned via {@code spring.json.value.default.type} in the
+ * {@code @KafkaListener} {@code properties} (the global default in application.yml covers
+ * the created listener).
  *
  * <p>Filter rules (events skipped here are NOT recorded in the inbox — re-skipping a
  * redelivered event is free): non-EXPENSE types, a missing/unparseable transactionDate,
@@ -68,7 +77,7 @@ public class TransactionEventConsumer {
             ignored("non_expense");
             return;
         }
-        LocalDate transactionDate = parseDate(event);
+        LocalDate transactionDate = parseDate(event.eventId(), event.transactionDate());
         if (transactionDate == null) {
             return;
         }
@@ -86,18 +95,106 @@ public class TransactionEventConsumer {
         }
     }
 
-    private LocalDate parseDate(TransactionCreatedEvent event) {
-        if (event.transactionDate() == null) {
+    /**
+     * A transaction edit. Reverse the old contribution (if it was an EXPENSE) and apply the
+     * new one (if it is an EXPENSE); an EXPENSE↔INCOME edit therefore only touches one side.
+     * Both sides are carried as {@link ExpenseLine}s in a single idempotent service call.
+     */
+    @KafkaListener(topics = "${finsight.kafka.topics.transaction-updated}",
+            properties = "spring.json.value.default.type=com.pm.budgetservice.event.TransactionUpdatedEvent")
+    public void onTransactionUpdated(TransactionUpdatedEvent event) {
+        if (event.eventId() == null) {
+            log.warn("Ignoring TransactionUpdated without eventId (cannot de-duplicate): txId={}",
+                    event.transactionId());
+            ignored("no_event_id");
+            return;
+        }
+        boolean reverseOld = EXPENSE.equals(event.oldType());
+        boolean applyNew = EXPENSE.equals(event.newType());
+        if (!reverseOld && !applyNew) {
+            log.debug("Ignoring update event {} — neither side is an EXPENSE (old={}, new={})",
+                    event.eventId(), event.oldType(), event.newType());
+            ignored("non_expense");
+            return;
+        }
+
+        ExpenseLine reverse = null;
+        if (reverseOld) {
+            LocalDate oldDate = parseDate(event.eventId(), event.oldTransactionDate());
+            if (oldDate == null) {
+                return;
+            }
+            reverse = new ExpenseLine(event.oldCategoryId(), event.oldCurrency(),
+                    event.oldAmount(), oldDate);
+        }
+        ExpenseLine apply = null;
+        if (applyNew) {
+            LocalDate newDate = parseDate(event.eventId(), event.newTransactionDate());
+            if (newDate == null) {
+                return;
+            }
+            apply = new ExpenseLine(event.newCategoryId(), event.newCurrency(),
+                    event.newAmount(), newDate);
+        }
+
+        boolean applied = budgetService.applyUpdate(event.eventId(), event.userId(), reverse, apply);
+        if (applied) {
+            processedEvents.increment();
+            log.info("Applied update event {} to budgets: userId={}, reverse={}, apply={}",
+                    event.eventId(), event.userId(), reverse, apply);
+        } else {
+            duplicateEvents.increment();
+            log.info("Skipped duplicate update event {}", event.eventId());
+        }
+    }
+
+    /**
+     * A transaction soft-delete. Reverse the EXPENSE contribution; non-EXPENSE deletes never
+     * touched a budget, so they are ignored.
+     */
+    @KafkaListener(topics = "${finsight.kafka.topics.transaction-deleted}",
+            properties = "spring.json.value.default.type=com.pm.budgetservice.event.TransactionDeletedEvent")
+    public void onTransactionDeleted(TransactionDeletedEvent event) {
+        if (event.eventId() == null) {
+            log.warn("Ignoring TransactionDeleted without eventId (cannot de-duplicate): txId={}",
+                    event.transactionId());
+            ignored("no_event_id");
+            return;
+        }
+        if (!EXPENSE.equals(event.type())) {
+            log.debug("Ignoring non-EXPENSE delete event {} (type={})", event.eventId(), event.type());
+            ignored("non_expense");
+            return;
+        }
+        LocalDate transactionDate = parseDate(event.eventId(), event.transactionDate());
+        if (transactionDate == null) {
+            return;
+        }
+
+        boolean applied = budgetService.applyDelete(event.eventId(), event.userId(),
+                event.categoryId(), event.currency(), event.amount(), transactionDate);
+        if (applied) {
+            processedEvents.increment();
+            log.info("Reversed delete event {} from budgets: userId={}, categoryId={}, amount={} {}",
+                    event.eventId(), event.userId(), event.categoryId(),
+                    event.amount(), event.currency());
+        } else {
+            duplicateEvents.increment();
+            log.info("Skipped duplicate delete event {}", event.eventId());
+        }
+    }
+
+    private LocalDate parseDate(UUID eventId, String raw) {
+        if (raw == null) {
             log.warn("Ignoring event {} without transactionDate (cannot match a budget window)",
-                    event.eventId());
+                    eventId);
             ignored("no_date");
             return null;
         }
         try {
-            return LocalDate.parse(event.transactionDate());
+            return LocalDate.parse(raw);
         } catch (DateTimeParseException e) {
-            log.warn("Ignoring event {} with unparseable transactionDate '{}'",
-                    event.eventId(), event.transactionDate());
+            log.warn("Ignoring event {} with unparseable transactionDate '{}'", eventId, raw);
             ignored("bad_date");
             return null;
         }
