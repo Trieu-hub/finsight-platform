@@ -23,7 +23,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @TestPropertySource(properties = {
-        "dashboard.services.user-uri=http://localhost:8082",
         "dashboard.services.transaction-uri=http://localhost:8083",
         "dashboard.services.budget-uri=http://localhost:8084"
 })

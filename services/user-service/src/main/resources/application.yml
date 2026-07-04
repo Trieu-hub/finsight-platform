@@ -23,6 +23,14 @@ spring:
   flyway:
     enabled: true
 
+  # gRPC server hosting the internal UserProfileService (the platform's one gRPC
+  # internal-sync endpoint, called by the dashboard BFF). Bound to a dedicated port,
+  # kept OFF the public network — never published to the host, reachable only over the
+  # Docker network by service name, same posture as the internal risk-service.
+  grpc:
+    server:
+      port: ${GRPC_SERVER_PORT:9092}
+
 management:
   endpoints:
     web:

@@ -13,7 +13,6 @@ import org.springframework.test.context.TestPropertySource;
  */
 @SpringBootTest
 @TestPropertySource(properties = {
-        "dashboard.services.user-uri=http://localhost:8082",
         "dashboard.services.transaction-uri=http://localhost:8083",
         "dashboard.services.budget-uri=http://localhost:8084"
 })

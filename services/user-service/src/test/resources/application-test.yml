@@ -11,6 +11,13 @@ spring:
   flyway:
     enabled: true
 
+  # Bind the gRPC server to a random free port in tests: every booted context starts one
+  # (a BindableService bean is present), so a fixed port would clash across cached contexts.
+  # The gRPC integration test drives the service over an in-process server instead.
+  grpc:
+    server:
+      port: 0
+
 # Dummy HMAC secret (>= 256 bits) so JwtService can build a signing key in tests.
 # The RS256 public key is injected per test via @DynamicPropertySource
 # (AbstractMySqlIntegrationTest -> JwtTestTokens.publicKeyBase64()).

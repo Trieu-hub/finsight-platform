@@ -13,7 +13,7 @@ explicitly **not** just an expense tracker. This document measures progress agai
 chartered scope, not against the current repository alone.
 
 **Stack (today):** Java 21 · Spring Boot 4.0.6 · Spring Security · Spring Data JPA · Flyway ·
-MySQL 8 · Redis · Kafka (KRaft) · JWT (RS256 asymmetric) · springdoc/OpenAPI · Micrometer ·
+MySQL 8 · Redis · Kafka (KRaft) · gRPC (Spring gRPC) · JWT (RS256 asymmetric) · springdoc/OpenAPI · Micrometer ·
 Prometheus · Grafana · Docker Compose · GitHub Actions · Testcontainers ·
 **React 19 + TypeScript + Vite + TailwindCSS** (web client).
 
@@ -31,7 +31,7 @@ A single "% complete" mixes very different goals. Progress is tracked on three i
 |---|---|---|
 | **MVP backend** | Core finance CRUD + auth + dashboard working end-to-end | **100%** |
 | **Production-ready MVP** | The MVP, operable & secure for real deployment | **~80%** |
-| **Full FinSight vision** | The chartered Intelligence & Risk platform | **~75%** |
+| **Full FinSight vision** | The chartered Intelligence & Risk platform | **~78%** |
 
 > **MVP backend at 100% — what that means (honest).** All in-scope MVP capabilities are built and
 > tested: auth + RBAC, transactions (INCOME/EXPENSE/TRANSFER), a full **Wallet domain** with
@@ -58,7 +58,10 @@ LLM narrator** that phrases alerts via any OpenAI-compatible API (default Groq f
 default, rule-based fallback) — the first real AI integration. The **Analytics Service** is now
 built too: a CQRS rollup read model over `TransactionCreated` serving month-over-month overview,
 category breakdown and spend forecast, plus an **optional AI monthly summary** (same
-OpenAI-compatible seam, template fallback). The remaining vision gap is **gRPC** (0%).
+OpenAI-compatible seam, template fallback). All three communication pillars are now present:
+REST, Kafka, and **gRPC** — the dashboard BFF fetches the user profile from user-service over
+gRPC (Spring gRPC, RS256 JWT relayed as call metadata), so the "internal sync" pillar is no
+longer at zero.
 
 A **React + TypeScript web client** (Vite + Tailwind) now fronts the platform — auth,
 transactions, budgets, dashboard, an **Analytics** page (month-over-month overview, spend
@@ -136,7 +139,7 @@ incremental, not greenfield.
 | Pillar | Charter | Reality |
 |---|---|---|
 | REST (external) | required | ✅ implemented |
-| gRPC (internal sync) | required | ❌ **0%** — no proto, no deps; internal calls are REST (`RestClient`) |
+| gRPC (internal sync) | required | ✅ **present** — Spring gRPC: user-service hosts an internal `UserProfileService`; the dashboard BFF calls it over gRPC (JWT relayed as metadata, validated by a server interceptor). One representative call; transaction/budget stay REST |
 | Kafka (async events) | required | ✅ **real backbone** — transaction created/updated/deleted + `BudgetChanged` + `RiskDetected`; idempotent consumers (budget reconciles create/update/delete, risk, analytics, notification). See [docs/event-catalog.md](docs/event-catalog.md) |
 
 ### Infrastructure
@@ -164,16 +167,18 @@ Saga · CQRS · Event Sourcing · ELK · Keycloak · Istio · Helm · ArgoCD · 
 |---|---|---|---|
 | api-gateway | 8080 | – | Edge routing + JWT validation (RS256 public key/iss/aud), error envelope |
 | auth-service | 8081 | `auth_db` | Register, login, refresh, account lockout; Redis-backed tokens |
-| user-service | 8082 | `user_db` | User profile data |
+| user-service | 8082 | `user_db` | User profile data; also hosts an internal gRPC `UserProfileService` (port 9092) for the dashboard BFF |
 | transaction-service | 8083 | `transaction_db` | Transactions (INCOME/EXPENSE), categories, summaries; produces `TransactionCreated`/`Updated`/`Deleted` |
 | budget-service | 8084 | `budget_db` | Budget definitions + utilization; consumes `TransactionCreated`/`Updated`/`Deleted` (reconciles spend), produces `BudgetChanged` |
-| dashboard-service | 8085 | none (BFF) | Aggregates user + transaction + budget; fail-fast; relays JWT |
+| dashboard-service | 8085 | none (BFF) | Aggregates user (**gRPC**) + transaction + budget (REST); fail-fast; relays JWT |
 | risk-service | 8086 | `risk_db` | Risk rules, insights, anomaly; consumes `TransactionCreated` + `BudgetChanged`, produces `RiskDetected`; read APIs |
 | mysql / redis / kafka | – | – | Shared MySQL (DB-per-service) + Redis (auth) + single-node KRaft broker |
 | prometheus / grafana | 9090 / 3000 | – | Metrics scrape + dashboards |
 
 **Design rules:** no runtime cross-service calls between business services (only the dashboard
-BFF calls others); all other coupling is Kafka; `userId` read only from the JWT; Flyway owns the
+BFF calls others — transaction/budget over REST, user-service over gRPC); all other coupling is
+Kafka; `userId` read only from the JWT (relayed as gRPC metadata on the gRPC call and validated
+by a server interceptor, same as REST); Flyway owns the
 schema (`ddl-auto: validate`); **RS256 asymmetric JWT** — auth-service alone holds the private key
 and signs; every other service and the gateway verify with the public key only (no runtime call to
 auth); gateway is removable (services validate tokens independently); risk-service is internal (no
@@ -217,7 +222,10 @@ Full diagrams: [docs/architecture.md](docs/architecture.md).
 1. **External notification delivery** — notification-service now creates **in-app** notifications
    from `RiskDetected` and can phrase them with an **optional LLM narrator** (OpenAI-compatible,
    Groq free tier, off by default, rule-based fallback). Email/push/webhook delivery is not built.
-2. **gRPC (internal sync)** — architectural pillar at 0%; no proto, no deps.
+2. ✅ **gRPC (internal sync)** — done. Spring gRPC is wired end-to-end: user-service hosts an
+   internal `UserProfileService` and the dashboard BFF calls it over gRPC (JWT relayed as call
+   metadata, validated by a server interceptor). One representative call proves the pillar;
+   migrating the remaining internal calls (transaction/budget) off REST stays incremental.
 3. **Analytics depth** — `analytics-service` ships the rollup read model + AI summary; deeper
    analysis (ML forecasting, auto-categorization, persisted summary cache) stays incremental.
 4. **More intelligence rules** — incremental additions on the existing risk-service framework
@@ -302,7 +310,8 @@ maturity (Actuator probes, Docker healthchecks, CI with Testcontainers, dashboar
 
 **Be honest in interview:** learning/portfolio project, not production-deployed; risk/insight
 **detection is rule-based, not ML** (the optional LLM only *phrases* alerts, it does not detect);
-gRPC and external notification delivery (email/push) are not built; load/scale and a real
+external notification delivery (email/push) is not built; gRPC is present but as a single
+representative internal call (not a full REST-to-gRPC migration); load/scale and a real
 deployment target are absent.
 
 ---
@@ -314,7 +323,7 @@ deployment target are absent.
    chartered service now exists; external (email/push) delivery remains optional follow-up.
 3. ✅ **Analytics Service** built (CQRS rollup read model from `TransactionCreated`; overview /
    categories / forecast APIs + optional AI monthly summary) — distinct from the dashboard BFF.
-4. gRPC for internal sync calls.
+4. ✅ **gRPC for internal sync** — done (dashboard→user representative call over Spring gRPC).
 5. Transaction `TRANSFER` type; in-service audit logging.
 6. ✅ RS256 migration done; JWKS/rotation, edge rate limiting, transactional outbox remain.
 7. Distributed tracing + Prometheus alerting.
@@ -355,7 +364,7 @@ Manually verified and captured for portfolio use:
 | 7 | **Observability** | ✅ ~85% | Prometheus scrape of all 9 services, 4 Grafana dashboards (incl. consumer lag), ECS JSON logging + correlation IDs. |
 | 8 | **Demonstrability** | ✅ ~85% | A working **React web client** (auth, transactions incl. wallet transfers, budgets, wallets, dashboard, analytics, admin RBAC console, notification bell) + 4 Grafana screenshots in `docs/images/`. Remaining: a hosted live-demo URL and a recorded walkthrough. |
 | 9 | **Repo hygiene & narrative** | ✅ ~80% | Clean commit history, conventional commits, ADRs. Gap: several stale top-level `*_REVIEW_REPORT.md` files clutter the root — minor cleanup. |
-| 10 | **Honest framing** | ✅ 100% | Status docs already state plainly: portfolio project, rule-based (not ML), not production-deployed, **gRPC still absent (0%)**. This honesty is an asset in interviews. |
+| 10 | **Honest framing** | ✅ 100% | Status docs already state plainly: portfolio project, rule-based (not ML), not production-deployed, **gRPC present as one representative internal call (not a full migration)**. This honesty is an asset in interviews. |
 
 ### To push CV readiness from ~92% → ~95% (highest leverage first)
 1. ✅ **Add visual proof** (closed #8): 4 Grafana screenshots captured in `docs/images/` and the

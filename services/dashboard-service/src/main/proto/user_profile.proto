@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package finsight.user.v1;
+
+option java_multiple_files = true;
+option java_package = "com.pm.grpc.user";
+option java_outer_classname = "UserProfileProto";
+
+// Client-side copy of the contract owned by user-service (services are standalone Maven
+// builds with no shared module, so the .proto is duplicated verbatim — it must stay in
+// sync with services/user-service/src/main/proto/user_profile.proto). The dashboard BFF
+// is the sole caller; identity travels as the relayed "Authorization" JWT metadata.
+service UserProfileService {
+  rpc GetMyProfile(GetMyProfileRequest) returns (GetMyProfileResponse);
+}
+
+message GetMyProfileRequest {
+}
+
+message GetMyProfileResponse {
+  bool found = 1;             // false => caller has no profile yet (REST 404 -> null)
+  int64 user_id = 2;
+  string full_name = 3;
+  string phone = 4;
+  string date_of_birth = 5;  // ISO-8601 (yyyy-MM-dd), empty when null
+  string avatar_url = 6;
+  string occupation = 7;
+  string bio = 8;
+}
