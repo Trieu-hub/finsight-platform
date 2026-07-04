@@ -11,7 +11,15 @@ import org.springframework.stereotype.Component;
 @Setter
 public class JwtProperties {
 
-    private String secret;
+    /**
+     * RSA keys as base64-encoded DER (PEM armor optional; whitespace tolerated).
+     * auth-service is the ONLY holder of the private key — it alone can mint tokens.
+     * The public key is used here to validate tokens on this service's own protected
+     * endpoints (the admin console); every other service is given only the public key.
+     */
+    private String privateKey;
+    private String publicKey;
+
     private long accessTokenExpiration;
     private long refreshTokenExpiration;
 

@@ -1,17 +1,14 @@
 package com.pm.dashboardservice.security;
 
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.security.Keys;
+import com.pm.dashboardservice.support.JwtTestTokens;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
-
-import javax.crypto.SecretKey;
-import java.nio.charset.StandardCharsets;
-import java.util.Date;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -23,24 +20,25 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * (which fails fast against the unreachable test URIs → 502, proving the request got past security).
  *
  * <p>Upstream URIs point at a closed port so the authenticated path fails immediately with a
- * connection refusal rather than a slow timeout.
+ * connection refusal rather than a slow timeout. The RS256 public key is supplied via
+ * {@code @DynamicPropertySource} from {@link JwtTestTokens}, whose private key mints the tokens.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
 @TestPropertySource(properties = {
-        "jwt.secret=test-secret-test-secret-test-secret-test-secret-0123456789abcdef",
         "dashboard.services.user-uri=http://localhost:1",
         "dashboard.services.transaction-uri=http://localhost:1",
         "dashboard.services.budget-uri=http://localhost:1"
 })
 class DashboardApiSecurityIntegrationTest {
 
-    private static final String SECRET =
-            "test-secret-test-secret-test-secret-test-secret-0123456789abcdef";
-    private static final String WRONG_SECRET =
-            "wrong-secret-wrong-secret-wrong-secret-wrong-secret-0123456789ab";
     private static final String ISSUER = "finsight-auth";
     private static final String AUDIENCE = "finsight-api";
+
+    @DynamicPropertySource
+    static void jwtKey(DynamicPropertyRegistry registry) {
+        registry.add("jwt.public-key", JwtTestTokens::publicKeyBase64);
+    }
 
     @Autowired
     private MockMvc mockMvc;
@@ -53,14 +51,14 @@ class DashboardApiSecurityIntegrationTest {
 
     @Test
     void rejectsJwtWithInvalidSignature() throws Exception {
-        String forged = token(WRONG_SECRET, ISSUER, AUDIENCE, 3_600_000L);
+        String forged = JwtTestTokens.forgedSignature(ISSUER, AUDIENCE);
         mockMvc.perform(get("/api/v1/dashboard").header("Authorization", "Bearer " + forged))
                 .andExpect(status().isUnauthorized());
     }
 
     @Test
     void rejectsExpiredJwt() throws Exception {
-        String expired = token(SECRET, ISSUER, AUDIENCE, -3_600_000L);
+        String expired = JwtTestTokens.expired(ISSUER, AUDIENCE);
         mockMvc.perform(get("/api/v1/dashboard").header("Authorization", "Bearer " + expired))
                 .andExpect(status().isUnauthorized());
     }
@@ -68,23 +66,8 @@ class DashboardApiSecurityIntegrationTest {
     @Test
     void validJwtPassesSecurityAndReachesUpstreamFanOut() throws Exception {
         // Authenticated: not 401. The unreachable upstreams then surface as 502 (UpstreamException).
-        String valid = token(SECRET, ISSUER, AUDIENCE, 3_600_000L);
+        String valid = JwtTestTokens.valid(ISSUER, AUDIENCE);
         mockMvc.perform(get("/api/v1/dashboard").header("Authorization", "Bearer " + valid))
                 .andExpect(status().isBadGateway());
-    }
-
-    private static String token(String secret, String issuer, String audience, long ttlMillis) {
-        SecretKey key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
-        long now = System.currentTimeMillis();
-        return Jwts.builder()
-                .claim("userId", 1L)
-                .claim("email", "a@b.c")
-                .claim("role", "USER")
-                .issuer(issuer)
-                .audience().add(audience).and()
-                .issuedAt(new Date(now))
-                .expiration(new Date(now + ttlMillis))
-                .signWith(key, Jwts.SIG.HS512)
-                .compact();
     }
 }

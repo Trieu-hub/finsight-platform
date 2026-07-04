@@ -12,7 +12,7 @@
 #     one service that fans out to user/transaction/budget over HTTP, relaying the caller's
 #     token.) Every DB-backed service still depends only on its own datastore.
 #   * Each DB-backed service reads the same externalized config contract
-#     (${DB_URL}/${DB_USERNAME}/${DB_PASSWORD}, ${REDIS_HOST}/${REDIS_PORT}, ${JWT_SECRET}),
+#     (${DB_URL}/${DB_USERNAME}/${DB_PASSWORD}, ${REDIS_HOST}/${REDIS_PORT}, ${JWT_PUBLIC_KEY}),
 #     so it is configured purely through environment variables here.
 #   * Secrets are NOT in this file. They are interpolated from a gitignored `.env`
 #     (copy `.env.example` -> `.env`). Each service authenticates to MySQL as its own
@@ -107,7 +107,10 @@ services:
       DB_PASSWORD: ${AUTH_DB_PASSWORD:?set AUTH_DB_PASSWORD in .env}
       REDIS_HOST: redis
       REDIS_PORT: "6379"
-      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      # auth-service alone holds the private key (signs); the public key also lets it
+      # verify tokens on its own admin endpoints. Every other service gets only the public key.
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?set JWT_PRIVATE_KEY in .env}
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?set JWT_PUBLIC_KEY in .env}
     ports:
       - "8081:8081"
     restart: unless-stopped
@@ -130,7 +133,7 @@ services:
       DB_URL: jdbc:mysql://mysql:3306/user_db
       DB_USERNAME: user_user
       DB_PASSWORD: ${USER_DB_PASSWORD:?set USER_DB_PASSWORD in .env}
-      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?set JWT_PUBLIC_KEY in .env}
     ports:
       - "8082:8082"
     restart: unless-stopped
@@ -154,7 +157,7 @@ services:
       DB_URL: jdbc:mysql://mysql:3306/transaction_db
       DB_USERNAME: transaction_user
       DB_PASSWORD: ${TRANSACTION_DB_PASSWORD:?set TRANSACTION_DB_PASSWORD in .env}
-      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?set JWT_PUBLIC_KEY in .env}
       # Async event backbone: where TransactionCreated is published (Phase 2.1).
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       # Native Spring Boot 4 structured logging: emit ECS-formatted JSON to stdout for
@@ -185,7 +188,7 @@ services:
       DB_URL: jdbc:mysql://mysql:3306/budget_db
       DB_USERNAME: budget_user
       DB_PASSWORD: ${BUDGET_DB_PASSWORD:?set BUDGET_DB_PASSWORD in .env}
-      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?set JWT_PUBLIC_KEY in .env}
       # Async event backbone: consumes TransactionCreated to materialize budget
       # utilization (spent_amount). See docs/ADR-0004.
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
@@ -250,7 +253,7 @@ services:
       DB_URL: jdbc:mysql://mysql:3306/notification_db
       DB_USERNAME: notification_user
       DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD:?set NOTIFICATION_DB_PASSWORD in .env}
-      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?set JWT_PUBLIC_KEY in .env}
       # Async event backbone: consumes RiskDetected to create in-app notifications.
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       # Optional LLM-backed alert narrator on any OpenAI-compatible API (default: Groq free
@@ -289,7 +292,7 @@ services:
       DB_URL: jdbc:mysql://mysql:3306/analytics_db
       DB_USERNAME: analytics_user
       DB_PASSWORD: ${ANALYTICS_DB_PASSWORD:?set ANALYTICS_DB_PASSWORD in .env}
-      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?set JWT_PUBLIC_KEY in .env}
       # Async event backbone: consumes TransactionCreated to build the rollup read model.
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       # Optional LLM-backed monthly summary on any OpenAI-compatible API (default: Groq free
@@ -329,7 +332,7 @@ services:
       USER_SERVICE_URI: http://user-service:8082
       TRANSACTION_SERVICE_URI: http://transaction-service:8083
       BUDGET_SERVICE_URI: http://budget-service:8084
-      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?set JWT_PUBLIC_KEY in .env}
       # Native Spring Boot 4 structured logging: emit ECS-formatted JSON to stdout for
       # log aggregation (ELK/OpenSearch/Loki-ready). Bound to logging.structured.format.console
       # via relaxed binding; service.name comes from spring.application.name and MDC
@@ -383,7 +386,7 @@ services:
       # Phase 2: the gateway validates the access token at the edge with the same
       # shared HMAC secret auth-service signs with (issuer/audience default to the
       # minted values). See docs/ADR-0002.
-      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?set JWT_PUBLIC_KEY in .env}
       # Native Spring Boot 4 structured logging: emit ECS-formatted JSON to stdout for
       # log aggregation (ELK/OpenSearch/Loki-ready). Bound to logging.structured.format.console
       # via relaxed binding; service.name comes from spring.application.name and MDC

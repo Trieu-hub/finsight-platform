@@ -47,9 +47,9 @@ management:
     env:
       enabled: false
 
-# Same shared HMAC secret auth-service signs with; validated locally on every request.
+# auth-service's RSA public key; validated locally on every request (no call to auth).
 jwt:
-  secret: ${JWT_SECRET}
+  public-key: ${JWT_PUBLIC_KEY}
   # Enforced on validation (parity with the gateway and the minting auth-service).
   issuer: ${JWT_ISSUER:finsight-auth}
   audience: ${JWT_AUDIENCE:finsight-api}

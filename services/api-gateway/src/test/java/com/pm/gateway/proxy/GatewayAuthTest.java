@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -28,15 +30,18 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "gateway.routes[1].prefix=/api/v1/auth",
         "gateway.routes[1].uri=http://localhost:59999",
         "gateway.timeouts.connect-ms=500",
-        "gateway.timeouts.read-ms=500",
-        "jwt.secret=" + GatewayAuthTest.SECRET
+        "gateway.timeouts.read-ms=500"
 })
 @AutoConfigureMockMvc
 class GatewayAuthTest {
 
-    static final String SECRET = "test-secret-test-secret-test-secret-test-secret-0123456789abcdef";
     private static final String ISS = "finsight-auth";
     private static final String AUD = "finsight-api";
+
+    @DynamicPropertySource
+    static void jwtKey(DynamicPropertyRegistry registry) {
+        registry.add("jwt.public-key", JwtTestTokens::publicKeyBase64);
+    }
 
     @Autowired
     MockMvc mockMvc;
@@ -59,7 +64,7 @@ class GatewayAuthTest {
 
     @Test
     void protectedRoute_expiredToken_returnsTokenExpired() throws Exception {
-        String token = JwtTestTokens.expired(SECRET, ISS, AUD);
+        String token = JwtTestTokens.expired(ISS, AUD);
         mockMvc.perform(get("/api/v1/budgets").header("Authorization", "Bearer " + token))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("TOKEN_EXPIRED"));
@@ -75,7 +80,7 @@ class GatewayAuthTest {
 
     @Test
     void protectedRoute_wrongAlgorithm_returnsTokenInvalid() throws Exception {
-        String token = JwtTestTokens.wrongAlgorithm(SECRET, ISS, AUD);
+        String token = JwtTestTokens.wrongAlgorithm(ISS, AUD);
         mockMvc.perform(get("/api/v1/budgets").header("Authorization", "Bearer " + token))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("TOKEN_INVALID"));
@@ -83,7 +88,7 @@ class GatewayAuthTest {
 
     @Test
     void protectedRoute_wrongIssuer_returnsTokenInvalid() throws Exception {
-        String token = JwtTestTokens.wrongIssuer(SECRET, AUD);
+        String token = JwtTestTokens.wrongIssuer(AUD);
         mockMvc.perform(get("/api/v1/budgets").header("Authorization", "Bearer " + token))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("TOKEN_INVALID"));
@@ -91,7 +96,7 @@ class GatewayAuthTest {
 
     @Test
     void protectedRoute_wrongAudience_returnsTokenInvalid() throws Exception {
-        String token = JwtTestTokens.wrongAudience(SECRET, ISS);
+        String token = JwtTestTokens.wrongAudience(ISS);
         mockMvc.perform(get("/api/v1/budgets").header("Authorization", "Bearer " + token))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("TOKEN_INVALID"));
@@ -101,7 +106,7 @@ class GatewayAuthTest {
 
     @Test
     void protectedRoute_validToken_passesAuthAndForwards() throws Exception {
-        String token = JwtTestTokens.valid(SECRET, ISS, AUD);
+        String token = JwtTestTokens.valid(ISS, AUD);
         mockMvc.perform(get("/api/v1/budgets").header("Authorization", "Bearer " + token))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.error.code").value("SERVICE_UNAVAILABLE"));

@@ -3,11 +3,7 @@ package com.pm.authservice.integration;
 import com.pm.authservice.integration.support.JwtTestTokens;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.Test;
-
-import javax.crypto.SecretKey;
-import java.nio.charset.StandardCharsets;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -27,8 +23,9 @@ class JwtClaimsIntegrationTest extends AbstractMockMvcIntegrationTest {
         register("user" + id, email, "password123");
         String accessToken = login(email, "password123").path("accessToken").asText();
 
-        SecretKey key = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
-        Claims claims = Jwts.parser().verifyWith(key).build()
+        // The login token is RS256-signed with the test private key; verify it with the
+        // matching public key (the same pair the app is configured with).
+        Claims claims = Jwts.parser().verifyWith(JwtTestTokens.publicKey()).build()
                 .parseSignedClaims(accessToken).getPayload();
 
         assertEquals("finsight-auth", claims.getIssuer());
@@ -44,7 +41,7 @@ class JwtClaimsIntegrationTest extends AbstractMockMvcIntegrationTest {
 
         // Correctly signed and addressed to an existing user, but with no iss/aud claims.
         // Issuer/audience are now enforced, so the request must be rejected.
-        String token = JwtTestTokens.valid(jwtSecret, id, email, "ROLE_USER");
+        String token = JwtTestTokens.valid(id, email, "ROLE_USER");
 
         mockMvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer " + token))
                 .andExpect(status().isUnauthorized());

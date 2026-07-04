@@ -1,34 +1,61 @@
 package com.pm.authservice.integration.support;
 
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.security.Keys;
 
-import javax.crypto.SecretKey;
-import java.nio.charset.StandardCharsets;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.PublicKey;
+import java.util.Base64;
 import java.util.Date;
 
 /**
- * Mints HS256 JWTs for integration tests, mirroring the exact shape auth-service
- * issues (subject = email, plus userId/email/role claims) so the real JwtService
- * and JwtAuthenticationFilter accept or reject them as in production.
+ * Mints RS256 JWTs for integration tests, mirroring the exact shape auth-service issues
+ * (subject = email, plus userId/email/role claims). The keypair here is wired into the app
+ * under test via {@code @DynamicPropertySource} (see {@code AbstractIntegrationTest}, which
+ * sets {@code jwt.private-key}/{@code jwt.public-key} from it), so both login-minted tokens
+ * and the ones built here verify against the same key.
+ *
+ * <p>NOTE: {@link #valid}/{@link #expired} deliberately omit issuer/audience — a JwtClaims
+ * test relies on that to prove the enforced iss/aud rejects a token lacking them.
  */
 public final class JwtTestTokens {
+
+    private static final KeyPair KEYS = generateRsa();
+    // A second, unrelated keypair to forge a structurally valid but wrongly-signed token.
+    private static final KeyPair WRONG_KEYS = generateRsa();
 
     private JwtTestTokens() {
     }
 
-    /** A token valid for one hour. */
-    public static String valid(String secret, long userId, String email, String role) {
-        return build(secret, userId, email, role, 3_600_000L);
+    public static String publicKeyBase64() {
+        return Base64.getEncoder().encodeToString(KEYS.getPublic().getEncoded());
+    }
+
+    public static String privateKeyBase64() {
+        return Base64.getEncoder().encodeToString(KEYS.getPrivate().getEncoded());
+    }
+
+    /** The public key the app is configured to verify with (for tests that parse a token). */
+    public static PublicKey publicKey() {
+        return KEYS.getPublic();
+    }
+
+    /** A token valid for one hour, correctly signed (no iss/aud — see class note). */
+    public static String valid(long userId, String email, String role) {
+        return build(KEYS, userId, email, role, 3_600_000L);
     }
 
     /** A token whose expiry is already in the past. */
-    public static String expired(String secret, long userId, String email, String role) {
-        return build(secret, userId, email, role, -3_600_000L);
+    public static String expired(long userId, String email, String role) {
+        return build(KEYS, userId, email, role, -3_600_000L);
     }
 
-    private static String build(String secret, long userId, String email, String role, long ttlMillis) {
-        SecretKey key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
+    /** Correct shape but signed by an unrelated key → fails signature verification. */
+    public static String forgedSignature(long userId, String email, String role) {
+        return build(WRONG_KEYS, userId, email, role, 3_600_000L);
+    }
+
+    private static String build(KeyPair keys, long userId, String email, String role, long ttlMillis) {
         long now = System.currentTimeMillis();
         return Jwts.builder()
                 .subject(email)
@@ -37,7 +64,17 @@ public final class JwtTestTokens {
                 .claim("role", role)
                 .issuedAt(new Date(now))
                 .expiration(new Date(now + ttlMillis))
-                .signWith(key)
+                .signWith(keys.getPrivate(), Jwts.SIG.RS256)
                 .compact();
+    }
+
+    private static KeyPair generateRsa() {
+        try {
+            KeyPairGenerator gen = KeyPairGenerator.getInstance("RSA");
+            gen.initialize(2048);
+            return gen.generateKeyPair();
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 }
