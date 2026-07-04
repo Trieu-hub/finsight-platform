@@ -10,9 +10,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /** Group A: authentication, authorization and per-user data isolation. */
 class BudgetApiSecurityIntegrationTest extends AbstractMockMvcIntegrationTest {
 
-    private static final String WRONG_SECRET =
-            "wrong-secret-wrong-secret-wrong-secret-wrong-secret-0123456789ab";
-
     @Test
     void rejectsRequestWithoutJwt() throws Exception {
         mockMvc.perform(get("/api/v1/budgets"))
@@ -21,14 +18,14 @@ class BudgetApiSecurityIntegrationTest extends AbstractMockMvcIntegrationTest {
 
     @Test
     void rejectsJwtWithInvalidSignature() throws Exception {
-        String forged = JwtTestTokens.valid(WRONG_SECRET, 1L, "a@b.c", "USER");
+        String forged = JwtTestTokens.forgedSignature(1L, "a@b.c", "USER");
         mockMvc.perform(get("/api/v1/budgets").header("Authorization", "Bearer " + forged))
                 .andExpect(status().isUnauthorized());
     }
 
     @Test
     void rejectsExpiredJwt() throws Exception {
-        String expired = JwtTestTokens.expired(jwtSecret, 1L, "a@b.c", "USER");
+        String expired = JwtTestTokens.expired(1L, "a@b.c", "USER");
         mockMvc.perform(get("/api/v1/budgets").header("Authorization", "Bearer " + expired))
                 .andExpect(status().isUnauthorized());
     }

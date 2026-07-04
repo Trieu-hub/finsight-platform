@@ -39,10 +39,10 @@ gateway:
     connect-ms: ${GATEWAY_CONNECT_TIMEOUT_MS:2000}
     read-ms: ${GATEWAY_READ_TIMEOUT_MS:10000}
 
-# Edge JWT validation contract (Phase 2). Frozen in docs/ADR-0002 §1-§3. The secret is
-# the same one auth-service signs with; issuer/audience default to the minted values.
+# Edge JWT validation contract (Phase 2). Frozen in docs/ADR-0002 §1-§3. Verifies with
+# auth-service's RSA public key; issuer/audience default to the minted values.
 jwt:
-  secret: ${JWT_SECRET}
+  public-key: ${JWT_PUBLIC_KEY}
   issuer: ${JWT_ISSUER:finsight-auth}
   audience: ${JWT_AUDIENCE:finsight-api}
 

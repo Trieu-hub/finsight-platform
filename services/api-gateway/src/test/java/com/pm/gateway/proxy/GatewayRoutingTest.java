@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -28,13 +30,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "gateway.routes[0].prefix=/api/v1/budgets",
         "gateway.routes[0].uri=http://localhost:59999",
         "gateway.timeouts.connect-ms=500",
-        "gateway.timeouts.read-ms=500",
-        "jwt.secret=" + GatewayRoutingTest.SECRET
+        "gateway.timeouts.read-ms=500"
 })
 @AutoConfigureMockMvc
 class GatewayRoutingTest {
 
-    static final String SECRET = "test-secret-test-secret-test-secret-test-secret-0123456789abcdef";
+    @DynamicPropertySource
+    static void jwtKey(DynamicPropertyRegistry registry) {
+        registry.add("jwt.public-key", JwtTestTokens::publicKeyBase64);
+    }
 
     @Autowired
     MockMvc mockMvc;
@@ -49,7 +53,7 @@ class GatewayRoutingTest {
 
     @Test
     void knownPrefixWithValidTokenAndDeadBackendReturnsServiceUnavailable() throws Exception {
-        String token = JwtTestTokens.valid(SECRET, "finsight-auth", "finsight-api");
+        String token = JwtTestTokens.valid("finsight-auth", "finsight-api");
         mockMvc.perform(get("/api/v1/budgets").header("Authorization", "Bearer " + token))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.success").value(false))

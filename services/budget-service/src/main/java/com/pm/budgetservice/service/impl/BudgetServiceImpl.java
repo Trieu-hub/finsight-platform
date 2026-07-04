@@ -16,6 +16,7 @@ import com.pm.budgetservice.repository.BudgetRepository;
 import com.pm.budgetservice.repository.BudgetSpecifications;
 import com.pm.budgetservice.repository.ProcessedEventRepository;
 import com.pm.budgetservice.service.BudgetService;
+import com.pm.budgetservice.service.ExpenseLine;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -154,22 +155,69 @@ public class BudgetServiceImpl implements BudgetService {
     @Transactional
     public boolean applyExpense(UUID eventId, Long userId, Long categoryId, String currency,
                                 BigDecimal amount, LocalDate transactionDate) {
-        // Idempotency inbox: an existence check (not insert-and-catch) because a flush
-        // failure inside this transaction would mark it rollback-only. Duplicates only
-        // arrive sequentially (one consumer per partition), so check-then-insert is
-        // race-free in practice; the PK still backstops correctness — a true race would
-        // roll back this whole transaction and the redelivery lands here again.
-        if (processedEventRepository.existsById(eventId)) {
+        if (isDuplicate(eventId)) {
             return false;
         }
-        processedEventRepository.save(ProcessedEvent.builder()
-                .eventId(eventId)
-                .processedAt(LocalDateTime.now())
-                .build());
+        recordProcessed(eventId);
 
         // Same DB transaction as the inbox row: both commit or neither does.
         budgetRepository.applyExpense(userId, categoryId, currency, amount, transactionDate);
         return true;
+    }
+
+    @Override
+    @Transactional
+    public boolean applyDelete(UUID eventId, Long userId, Long categoryId, String currency,
+                               BigDecimal amount, LocalDate transactionDate) {
+        if (isDuplicate(eventId)) {
+            return false;
+        }
+        recordProcessed(eventId);
+
+        // Reverse: the inverse of applyExpense. Negating the amount reuses the same atomic
+        // SQL increment, so spent_amount can transiently go negative if a delete is applied
+        // before its create (events for one transaction now span three topics) — accepted:
+        // the increment is additive, so the final value is correct regardless of order.
+        budgetRepository.applyExpense(userId, categoryId, currency, amount.negate(), transactionDate);
+        return true;
+    }
+
+    @Override
+    @Transactional
+    public boolean applyUpdate(UUID eventId, Long userId, ExpenseLine reverse, ExpenseLine apply) {
+        if (isDuplicate(eventId)) {
+            return false;
+        }
+        recordProcessed(eventId);
+
+        // One inbox row guards both increments: reverse the old slot, apply the new one.
+        if (reverse != null) {
+            budgetRepository.applyExpense(userId, reverse.categoryId(), reverse.currency(),
+                    reverse.amount().negate(), reverse.date());
+        }
+        if (apply != null) {
+            budgetRepository.applyExpense(userId, apply.categoryId(), apply.currency(),
+                    apply.amount(), apply.date());
+        }
+        return true;
+    }
+
+    /**
+     * Idempotency inbox check: an existence probe (not insert-and-catch) because a flush
+     * failure inside this transaction would mark it rollback-only. Duplicates only arrive
+     * sequentially (one consumer per partition), so check-then-insert is race-free in
+     * practice; the PK still backstops correctness — a true race would roll back this whole
+     * transaction and the redelivery lands here again.
+     */
+    private boolean isDuplicate(UUID eventId) {
+        return processedEventRepository.existsById(eventId);
+    }
+
+    private void recordProcessed(UUID eventId) {
+        processedEventRepository.save(ProcessedEvent.builder()
+                .eventId(eventId)
+                .processedAt(LocalDateTime.now())
+                .build());
     }
 
     private Budget requireOwnedBudget(Long userId, UUID id) {

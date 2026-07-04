@@ -3,46 +3,74 @@ package com.pm.dashboardservice.client;
 import com.pm.dashboardservice.client.dto.UserProfileDto;
 import com.pm.dashboardservice.config.DashboardProperties;
 import com.pm.dashboardservice.exception.UpstreamException;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatusCode;
+import com.pm.grpc.user.GetMyProfileRequest;
+import com.pm.grpc.user.GetMyProfileResponse;
+import com.pm.grpc.user.UserProfileServiceGrpc.UserProfileServiceBlockingStub;
+import io.grpc.Metadata;
+import io.grpc.StatusRuntimeException;
+import io.grpc.stub.MetadataUtils;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestClientException;
 
-/** Reads the caller's profile from user-service (returned raw, not enveloped). */
+import java.time.LocalDate;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * Reads the caller's profile from user-service over <b>gRPC</b> — the platform's one
+ * internal-sync gRPC call (transaction/budget stay REST). The caller's bearer token is
+ * relayed as call metadata so user-service authorizes as the same user and derives the
+ * userId from the validated JWT, exactly as the former REST call did. A per-call deadline
+ * mirrors the REST read timeout so a slow/absent server fails fast (→ 502).
+ */
 @Component
 public class UserClient {
 
-    private final RestClient client;
+    private static final Metadata.Key<String> AUTHORIZATION =
+            Metadata.Key.of("Authorization", Metadata.ASCII_STRING_MARSHALLER);
 
-    public UserClient(RestClient.Builder builder, DashboardProperties properties) {
-        this.client = builder.baseUrl(properties.getServices().getUserUri()).build();
+    private final UserProfileServiceBlockingStub stub;
+    private final long deadlineMs;
+
+    public UserClient(UserProfileServiceBlockingStub stub, DashboardProperties properties) {
+        this.stub = stub;
+        this.deadlineMs = properties.getTimeouts().getReadMs();
     }
 
     /**
      * @return the profile, or {@code null} if the user has not created one yet
-     *         (user-service returns 404 in that case — a normal, non-fatal state).
+     *         (user-service replies {@code found = false} — a normal, non-fatal state,
+     *         the gRPC analogue of the REST 404 the callers already handle).
      */
     public UserProfileDto me(String authorization) {
+        Metadata headers = new Metadata();
+        headers.put(AUTHORIZATION, authorization);
         try {
-            return client.get()
-                    .uri("/api/v1/users/me")
-                    .header(HttpHeaders.AUTHORIZATION, authorization)
-                    // exchange() does not throw on error status, so we classify it ourselves:
-                    // 404 → no profile yet (null); any other error → upstream failure (502).
-                    .exchange((request, response) -> {
-                        HttpStatusCode status = response.getStatusCode();
-                        if (status.value() == 404) {
-                            return null;
-                        }
-                        if (status.isError()) {
-                            throw new UpstreamException("user-service",
-                                    new RestClientException("user-service returned " + status));
-                        }
-                        return response.bodyTo(UserProfileDto.class);
-                    });
-        } catch (RestClientException e) {
+            GetMyProfileResponse response = stub
+                    .withInterceptors(MetadataUtils.newAttachHeadersInterceptor(headers))
+                    .withDeadlineAfter(deadlineMs, TimeUnit.MILLISECONDS)
+                    .getMyProfile(GetMyProfileRequest.getDefaultInstance());
+            return response.getFound() ? toDto(response) : null;
+        } catch (StatusRuntimeException e) {
             throw new UpstreamException("user-service", e);
         }
+    }
+
+    private static UserProfileDto toDto(GetMyProfileResponse r) {
+        return new UserProfileDto(
+                r.getUserId(),
+                emptyToNull(r.getFullName()),
+                emptyToNull(r.getPhone()),
+                parseDate(r.getDateOfBirth()),
+                emptyToNull(r.getAvatarUrl()),
+                emptyToNull(r.getOccupation()),
+                emptyToNull(r.getBio()));
+    }
+
+    /** proto3 sends absent strings as ""; restore the REST DTO's null semantics. */
+    private static String emptyToNull(String value) {
+        return value == null || value.isEmpty() ? null : value;
+    }
+
+    private static LocalDate parseDate(String value) {
+        return value == null || value.isEmpty() ? null : LocalDate.parse(value);
     }
 }

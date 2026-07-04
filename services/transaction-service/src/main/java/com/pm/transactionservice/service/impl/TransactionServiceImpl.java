@@ -9,6 +9,8 @@ import com.pm.transactionservice.entity.Category;
 import com.pm.transactionservice.entity.Transaction;
 import com.pm.transactionservice.enums.TransactionType;
 import com.pm.transactionservice.event.TransactionCreatedEvent;
+import com.pm.transactionservice.event.TransactionDeletedEvent;
+import com.pm.transactionservice.event.TransactionUpdatedEvent;
 import com.pm.transactionservice.exception.CategoryNotFoundException;
 import com.pm.transactionservice.exception.InvalidTransactionDataException;
 import com.pm.transactionservice.exception.TransactionNotFoundException;
@@ -27,6 +29,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.UUID;
 
 @Service
@@ -132,11 +135,16 @@ public class TransactionServiceImpl implements TransactionService {
                 .findByIdAndUserIdAndIsDeletedFalse(id, userId)
                 .orElseThrow(() -> new TransactionNotFoundException("Transaction not found"));
 
-        // Snapshot the pre-update wallet effect so it can be reversed before the new one is applied.
+        // Snapshot the pre-update state so it can be reversed before the new one is applied —
+        // both the wallet effect (walletId/toWalletId) and the budget-matching attributes
+        // (type/amount/currency/categoryId/transactionDate) carried on the TransactionUpdated event.
         TransactionType oldType = transaction.getType();
         BigDecimal oldAmount = transaction.getAmount();
         Long oldWalletId = transaction.getWalletId();
         Long oldToWalletId = transaction.getToWalletId();
+        String oldCurrency = transaction.getCurrency();
+        Long oldCategoryId = transaction.getCategoryId();
+        LocalDate oldTransactionDate = transaction.getTransactionDate();
 
         if (request.getType() != null) {
             transaction.setType(request.getType());
@@ -190,6 +198,16 @@ public class TransactionServiceImpl implements TransactionService {
 
         Transaction saved = transactionRepository.save(transaction);
 
+        // Emit the domain event inside the transaction; TransactionEventListener forwards it
+        // to Kafka only AFTER_COMMIT. Carries old + new so a consumer materializing a running
+        // total (budget spent_amount) reverses the old contribution and applies the new one.
+        eventPublisher.publishEvent(TransactionUpdatedEvent.of(
+                saved.getId(),
+                userId,
+                oldType, oldAmount, oldCurrency, oldCategoryId, oldTransactionDate,
+                saved.getType(), saved.getAmount(), saved.getCurrency(),
+                saved.getCategoryId(), saved.getTransactionDate()));
+
         walletService.applyTransactionEffect(userId, oldType, oldAmount, oldWalletId, oldToWalletId, -1);
         walletService.applyTransactionEffect(userId, saved.getType(), saved.getAmount(),
                 saved.getWalletId(), saved.getToWalletId(), +1);
@@ -208,6 +226,17 @@ public class TransactionServiceImpl implements TransactionService {
         // Soft delete.
         transaction.setDeleted(true);
         transactionRepository.save(transaction);
+
+        // Emit AFTER_COMMIT so a running-total consumer (budget spent_amount) reverses this
+        // transaction's contribution. The soft delete leaves every other field intact.
+        eventPublisher.publishEvent(TransactionDeletedEvent.of(
+                transaction.getId(),
+                userId,
+                transaction.getType(),
+                transaction.getAmount(),
+                transaction.getCurrency(),
+                transaction.getCategoryId(),
+                transaction.getTransactionDate()));
 
         // Undo this transaction's effect on wallet balance(s).
         walletService.applyTransactionEffect(userId, transaction.getType(), transaction.getAmount(),

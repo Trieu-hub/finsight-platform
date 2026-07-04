@@ -3,7 +3,6 @@ package com.pm.authservice.integration;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -28,9 +27,6 @@ public abstract class AbstractMockMvcIntegrationTest extends AbstractIntegration
     protected MockMvc mockMvc;
 
     protected final ObjectMapper objectMapper = new ObjectMapper();
-
-    @Value("${jwt.secret}")
-    protected String jwtSecret;
 
     protected long uniqueId() {
         return SEQUENCE.incrementAndGet();

@@ -44,8 +44,11 @@ finsight:
     # Master switch for event publishing. Off => create() never reaches for a broker.
     enabled: true
     # Topic names this service owns. Externalized so infra/tests can override.
+    # Three transaction-lifecycle topics; consumers subscribe to only the ones they need.
     topics:
       transaction-created: finsight.transactions.created
+      transaction-updated: finsight.transactions.updated
+      transaction-deleted: finsight.transactions.deleted
 
 management:
   endpoints:
@@ -83,7 +86,7 @@ management:
       enabled: false
 
 jwt:
-  secret: ${JWT_SECRET}
+  public-key: ${JWT_PUBLIC_KEY}
   # Enforced on validation (parity with the gateway and the minting auth-service).
   issuer: ${JWT_ISSUER:finsight-auth}
   audience: ${JWT_AUDIENCE:finsight-api}

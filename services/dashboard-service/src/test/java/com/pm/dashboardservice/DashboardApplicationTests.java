@@ -1,7 +1,10 @@
 package com.pm.dashboardservice;
 
+import com.pm.dashboardservice.support.JwtTestTokens;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.TestPropertySource;
 
 /**
@@ -10,12 +13,15 @@ import org.springframework.test.context.TestPropertySource;
  */
 @SpringBootTest
 @TestPropertySource(properties = {
-        "jwt.secret=test-secret-test-secret-test-secret-test-secret-0123456789abcdef",
-        "dashboard.services.user-uri=http://localhost:8082",
         "dashboard.services.transaction-uri=http://localhost:8083",
         "dashboard.services.budget-uri=http://localhost:8084"
 })
 class DashboardApplicationTests {
+
+    @DynamicPropertySource
+    static void jwtKey(DynamicPropertyRegistry registry) {
+        registry.add("jwt.public-key", JwtTestTokens::publicKeyBase64);
+    }
 
     @Test
     void contextLoads() {

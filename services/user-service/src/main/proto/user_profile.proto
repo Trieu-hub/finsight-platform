@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package finsight.user.v1;
+
+option java_multiple_files = true;
+option java_package = "com.pm.grpc.user";
+option java_outer_classname = "UserProfileProto";
+
+// Internal-only profile lookup used by the dashboard BFF (the platform's one gRPC
+// internal-sync call; everything else stays REST/Kafka). The caller's identity is NOT
+// carried in the request body: it is taken from the validated JWT relayed as call
+// metadata ("Authorization: Bearer <token>"), exactly mirroring the REST contract
+// GET /api/v1/users/me — userId always comes from the token, never from the client.
+service UserProfileService {
+  rpc GetMyProfile(GetMyProfileRequest) returns (GetMyProfileResponse);
+}
+
+message GetMyProfileRequest {
+}
+
+message GetMyProfileResponse {
+  bool found = 1;             // false => caller has no profile yet (REST 404 -> null)
+  int64 user_id = 2;
+  string full_name = 3;
+  string phone = 4;
+  string date_of_birth = 5;  // ISO-8601 (yyyy-MM-dd), empty when null
+  string avatar_url = 6;
+  string occupation = 7;
+  string bio = 8;
+}

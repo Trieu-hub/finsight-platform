@@ -23,4 +23,22 @@ public class KafkaTopicConfig {
                 .replicas(1)
                 .build();
     }
+
+    @Bean
+    public NewTopic transactionUpdatedTopic(
+            @Value("${finsight.kafka.topics.transaction-updated}") String name) {
+        return TopicBuilder.name(name)
+                .partitions(1)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
+    public NewTopic transactionDeletedTopic(
+            @Value("${finsight.kafka.topics.transaction-deleted}") String name) {
+        return TopicBuilder.name(name)
+                .partitions(1)
+                .replicas(1)
+                .build();
+    }
 }

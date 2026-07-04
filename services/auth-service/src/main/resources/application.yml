@@ -71,8 +71,11 @@ management:
       enabled: true
 
 jwt:
-  # No default: the app must be given a secret (shared with the other services).
-  secret: ${JWT_SECRET}
+  # RSA keys (base64 DER, PEM armor optional), no defaults. auth-service alone holds the
+  # private key and is the only component that can mint tokens; the public key is shared
+  # with every validator so they can verify but never forge.
+  private-key: ${JWT_PRIVATE_KEY}
+  public-key: ${JWT_PUBLIC_KEY}
   access-token-expiration: ${JWT_ACCESS_TOKEN_EXPIRATION:900000}
   refresh-token-expiration: ${JWT_REFRESH_TOKEN_EXPIRATION:604800000}
   # Emitted into issued tokens and logged on validation, but NOT enforced yet.
