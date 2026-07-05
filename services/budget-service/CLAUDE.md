@@ -21,15 +21,18 @@ the Testcontainers test style.
 ## Scope — and what is deliberately NOT here
 
 This service stores budget **definitions** and maintains `spent_amount`, an
-**event-driven materialization** of matching EXPENSE spend consumed from Kafka
-(`TransactionCreated` on `finsight.transactions.created`, Phase 2.2 — see
-`docs/ADR-0004` at the repo root). There are still no cross-service runtime calls;
-the only inbound data path besides HTTP is the Kafka listener.
+**event-driven materialization** of matching EXPENSE spend consumed from Kafka: the three
+transaction-lifecycle topics `finsight.transactions.{created,updated,deleted}` (Phase 2.2
++ the 2026-07-03 reconciliation — see `docs/ADR-0004` at the repo root). There are still no
+cross-service runtime calls; the only inbound data path besides HTTP is the Kafka listener.
 
-`spent_amount` is **eventually consistent and can drift**: there are no
-TransactionUpdated/TransactionDeleted events and no backfill, so dashboard-service's
-live computation over transaction-service summaries remains the accurate view. This
-tradeoff is accepted and documented in ADR-0004 — do not "fix" it casually.
+`spent_amount` is **eventually consistent**. As of 2026-07-03 it now tracks the full
+transaction lifecycle: budget-service consumes `TransactionCreated`, `TransactionUpdated`
+(reverses the old slot, applies the new) and `TransactionDeleted` (reverses), so edits and
+soft-deletes no longer drift (see ADR-0004's "Update — 2026-07-03"). Residual drift sources
+remain — budget-slot edits, retry-exhaustion loss, and no backfill — so dashboard-service's
+live computation over transaction-service summaries is still the authoritative view. Don't
+"fix" those residual items casually.
 
 Deliberately deferred: alerts/notifications, dashboards/analytics rollups, recurring
 auto-generation, overall (all-category) budgets, cross-service category validation,
@@ -92,8 +95,15 @@ Layering is strict and one-directional: `controller → service → repository`.
 
 ### Kafka consumer (budget utilization)
 - `TransactionEventConsumer` (gated by `finsight.kafka.enabled`; off in the test
-  profile) consumes `TransactionCreated` and delegates to
-  `BudgetService.applyExpense(...)`.
+  profile) consumes all three transaction-lifecycle events and delegates to
+  `BudgetService`: `applyExpense` (created), `applyUpdate` (updated — reverse old slot +
+  apply new, as two `ExpenseLine`s under one inbox row), `applyDelete` (deleted — reverse).
+  The updated/deleted listeners pin their payload type via
+  `spring.json.value.default.type` in the `@KafkaListener` `properties` (the global default
+  in application.yml is the created event). **Reversal is `applyExpense` with a negated
+  amount** — same atomic increment; never read-modify-write. Ordering across the three
+  topics is not guaranteed, but the increment is additive so the final total is correct
+  regardless (a transient negative is harmless — no non-negative CHECK on `spent_amount`).
 - **Matching**: same `userId` + `categoryId` + `currency`, `transactionDate` within
   `[startDate, endDate]`, not soft-deleted. `periodType` plays no role. One event may
   increment **several overlapping budgets** — that is correct, not a bug.

@@ -9,4 +9,10 @@ public interface TransactionEventPublisher {
 
     /** Publishes a {@link TransactionCreatedEvent} to the event backbone. */
     void publish(TransactionCreatedEvent event);
+
+    /** Publishes a {@link TransactionUpdatedEvent} (old + new snapshot) to the event backbone. */
+    void publish(TransactionUpdatedEvent event);
+
+    /** Publishes a {@link TransactionDeletedEvent} (reversal snapshot) to the event backbone. */
+    void publish(TransactionDeletedEvent event);
 }

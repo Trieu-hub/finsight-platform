@@ -1,5 +1,6 @@
 package com.pm.userservice.integration;
 
+import com.pm.userservice.integration.support.JwtTestTokens;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -36,5 +37,7 @@ public abstract class AbstractMySqlIntegrationTest {
         registry.add("spring.datasource.username", MYSQL::getUsername);
         registry.add("spring.datasource.password", MYSQL::getPassword);
         registry.add("spring.datasource.driver-class-name", MYSQL::getDriverClassName);
+        // The RS256 public key the app verifies with — matches the key JwtTestTokens signs with.
+        registry.add("jwt.public-key", JwtTestTokens::publicKeyBase64);
     }
 }

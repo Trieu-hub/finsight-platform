@@ -9,7 +9,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @Setter
 public class JwtProperties {
 
-    private String secret;
+    /** RSA public key (base64 DER, PEM armor optional) auth-service's tokens are verified with. */
+    private String publicKey;
     /** Expected token issuer; enforced on validation (parity with the gateway). */
     private String issuer;
     /** Expected token audience; enforced on validation (parity with the gateway). */

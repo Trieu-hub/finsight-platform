@@ -3,7 +3,6 @@ package com.pm.userservice.integration;
 import com.pm.userservice.integration.support.JwtTestTokens;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -24,17 +23,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 class UserProfileApiSecurityIntegrationTest extends AbstractMySqlIntegrationTest {
 
-    /** A different 64-byte secret — signatures made with it must not validate. */
-    private static final String WRONG_SECRET =
-            "wrong-secret-wrong-secret-wrong-secret-wrong-secret-0123456789ab";
-
     private static final AtomicLong USER_SEQUENCE = new AtomicLong(300_000L);
 
     @Autowired
     private MockMvc mockMvc;
-
-    @Value("${jwt.secret}")
-    private String jwtSecret;
 
     private long uniqueUserId() {
         return USER_SEQUENCE.incrementAndGet();
@@ -42,7 +34,7 @@ class UserProfileApiSecurityIntegrationTest extends AbstractMySqlIntegrationTest
 
     private String bearer(long userId) {
         return "Bearer " + JwtTestTokens.valid(
-                jwtSecret, userId, "user" + userId + "@finsight.test", "ROLE_USER");
+                userId, "user" + userId + "@finsight.test", "ROLE_USER");
     }
 
     @Test
@@ -53,14 +45,14 @@ class UserProfileApiSecurityIntegrationTest extends AbstractMySqlIntegrationTest
 
     @Test
     void rejectsJwtWithInvalidSignature() throws Exception {
-        String forged = JwtTestTokens.valid(WRONG_SECRET, 1L, "a@b.c", "ROLE_USER");
+        String forged = JwtTestTokens.forgedSignature(1L, "a@b.c", "ROLE_USER");
         mockMvc.perform(get("/api/v1/users/me").header("Authorization", "Bearer " + forged))
                 .andExpect(status().isUnauthorized());
     }
 
     @Test
     void rejectsExpiredJwt() throws Exception {
-        String expired = JwtTestTokens.expired(jwtSecret, 1L, "a@b.c", "ROLE_USER");
+        String expired = JwtTestTokens.expired(1L, "a@b.c", "ROLE_USER");
         mockMvc.perform(get("/api/v1/users/me").header("Authorization", "Bearer " + expired))
                 .andExpect(status().isUnauthorized());
     }

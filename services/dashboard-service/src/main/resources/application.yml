@@ -5,17 +5,24 @@ spring:
   application:
     name: dashboard-service
 
-# Read-only aggregation layer (BFF). Owns NO database. It calls the Transaction,
-# Budget and User services directly over the network and relays the caller's JWT so
+# Read-only aggregation layer (BFF). Owns NO database. It calls the Transaction and
+# Budget services over REST and the User service over gRPC, relaying the caller's JWT so
 # each upstream authorizes as the same user (see docs/ADR-0003).
 dashboard:
   services:
-    user-uri: ${USER_SERVICE_URI:http://localhost:8082}
     transaction-uri: ${TRANSACTION_SERVICE_URI:http://localhost:8083}
     budget-uri: ${BUDGET_SERVICE_URI:http://localhost:8084}
   timeouts:
     connect-ms: ${DASHBOARD_CONNECT_TIMEOUT_MS:2000}
     read-ms: ${DASHBOARD_READ_TIMEOUT_MS:5000}
+
+# gRPC client channel for user-service's internal UserProfileService. Plaintext on the
+# private network (no TLS between internal services); the deadline is applied per call
+# by UserClient (from dashboard.timeouts.read-ms). Connects lazily on first call.
+spring.grpc.client.channels:
+  user-service:
+    address: ${USER_SERVICE_GRPC_TARGET:static://localhost:9092}
+    negotiation-type: plaintext
 
 management:
   endpoints:
@@ -47,9 +54,9 @@ management:
     env:
       enabled: false
 
-# Same shared HMAC secret auth-service signs with; validated locally on every request.
+# auth-service's RSA public key; validated locally on every request (no call to auth).
 jwt:
-  secret: ${JWT_SECRET}
+  public-key: ${JWT_PUBLIC_KEY}
   # Enforced on validation (parity with the gateway and the minting auth-service).
   issuer: ${JWT_ISSUER:finsight-auth}
   audience: ${JWT_AUDIENCE:finsight-api}

@@ -3,7 +3,6 @@ package com.pm.userservice.integration;
 import com.pm.userservice.integration.support.JwtTestTokens;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -31,16 +30,13 @@ class UserProfileApiIntegrationTest extends AbstractMySqlIntegrationTest {
     @Autowired
     private MockMvc mockMvc;
 
-    @Value("${jwt.secret}")
-    private String jwtSecret;
-
     private long uniqueUserId() {
         return USER_SEQUENCE.incrementAndGet();
     }
 
     private String bearer(long userId) {
         return "Bearer " + JwtTestTokens.valid(
-                jwtSecret, userId, "user" + userId + "@finsight.test", "ROLE_USER");
+                userId, "user" + userId + "@finsight.test", "ROLE_USER");
     }
 
     @Test

@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pm.transactionservice.integration.support.JwtTestTokens;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -35,16 +34,13 @@ public abstract class AbstractMockMvcIntegrationTest extends AbstractMySqlIntegr
     // JSON into a tree needs no app configuration.
     protected final ObjectMapper objectMapper = new ObjectMapper();
 
-    @Value("${jwt.secret}")
-    protected String jwtSecret;
-
     protected long uniqueUserId() {
         return USER_SEQUENCE.incrementAndGet();
     }
 
     protected String bearer(long userId) {
         return "Bearer " + JwtTestTokens.valid(
-                jwtSecret, userId, "user" + userId + "@finsight.test", "USER");
+                userId, "user" + userId + "@finsight.test", "USER");
     }
 
     /** Creates a transaction for the user via the API and returns its generated id. */

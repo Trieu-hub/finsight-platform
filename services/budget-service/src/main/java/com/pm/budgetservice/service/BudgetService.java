@@ -32,4 +32,25 @@ public interface BudgetService {
      */
     boolean applyExpense(UUID eventId, Long userId, Long categoryId, String currency,
                          BigDecimal amount, LocalDate transactionDate);
+
+    /**
+     * Reverses a soft-deleted EXPENSE from every matching active budget — the inverse of
+     * {@link #applyExpense} (an atomic {@code spent_amount += -amount}). Driven by a
+     * {@code TransactionDeleted} event.
+     *
+     * @return true if applied, false if the eventId was a duplicate already in the inbox
+     */
+    boolean applyDelete(UUID eventId, Long userId, Long categoryId, String currency,
+                        BigDecimal amount, LocalDate transactionDate);
+
+    /**
+     * Re-materializes an edited EXPENSE: reverses the {@code reverse} slot and applies the
+     * {@code apply} slot, both in one DB transaction under a single inbox row. Either side
+     * may be {@code null} when that side of the edit was not an EXPENSE (e.g. an
+     * EXPENSE→INCOME edit passes a non-null {@code reverse} and a null {@code apply}).
+     * Driven by a {@code TransactionUpdated} event.
+     *
+     * @return true if applied, false if the eventId was a duplicate already in the inbox
+     */
+    boolean applyUpdate(UUID eventId, Long userId, ExpenseLine reverse, ExpenseLine apply);
 }

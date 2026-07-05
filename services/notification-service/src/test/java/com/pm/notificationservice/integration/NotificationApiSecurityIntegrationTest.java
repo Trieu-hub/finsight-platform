@@ -33,7 +33,7 @@ class NotificationApiSecurityIntegrationTest extends AbstractMockMvcIntegrationT
     @Test
     void rejectsExpiredToken() throws Exception {
         long userId = uniqueUserId();
-        String expired = JwtTestTokens.expired(jwtSecret, userId, "u" + userId + "@finsight.test", "USER");
+        String expired = JwtTestTokens.expired(userId, "u" + userId + "@finsight.test", "USER");
         mockMvc.perform(get("/api/v1/notifications").header("Authorization", "Bearer " + expired))
                 .andExpect(status().isUnauthorized());
     }

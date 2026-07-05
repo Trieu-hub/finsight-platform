@@ -92,7 +92,8 @@ graph TB
   class K infra
 ```
 
-`==>` is asynchronous (Kafka); `-->`/`-.->` is synchronous (HTTP/REST).
+`==>` is asynchronous (Kafka); `-->`/`-.->` is synchronous (HTTP/REST, plus gRPC for
+dashboard→user-service).
 `risk-service` is not behind the gateway (no `RISK_SERVICE_URI` route).
 
 ---
@@ -189,13 +190,13 @@ sequenceDiagram
   participant U as user-service
 
   C->>GW: GET /api/v1/dashboard (Bearer JWT)
-  GW->>GW: Validate JWT (HS512, iss, aud, expiry)
+  GW->>GW: Validate JWT (RS256 public key, iss, aud, expiry)
   GW->>D: Forward + bearer token
   D->>D: Re-validate JWT locally
   par fan-out (fail-fast), JWT relayed
-    D->>U: GET profile
-    D->>T: GET summaries
-    D->>B: GET budgets
+    D->>U: GetMyProfile (gRPC, JWT as metadata)
+    D->>T: GET summaries (REST)
+    D->>B: GET budgets (REST)
   end
   U-->>D: profile
   T-->>D: summaries
@@ -246,10 +247,11 @@ What each consumer does with `TransactionCreated`:
 
 These are **absent from the codebase** and must not be implied as present:
 
-- **gRPC** — no proto, no dependencies; all synchronous calls are REST.
+- **Full gRPC migration** — gRPC *is* present as one representative internal call (dashboard→
+  user-service, via Spring gRPC); the other internal calls (transaction/budget) are still REST.
 - **External notification delivery** — notification-service creates **in-app** notifications from
   `RiskDetected`; email/push/webhook delivery and an LLM-backed message narrator are not built.
-- **Transaction `TRANSFER`** — only INCOME/EXPENSE exist (`walletId` is scaffolded, unused).
 - **Edge rate limiting**, **distributed tracing**, **alerting** (Prometheus has no alert rules).
-- **Asymmetric JWT signing** — a single shared HMAC secret is used platform-wide.
+- **JWKS / JWT key rotation** — signing is RS256 asymmetric (auth signs with the private key,
+  services verify with the public key), but there is no published JWKS endpoint or rotation flow.
 - **Transactional outbox** — the AFTER_COMMIT dual-write gap is accepted (ADR-0004).

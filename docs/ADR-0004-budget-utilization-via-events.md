@@ -44,12 +44,40 @@ utilization (`spent_amount`) inside budget-service itself.
    `ErrorHandlingDeserializer`; failures retry briefly (`DefaultErrorHandler`,
    3 attempts) then log-and-skip. No dead-letter topic at this scale.
 
+## Update — 2026-07-03: transaction edits/deletes now reconciled
+
+The first tradeoff below ("`spent_amount` drifts" on edit/delete) is **closed**.
+transaction-service now emits two more lifecycle events and budget-service consumes them:
+
+- **`TransactionUpdated`** (topic `finsight.transactions.updated`) carries the *old* and
+  *new* snapshot. The consumer reverses the old contribution and applies the new one, so a
+  category / amount / currency / date / EXPENSE↔INCOME edit is reflected in `spent_amount`.
+- **`TransactionDeleted`** (topic `finsight.transactions.deleted`) carries the deleted
+  snapshot. The consumer reverses that contribution.
+
+Design notes that keep this consistent with the original decision:
+
+- **Reversal is the inverse increment.** Both reuse `BudgetRepository.applyExpense` with a
+  **negated** amount — still one atomic SQL `UPDATE`, never read-modify-write.
+- **Order-independent.** The three events for one transaction travel on separate topics, so
+  a delete/update can be processed before its create. Because the increment is additive,
+  the *final* `spent_amount` is correct regardless of arrival order; a transient negative is
+  possible and harmless (`spent_amount` has no non-negative CHECK). This preserves the
+  "eventually consistent" contract rather than replacing it with strict ordering.
+- **Same idempotency inbox.** Each event has its own `eventId`; update reverses **and**
+  applies under a single `processed_events` row (both increments commit or neither does).
+- **Dedicated topics, no blast radius.** risk-service and analytics-service consume only
+  `finsight.transactions.created`, so they are unaffected — they do not see edits/deletes
+  (risk/anomaly detections are point-in-time facts, not running totals, so this is correct).
+
+Still open (unchanged below): budget-edit drift, retry-exhaustion loss, no backfill, and
+the dashboard remaining the authoritative view.
+
 ## Accepted tradeoffs (deliberate, documented, revisitable)
 
-- **`spent_amount` drifts.** Only `TransactionCreated` exists — there are no
-  `TransactionUpdated`/`TransactionDeleted` events, so editing or soft-deleting a
-  transaction does **not** adjust `spent_amount`. Emitting those events is the known
-  fix and is out of scope for this phase.
+- **~~`spent_amount` drifts on transaction edit/delete.~~** *(Closed 2026-07-03 — see the
+  Update above.)* Editing or soft-deleting a transaction now emits
+  `TransactionUpdated` / `TransactionDeleted`, which budget-service reverses/re-applies.
 - **Budget edits also drift.** Updating a budget's `categoryId`, `currency` or date
   window leaves `spent_amount` untouched, so after a slot change it reflects spend
   matched under the *old* slot. Resetting it to 0 on slot change would be equally

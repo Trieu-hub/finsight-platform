@@ -17,6 +17,11 @@
     <properties>
         <java.version>21</java.version>
         <testcontainers.version>1.20.6</testcontainers.version>
+        <!-- Kept in sync with the versions the spring-grpc BOM manages (see below), so the
+             protobuf-maven-plugin downloads matching protoc / protoc-gen-grpc-java binaries. -->
+        <spring-grpc.version>1.0.3</spring-grpc.version>
+        <grpc.version>1.77.1</grpc.version>
+        <protobuf-java.version>4.33.4</protobuf-java.version>
     </properties>
 
     <dependencyManagement>
@@ -26,6 +31,16 @@
                 <groupId>org.testcontainers</groupId>
                 <artifactId>testcontainers-bom</artifactId>
                 <version>${testcontainers.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- Spring gRPC BOM: manages the spring-grpc starters plus grpc-bom and
+                 protobuf-bom (grpc 1.77.x, protobuf 4.33.x) so the gRPC/protobuf runtime
+                 and generated stubs line up on one version set. -->
+            <dependency>
+                <groupId>org.springframework.grpc</groupId>
+                <artifactId>spring-grpc-dependencies</artifactId>
+                <version>${spring-grpc.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -92,6 +107,30 @@
             <artifactId>flyway-mysql</artifactId>
         </dependency>
 
+        <!-- gRPC server (Spring gRPC). user-service hosts the internal UserProfileService
+             called by the dashboard BFF. grpc-services adds the standard health/reflection
+             services; grpc-stub/grpc-protobuf back the generated stubs. -->
+        <dependency>
+            <groupId>org.springframework.grpc</groupId>
+            <artifactId>spring-grpc-server-spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-services</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-stub</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-protobuf</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.google.protobuf</groupId>
+            <artifactId>protobuf-java</artifactId>
+        </dependency>
+
         <!-- JWT -->
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
@@ -142,6 +181,13 @@
             <artifactId>spring-boot-webmvc-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- In-process gRPC transport: the gRPC integration test drives the real service +
+             JWT interceptor beans over an in-JVM server (no sockets). Managed by the grpc BOM. -->
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-inprocess</artifactId>
+            <scope>test</scope>
+        </dependency>
         <!-- Testcontainers: integration tests run against a real MySQL 8 container -->
         <dependency>
             <groupId>org.testcontainers</groupId>
@@ -157,6 +203,34 @@
 
     <build>
         <plugins>
+            <!-- Compiles src/main/proto into Java stubs during generate-sources. The ascopes
+                 plugin auto-detects the OS and downloads the matching protoc + the gRPC codegen
+                 binary from Maven Central, so it works unchanged on Windows (local) and Linux (CI)
+                 with no os-maven-plugin extension needed. -->
+            <plugin>
+                <groupId>io.github.ascopes</groupId>
+                <artifactId>protobuf-maven-plugin</artifactId>
+                <version>5.1.7</version>
+                <configuration>
+                    <protoc>${protobuf-java.version}</protoc>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                        <configuration>
+                            <plugins>
+                                <plugin kind="binary-maven">
+                                    <groupId>io.grpc</groupId>
+                                    <artifactId>protoc-gen-grpc-java</artifactId>
+                                    <version>${grpc.version}</version>
+                                </plugin>
+                            </plugins>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>

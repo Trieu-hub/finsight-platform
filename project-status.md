@@ -1,6 +1,6 @@
 # FinSight — Project Status
 
-_Last updated: 2026-07-01_
+_Last updated: 2026-07-04_
 _Repo: `D:\finsight` · Branch: `main` (feat/web-frontend merged)_
 
 > **Looking for the two scorecards?** Jump to **[§9 CV / Portfolio readiness](#9-cv--portfolio-readiness-detailed-scorecard)**
@@ -13,7 +13,7 @@ explicitly **not** just an expense tracker. This document measures progress agai
 chartered scope, not against the current repository alone.
 
 **Stack (today):** Java 21 · Spring Boot 4.0.6 · Spring Security · Spring Data JPA · Flyway ·
-MySQL 8 · Redis · Kafka (KRaft) · JWT (HS512) · springdoc/OpenAPI · Micrometer ·
+MySQL 8 · Redis · Kafka (KRaft) · gRPC (Spring gRPC) · JWT (RS256 asymmetric) · springdoc/OpenAPI · Micrometer ·
 Prometheus · Grafana · Docker Compose · GitHub Actions · Testcontainers ·
 **React 19 + TypeScript + Vite + TailwindCSS** (web client).
 
@@ -30,8 +30,8 @@ A single "% complete" mixes very different goals. Progress is tracked on three i
 | Axis | What it measures | Progress |
 |---|---|---|
 | **MVP backend** | Core finance CRUD + auth + dashboard working end-to-end | **100%** |
-| **Production-ready MVP** | The MVP, operable & secure for real deployment | **~72%** |
-| **Full FinSight vision** | The chartered Intelligence & Risk platform | **~74%** |
+| **Production-ready MVP** | The MVP, operable & secure for real deployment | **~80%** |
+| **Full FinSight vision** | The chartered Intelligence & Risk platform | **~78%** |
 
 > **MVP backend at 100% — what that means (honest).** All in-scope MVP capabilities are built and
 > tested: auth + RBAC, transactions (INCOME/EXPENSE/TRANSFER), a full **Wallet domain** with
@@ -40,12 +40,15 @@ A single "% complete" mixes very different goals. Progress is tracked on three i
 > deliberate, not gaps: **negative wallet balances are allowed** (the balance model is fully
 > reversible on update/delete — a non-negative invariant would block legitimate edits like deleting
 > an already-spent income), and a **persisted audit *table*** is out of the v1 charter (in-service
-> structured audit logging is the requirement, and it exists). Deeper items (TransactionUpdated/
-> Deleted events to stop budget drift, richer categories UI) are enhancements beyond the MVP line.
+> structured audit logging is the requirement, and it exists). **Budget drift on edit/delete is now
+> closed**: transaction-service emits `TransactionUpdated`/`TransactionDeleted` on dedicated topics
+> and budget-service reconciles `spent_amount` (additive reversal + re-apply, idempotent via the
+> inbox) — a budget stays accurate when a transaction is edited or deleted, not just created.
+> Remaining deeper items (richer categories UI) are enhancements beyond the MVP line.
 
 **Headline:** The MVP (finance tracker + budgets + dashboard) is built, and the platform now
-has a **real multi-topic event backbone** (3 topics, 3 producers, 4 idempotent consumers — every
-topic now has a consumer) plus
+has a **real multi-topic event backbone** (transaction created/updated/deleted + risk topics,
+idempotent consumers — every topic has a consumer) plus
 **full Prometheus/Grafana observability** and **OpenAPI docs**. The product's defining half —
 *Intelligence & Risk* — is **no longer at zero**: risk-service implements rule-based
 **Risk Monitoring**, **Behavioral Insights**, and **Anomaly Detection** end-to-end (Phases D–F).
@@ -55,7 +58,10 @@ LLM narrator** that phrases alerts via any OpenAI-compatible API (default Groq f
 default, rule-based fallback) — the first real AI integration. The **Analytics Service** is now
 built too: a CQRS rollup read model over `TransactionCreated` serving month-over-month overview,
 category breakdown and spend forecast, plus an **optional AI monthly summary** (same
-OpenAI-compatible seam, template fallback). The remaining vision gap is **gRPC** (0%).
+OpenAI-compatible seam, template fallback). All three communication pillars are now present:
+REST, Kafka, and **gRPC** — the dashboard BFF fetches the user profile from user-service over
+gRPC (Spring gRPC, RS256 JWT relayed as call metadata), so the "internal sync" pillar is no
+longer at zero.
 
 A **React + TypeScript web client** (Vite + Tailwind) now fronts the platform — auth,
 transactions, budgets, dashboard, an **Analytics** page (month-over-month overview, spend
@@ -118,10 +124,10 @@ incremental, not greenfield.
 | Service (charter) | Reality | Mapping / completeness |
 |---|---|---|
 | API Gateway | ✅ exists | Proxy + edge JWT validation; **no rate limiting** → ~80% |
-| Auth Service | ✅ exists | JWT, refresh, lockout, Redis-backed; **admin RBAC** console API (role/status/delete, ROLE_ADMIN-only) → ~90% |
+| Auth Service | ✅ exists | JWT (**RS256** — signs with private key; all services verify with the public key only), refresh, lockout, Redis-backed; **admin RBAC** console API (role/status/delete, ROLE_ADMIN-only) → ~92% |
 | User Service | ✅ exists | Profile data → ~85% |
 | Transaction Service | ✅ exists | INCOME/EXPENSE/**TRANSFER** + **Wallet domain** (accounts, stored balances kept atomic, CRUD) + categories/summaries → ~90% |
-| Budget Service | ✅ exists | Definitions + event-driven utilization → ~85% |
+| Budget Service | ✅ exists | Definitions + event-driven utilization, now reconciled on transaction **create/update/delete** (idempotent reversal) → ~88% |
 | **Analytics Service** | ✅ exists | `analytics-service`: CQRS rollup read model from `TransactionCreated`; overview / categories / forecast APIs + optional AI monthly summary (OpenAI-compatible, template fallback) → ~75% |
 | **Risk Intelligence Service** | ✅ exists | `risk-service`: Risk + Insights + Anomaly (rule-based MVP) → ~70% |
 | **Notification Service** | ✅ exists | `notification-service`: consumes `RiskDetected`, idempotency inbox, user-scoped in-app notification API, **optional LLM narrator** (OpenAI-compatible, Groq free tier, rule-based fallback) → ~80% (external delivery deferred) |
@@ -133,8 +139,8 @@ incremental, not greenfield.
 | Pillar | Charter | Reality |
 |---|---|---|
 | REST (external) | required | ✅ implemented |
-| gRPC (internal sync) | required | ❌ **0%** — no proto, no deps; internal calls are REST (`RestClient`) |
-| Kafka (async events) | required | ✅ **real backbone** — 3 topics, 2 producers (`TransactionCreated`, `BudgetChanged`), 2 idempotent consumers (budget, risk), 1 best-effort output (`RiskDetected`). See [docs/event-catalog.md](docs/event-catalog.md) |
+| gRPC (internal sync) | required | ✅ **present** — Spring gRPC: user-service hosts an internal `UserProfileService`; the dashboard BFF calls it over gRPC (JWT relayed as metadata, validated by a server interceptor). One representative call; transaction/budget stay REST |
+| Kafka (async events) | required | ✅ **real backbone** — transaction created/updated/deleted + `BudgetChanged` + `RiskDetected`; idempotent consumers (budget reconciles create/update/delete, risk, analytics, notification). See [docs/event-catalog.md](docs/event-catalog.md) |
 
 ### Infrastructure
 
@@ -159,20 +165,24 @@ Saga · CQRS · Event Sourcing · ELK · Keycloak · Istio · Helm · ArgoCD · 
 
 | Service | Port | Owns DB | Responsibility |
 |---|---|---|---|
-| api-gateway | 8080 | – | Edge routing + JWT validation (HS512/iss/aud), error envelope |
+| api-gateway | 8080 | – | Edge routing + JWT validation (RS256 public key/iss/aud), error envelope |
 | auth-service | 8081 | `auth_db` | Register, login, refresh, account lockout; Redis-backed tokens |
-| user-service | 8082 | `user_db` | User profile data |
-| transaction-service | 8083 | `transaction_db` | Transactions (INCOME/EXPENSE), categories, summaries; produces `TransactionCreated` |
-| budget-service | 8084 | `budget_db` | Budget definitions + utilization; consumes `TransactionCreated`, produces `BudgetChanged` |
-| dashboard-service | 8085 | none (BFF) | Aggregates user + transaction + budget; fail-fast; relays JWT |
+| user-service | 8082 | `user_db` | User profile data; also hosts an internal gRPC `UserProfileService` (port 9092) for the dashboard BFF |
+| transaction-service | 8083 | `transaction_db` | Transactions (INCOME/EXPENSE), categories, summaries; produces `TransactionCreated`/`Updated`/`Deleted` |
+| budget-service | 8084 | `budget_db` | Budget definitions + utilization; consumes `TransactionCreated`/`Updated`/`Deleted` (reconciles spend), produces `BudgetChanged` |
+| dashboard-service | 8085 | none (BFF) | Aggregates user (**gRPC**) + transaction + budget (REST); fail-fast; relays JWT |
 | risk-service | 8086 | `risk_db` | Risk rules, insights, anomaly; consumes `TransactionCreated` + `BudgetChanged`, produces `RiskDetected`; read APIs |
 | mysql / redis / kafka | – | – | Shared MySQL (DB-per-service) + Redis (auth) + single-node KRaft broker |
 | prometheus / grafana | 9090 / 3000 | – | Metrics scrape + dashboards |
 
 **Design rules:** no runtime cross-service calls between business services (only the dashboard
-BFF calls others); all other coupling is Kafka; `userId` read only from the JWT; Flyway owns the
-schema (`ddl-auto: validate`); shared HMAC secret; gateway is removable (services validate
-tokens independently); risk-service is internal (no JWT stack, not behind the gateway).
+BFF calls others — transaction/budget over REST, user-service over gRPC); all other coupling is
+Kafka; `userId` read only from the JWT (relayed as gRPC metadata on the gRPC call and validated
+by a server interceptor, same as REST); Flyway owns the
+schema (`ddl-auto: validate`); **RS256 asymmetric JWT** — auth-service alone holds the private key
+and signs; every other service and the gateway verify with the public key only (no runtime call to
+auth); gateway is removable (services validate tokens independently); risk-service is internal (no
+JWT stack, not behind the gateway).
 
 Full diagrams: [docs/architecture.md](docs/architecture.md).
 
@@ -180,8 +190,9 @@ Full diagrams: [docs/architecture.md](docs/architecture.md).
 
 ## 4. Capabilities accomplished
 
-- End-to-end auth: register → login → JWT (HS512) → authorized calls through the gateway, with
-  per-account lockout and Redis-backed token/session data.
+- End-to-end auth: register → login → JWT (**RS256**, auth signs with the private key, every other
+  service verifies with the public key) → authorized calls through the gateway, with per-account
+  lockout and Redis-backed token/session data.
 - Full CRUD + reporting in transaction and budget services (summaries, trends, utilization).
 - A stateless BFF aggregating three services with fail-fast behavior and JWT relay.
 - **A real Kafka backbone:** `TransactionCreated` and `BudgetChanged` produced AFTER_COMMIT;
@@ -211,7 +222,10 @@ Full diagrams: [docs/architecture.md](docs/architecture.md).
 1. **External notification delivery** — notification-service now creates **in-app** notifications
    from `RiskDetected` and can phrase them with an **optional LLM narrator** (OpenAI-compatible,
    Groq free tier, off by default, rule-based fallback). Email/push/webhook delivery is not built.
-2. **gRPC (internal sync)** — architectural pillar at 0%; no proto, no deps.
+2. ✅ **gRPC (internal sync)** — done. Spring gRPC is wired end-to-end: user-service hosts an
+   internal `UserProfileService` and the dashboard BFF calls it over gRPC (JWT relayed as call
+   metadata, validated by a server interceptor). One representative call proves the pillar;
+   migrating the remaining internal calls (transaction/budget) off REST stays incremental.
 3. **Analytics depth** — `analytics-service` ships the rollup read model + AI summary; deeper
    analysis (ML forecasting, auto-categorization, persisted summary cache) stays incremental.
 4. **More intelligence rules** — incremental additions on the existing risk-service framework
@@ -231,8 +245,10 @@ Full diagrams: [docs/architecture.md](docs/architecture.md).
 
 **Production-readiness (axis 2):**
 7. Merge the feature branch and get a **green CI run** (JDK 21).
-8. Replace the **shared symmetric HMAC secret** with asymmetric signing (RS256/ES256) — today
-   every service can *mint* tokens, not just verify. Biggest structural risk.
+8. ✅ **Asymmetric JWT signing (RS256)** — done. The shared symmetric HMAC secret is gone:
+   auth-service alone holds the RSA private key and signs; every other service and the gateway
+   verify with the public key only, so a compromised downstream service can no longer *mint*
+   tokens. (JWKS endpoint + key rotation remain incremental future work.)
 9. Real **deployment target** (K8s/ECS), TLS/HTTPS, managed secrets store.
 10. Edge **rate limiting**; gateway max-request-body limit; retries/circuit breakers.
 11. **Transactional outbox** to close the AFTER_COMMIT dual-write gap (ADR-0004).
@@ -256,7 +272,7 @@ Full diagrams: [docs/architecture.md](docs/architecture.md).
 
 **Blocking (before any real deployment)**
 - Green CI run on a merged branch.
-- Asymmetric JWT signing (RS256/ES256) — replace the shared HMAC secret.
+- ✅ Asymmetric JWT signing (RS256) — done; shared HMAC secret removed (JWKS/rotation still future).
 - No deployment target (K8s/ECS), no TLS/HTTPS, no managed secrets store (local `.env`).
 - Single shared MySQL = shared failure domain; no backup/restore strategy.
 
@@ -294,7 +310,8 @@ maturity (Actuator probes, Docker healthchecks, CI with Testcontainers, dashboar
 
 **Be honest in interview:** learning/portfolio project, not production-deployed; risk/insight
 **detection is rule-based, not ML** (the optional LLM only *phrases* alerts, it does not detect);
-gRPC and external notification delivery (email/push) are not built; load/scale and a real
+external notification delivery (email/push) is not built; gRPC is present but as a single
+representative internal call (not a full REST-to-gRPC migration); load/scale and a real
 deployment target are absent.
 
 ---
@@ -306,9 +323,9 @@ deployment target are absent.
    chartered service now exists; external (email/push) delivery remains optional follow-up.
 3. ✅ **Analytics Service** built (CQRS rollup read model from `TransactionCreated`; overview /
    categories / forecast APIs + optional AI monthly summary) — distinct from the dashboard BFF.
-4. gRPC for internal sync calls.
+4. ✅ **gRPC for internal sync** — done (dashboard→user representative call over Spring gRPC).
 5. Transaction `TRANSFER` type; in-service audit logging.
-6. RS256/JWKS migration; edge rate limiting; transactional outbox.
+6. ✅ RS256 migration done; JWKS/rotation, edge rate limiting, transactional outbox remain.
 7. Distributed tracing + Prometheus alerting.
 
 ---
@@ -338,16 +355,16 @@ Manually verified and captured for portfolio use:
 
 | # | What a reviewer looks for | Status | Evidence / Gap |
 |---|---|---|---|
-| 1 | **Real architecture, not a toy** | ✅ ~95% | 7 Spring Boot 4 / Java 21 services, DB-per-service, BFF, Kafka backbone (3 topics, 2 producers, 2 idempotent consumers), enforced service boundaries. This is the headline strength. |
+| 1 | **Real architecture, not a toy** | ✅ ~95% | 9 Spring Boot 4 / Java 21 services, DB-per-service, BFF, Kafka backbone (transaction created/updated/deleted + budget + risk topics, idempotent consumers), enforced service boundaries, **RS256 asymmetric JWT**. This is the headline strength. |
 | 2 | **Non-trivial domain logic** | ✅ ~85% | Rule-based risk / insights / anomaly layer (Phases D–F), event-sourced read-models, idempotency inbox. Demonstrates more than CRUD. |
 | 3 | **Testing discipline** | ✅ ~85% | Unit + Testcontainers integration tests per service (real MySQL + Kafka); consumer-lag metric assertions. Shows you test the hard parts. |
 | 4 | **CI** | ✅ ~90% | GitHub Actions matrix builds+tests all 9 services on every PR/push (JDK 21); **merged to `main`** with a README **CI badge**. |
 | 5 | **Documentation** | ✅ ~95% | README, architecture.md, event-catalog.md, intelligence.md, runbook.md, deploy.md, ADR-0004, this status doc. Far above typical portfolio level. |
-| 6 | **Security awareness** | ✅ ~80% | JWT algorithm pinning + iss/aud, account lockout, least-privilege DB users, secret externalization, rotation runbook. Honest about the shared-HMAC weakness — *good* interview material. |
+| 6 | **Security awareness** | ✅ ~85% | **RS256 asymmetric JWT** (auth signs with the private key; services verify with the public key only — a downstream service can no longer mint tokens), algorithm pinning + iss/aud, account lockout, least-privilege DB users, secret externalization, rotation runbook. JWKS/key-rotation is the remaining talking point. |
 | 7 | **Observability** | ✅ ~85% | Prometheus scrape of all 9 services, 4 Grafana dashboards (incl. consumer lag), ECS JSON logging + correlation IDs. |
 | 8 | **Demonstrability** | ✅ ~85% | A working **React web client** (auth, transactions incl. wallet transfers, budgets, wallets, dashboard, analytics, admin RBAC console, notification bell) + 4 Grafana screenshots in `docs/images/`. Remaining: a hosted live-demo URL and a recorded walkthrough. |
 | 9 | **Repo hygiene & narrative** | ✅ ~80% | Clean commit history, conventional commits, ADRs. Gap: several stale top-level `*_REVIEW_REPORT.md` files clutter the root — minor cleanup. |
-| 10 | **Honest framing** | ✅ 100% | Status docs already state plainly: portfolio project, rule-based (not ML), not production-deployed, gRPC absent. This honesty is an asset in interviews. |
+| 10 | **Honest framing** | ✅ 100% | Status docs already state plainly: portfolio project, rule-based (not ML), not production-deployed, **gRPC present as one representative internal call (not a full migration)**. This honesty is an asset in interviews. |
 
 ### To push CV readiness from ~92% → ~95% (highest leverage first)
 1. ✅ **Add visual proof** (closed #8): 4 Grafana screenshots captured in `docs/images/` and the
@@ -404,7 +421,7 @@ live in the repo: a **VPS**, a **domain/DNS A record**, and filling the prod sec
 | 2 | **No published images** | ⚠️ | S | Branch is merged to `main`. Prod builds images on the VPS from source (works today); pushing to a registry (GHCR) is an optional enhancement for faster/reproducible boots. |
 | 3 | **No TLS / HTTPS** | ✅ config shipped | S | `docker/caddy/Caddyfile` + `docker-compose.prod.yml` do auto-HTTPS via Caddy/Let's Encrypt. Just needs a real domain + host to issue the cert. |
 | 4 | **No managed secrets** | ⚠️ | S | `.env` on a server (chmod 600) is fine for a hobby demo; a real deploy wants a secrets store. Prod vars are templated in `.env.example`. |
-| 5 | **Dev-only security posture** | ✅ mostly closed | S | Prod overlay disables Grafana anon-admin (login + strong password) and un-publishes every port but Caddy's, so `/actuator/**` and internal services are no longer internet-reachable. **Still open:** edge rate limiting; shared **HMAC** secret (RS256 is future work). |
+| 5 | **Dev-only security posture** | ✅ mostly closed | S | Prod overlay disables Grafana anon-admin (login + strong password) and un-publishes every port but Caddy's, so `/actuator/**` and internal services are no longer internet-reachable. JWT is now **RS256 asymmetric** (shared HMAC secret removed). **Still open:** edge rate limiting; JWKS/key rotation. |
 | 6 | **Single shared MySQL, no backup** | ⚠️ | M | One instance = shared failure domain. Runbook includes a nightly `mysqldump`; managed/replicated DB is future work. |
 | 7 | **No domain / DNS** | ❌ 0% | S | External: need a domain (or platform subdomain) with an A record to the host. |
 | 8 | **Resource sizing** | ⚠️ | S | 9 JVMs + Kafka + MySQL + Redis + Prometheus + Grafana is heavy — realistically needs a host with **≥ 4 GB (ideally 8 GB) RAM**. Don't try a 1 GB free tier. |
@@ -474,7 +491,7 @@ one command. Full walkthrough: [docs/deploy.md](docs/deploy.md).
    strong password), **only Caddy** published (`ports: !override []` un-publishes every other
    service, so `/actuator/**` + MySQL/Kafka/Redis/risk are internal-only). Still to add on the box:
    basic rate limiting at the proxy, real `.env` `chmod 600`. (Edge rate limiting is a small Caddy
-   addition; RS256 stays future work.)
+   addition; RS256 is now done — JWKS/key rotation stays future work.)
 6. ✅ **Backup** — nightly `mysqldump` command documented in the runbook.
 7. ⬜ **Launch** *(one command)* — `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build`.
 
@@ -489,6 +506,6 @@ Priority order (diminishing returns for a no-real-load demo):
    load/failures.
 
 > **Deliberately *not* in this roadmap** (kept as documented future work / interview talking
-> points, see §5–§6): RS256/JWKS migration and the transactional outbox. Leave them scoped-out
-> unless the goal becomes true production — explaining *why* you accepted those trade-offs is
-> stronger in an interview than half-building them.
+> points, see §5–§6): JWKS/key-rotation (RS256 itself is now done) and the transactional outbox.
+> Leave them scoped-out unless the goal becomes true production — explaining *why* you accepted
+> those trade-offs is stronger in an interview than half-building them.

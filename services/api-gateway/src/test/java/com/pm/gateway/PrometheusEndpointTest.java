@@ -1,9 +1,12 @@
 package com.pm.gateway;
 
+import com.pm.gateway.support.JwtTestTokens;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.hamcrest.Matchers.containsString;
@@ -18,11 +21,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @SpringBootTest(properties = {
         "gateway.routes[0].prefix=/api/v1/auth",
-        "gateway.routes[0].uri=http://localhost:59999",
-        "jwt.secret=test-secret-test-secret-test-secret-test-secret-0123456789abcdef"
+        "gateway.routes[0].uri=http://localhost:59999"
 })
 @AutoConfigureMockMvc
 class PrometheusEndpointTest {
+
+    @DynamicPropertySource
+    static void jwtKey(DynamicPropertyRegistry registry) {
+        registry.add("jwt.public-key", JwtTestTokens::publicKeyBase64);
+    }
 
     @Autowired
     private MockMvc mockMvc;

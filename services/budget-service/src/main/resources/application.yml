@@ -60,8 +60,10 @@ finsight:
     # Off => no listener container starts and the AFTER_COMMIT publisher is skipped.
     enabled: true
     topics:
-      # Consumed: owned by transaction-service.
+      # Consumed: the three transaction-lifecycle topics owned by transaction-service.
       transaction-created: finsight.transactions.created
+      transaction-updated: finsight.transactions.updated
+      transaction-deleted: finsight.transactions.deleted
       # Produced: owned by this service (Phase E.2), consumed by risk-service.
       budget-changed: finsight.budgets.changed
 
@@ -101,7 +103,7 @@ management:
       enabled: false
 
 jwt:
-  secret: ${JWT_SECRET}
+  public-key: ${JWT_PUBLIC_KEY}
   # Enforced on validation (parity with the gateway and the minting auth-service).
   issuer: ${JWT_ISSUER:finsight-auth}
   audience: ${JWT_AUDIENCE:finsight-api}

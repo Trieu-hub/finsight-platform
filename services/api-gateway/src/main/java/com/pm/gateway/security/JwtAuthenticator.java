@@ -6,22 +6,24 @@ import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jws;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.security.Keys;
 import org.springframework.stereotype.Component;
 
-import javax.crypto.SecretKey;
-import java.nio.charset.StandardCharsets;
+import java.security.KeyFactory;
+import java.security.PublicKey;
+import java.security.spec.X509EncodedKeySpec;
+import java.util.Base64;
 import java.util.Set;
 
 /**
  * Edge JWT validation (Phase 2). Verifies the access token's signature and enforces
- * the frozen contract (docs/ADR-0002): algorithm pinned to <b>HS512</b>, issuer
+ * the frozen contract (docs/ADR-0002): algorithm pinned to <b>RS256</b>, issuer
  * {@code == finsight-auth}, audience set contains {@code finsight-api}.
  *
- * <p>This validation is additive: the gateway rejects bad tokens early, but every
- * downstream service still validates the token itself (the V1 invariant — the gateway
- * is removable without service changes). The bearer token is therefore forwarded
- * unchanged by the proxy.
+ * <p>Verification uses auth-service's RSA <b>public</b> key only; the gateway cannot
+ * mint tokens. This validation is additive: the gateway rejects bad tokens early, but
+ * every downstream service still validates the token itself (the V1 invariant — the
+ * gateway is removable without service changes). The bearer token is therefore
+ * forwarded unchanged by the proxy.
  *
  * <p>Maps failures to the three frozen authentication outcomes so the proxy can emit
  * the correct error code:
@@ -36,18 +38,17 @@ import java.util.Set;
 public class JwtAuthenticator {
 
     /** The pinned signing algorithm. Tokens using any other {@code alg} are rejected. */
-    private static final String REQUIRED_ALG = "HS512";
+    private static final String REQUIRED_ALG = "RS256";
     private static final String BEARER_PREFIX = "Bearer ";
 
     public enum Outcome { AUTHENTICATED, MISSING, EXPIRED, INVALID }
 
-    private final SecretKey signingKey;
+    private final PublicKey publicKey;
     private final String expectedIssuer;
     private final String expectedAudience;
 
     public JwtAuthenticator(JwtProperties properties) {
-        this.signingKey = Keys.hmacShaKeyFor(
-                properties.getSecret().getBytes(StandardCharsets.UTF_8));
+        this.publicKey = parsePublicKey(properties.getPublicKey());
         this.expectedIssuer = properties.getIssuer();
         this.expectedAudience = properties.getAudience();
     }
@@ -66,14 +67,14 @@ public class JwtAuthenticator {
         }
 
         try {
-            // verifyWith() rejects unsecured ('none') tokens and verifies the HMAC.
+            // verifyWith() rejects unsecured ('none') tokens and verifies the RSA signature.
             Jws<Claims> jws = Jwts.parser()
-                    .verifyWith(signingKey)
+                    .verifyWith(publicKey)
                     .build()
                     .parseSignedClaims(token);
 
-            // Pin the algorithm explicitly: verifyWith(SecretKey) would also accept a
-            // token signed HS256/HS384 with the same secret, so enforce HS512 here.
+            // Pin the algorithm explicitly: verifyWith(PublicKey) would also accept a token
+            // signed RS384/RS512 with the same key, so enforce RS256 here.
             if (!REQUIRED_ALG.equals(jws.getHeader().getAlgorithm())) {
                 return Outcome.INVALID;
             }
@@ -93,5 +94,21 @@ public class JwtAuthenticator {
         } catch (JwtException | IllegalArgumentException e) {
             return Outcome.INVALID;
         }
+    }
+
+    private static PublicKey parsePublicKey(String pem) {
+        try {
+            byte[] der = Base64.getDecoder().decode(stripArmor(pem));
+            return KeyFactory.getInstance("RSA").generatePublic(new X509EncodedKeySpec(der));
+        } catch (Exception e) {
+            throw new IllegalStateException("Invalid RSA public key in jwt.public-key", e);
+        }
+    }
+
+    /** Strips optional PEM armor and all whitespace, leaving the bare base64 DER body. */
+    private static String stripArmor(String pem) {
+        return pem.replaceAll("-----BEGIN [^-]+-----", "")
+                .replaceAll("-----END [^-]+-----", "")
+                .replaceAll("\\s", "");
     }
 }

@@ -1,5 +1,6 @@
 package com.pm.authservice.integration;
 
+import com.pm.authservice.integration.support.JwtTestTokens;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -43,5 +44,9 @@ public abstract class AbstractIntegrationTest {
         registry.add("spring.datasource.driver-class-name", MYSQL::getDriverClassName);
         registry.add("spring.data.redis.host", REDIS::getHost);
         registry.add("spring.data.redis.port", () -> REDIS.getMappedPort(6379));
+        // RS256 keypair for tests: auth-service signs logins with the private key and verifies
+        // its own /me endpoint with the public key. JwtTestTokens mints with the same pair.
+        registry.add("jwt.private-key", JwtTestTokens::privateKeyBase64);
+        registry.add("jwt.public-key", JwtTestTokens::publicKeyBase64);
     }
 }

@@ -4,35 +4,36 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jws;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.security.Keys;
 import org.springframework.stereotype.Service;
 
-import javax.crypto.SecretKey;
-import java.nio.charset.StandardCharsets;
+import java.security.KeyFactory;
+import java.security.PublicKey;
+import java.security.spec.X509EncodedKeySpec;
+import java.util.Base64;
 import java.util.Set;
 
 /**
- * Validates JWT access tokens locally using the secret shared with auth-service.
- * The dashboard NEVER calls auth-service per request. Mirrors the other services so
- * service-level validation is preserved even though the gateway also validates.
+ * Validates JWT access tokens locally using the RSA <b>public</b> key published by
+ * auth-service. The dashboard NEVER calls auth-service per request; it holds only the
+ * public key (cannot mint tokens). Mirrors the other services so service-level
+ * validation is preserved even though the gateway also validates.
  *
- * <p>Validation is identical to the api-gateway's edge check (docs/ADR-0002): HMAC
+ * <p>Validation is identical to the api-gateway's edge check (docs/ADR-0002): RSA
  * signature + expiration (via {@code parseSignedClaims}), algorithm pinned to
- * <b>HS512</b>, issuer {@code == finsight-auth}, audience contains {@code finsight-api}.
+ * <b>RS256</b>, issuer {@code == finsight-auth}, audience contains {@code finsight-api}.
  */
 @Service
 public class JwtService {
 
     /** Pinned signing algorithm; tokens using any other {@code alg} are rejected. */
-    private static final String REQUIRED_ALG = "HS512";
+    private static final String REQUIRED_ALG = "RS256";
 
-    private final SecretKey signingKey;
+    private final PublicKey publicKey;
     private final String expectedIssuer;
     private final String expectedAudience;
 
     public JwtService(JwtProperties jwtProperties) {
-        this.signingKey = Keys.hmacShaKeyFor(
-                jwtProperties.getSecret().getBytes(StandardCharsets.UTF_8));
+        this.publicKey = parsePublicKey(jwtProperties.getPublicKey());
         this.expectedIssuer = jwtProperties.getIssuer();
         this.expectedAudience = jwtProperties.getAudience();
     }
@@ -61,14 +62,14 @@ public class JwtService {
 
     private Claims parseClaims(String token) {
         // verifyWith() rejects unsecured ('none') tokens; parseSignedClaims() verifies
-        // the HMAC signature and enforces expiration (throws ExpiredJwtException).
+        // the RSA signature and enforces expiration (throws ExpiredJwtException).
         Jws<Claims> jws = Jwts.parser()
-                .verifyWith(signingKey)
+                .verifyWith(publicKey)
                 .build()
                 .parseSignedClaims(token);
 
-        // verifyWith(SecretKey) alone would also accept HS256/HS384 signed with the
-        // same secret, so pin the algorithm explicitly.
+        // verifyWith(PublicKey) accepts the whole RSA family (RS256/384/512), so pin the
+        // algorithm explicitly to the one auth-service issues.
         if (!REQUIRED_ALG.equals(jws.getHeader().getAlgorithm())) {
             throw new JwtException("Unexpected JWT algorithm: " + jws.getHeader().getAlgorithm());
         }
@@ -82,5 +83,21 @@ public class JwtService {
             throw new JwtException("JWT audience does not contain " + expectedAudience);
         }
         return claims;
+    }
+
+    private static PublicKey parsePublicKey(String pem) {
+        try {
+            byte[] der = Base64.getDecoder().decode(stripArmor(pem));
+            return KeyFactory.getInstance("RSA").generatePublic(new X509EncodedKeySpec(der));
+        } catch (Exception e) {
+            throw new IllegalStateException("Invalid RSA public key in jwt.public-key", e);
+        }
+    }
+
+    /** Strips optional PEM armor and all whitespace, leaving the bare base64 DER body. */
+    private static String stripArmor(String pem) {
+        return pem.replaceAll("-----BEGIN [^-]+-----", "")
+                .replaceAll("-----END [^-]+-----", "")
+                .replaceAll("\\s", "");
     }
 }

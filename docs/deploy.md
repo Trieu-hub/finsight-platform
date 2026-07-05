@@ -4,7 +4,9 @@ This is the **"demo on the internet"** path from
 [`project-status.md` §10](../project-status.md): one VPS running the existing Docker Compose
 stack, fronted by **Caddy** for automatic HTTPS. It turns the local stack into a public
 `https://…` demo with the least operational cost. It is **not** a production-hardening guide
-(no HA, no managed DB, no RS256) — those stay future-scoped.
+(no HA, no managed DB, no JWKS/key rotation) — those stay future-scoped. JWT signing is already
+**RS256 asymmetric** (auth-service holds the private key; every other service verifies with the
+public key only), so this guide has you generate an RSA keypair rather than a shared secret.
 
 The repo already ships everything you need:
 
@@ -180,10 +182,16 @@ cp .env.example .env
 Fill in `.env` (keep it private — `chmod 600 .env`). Generate strong values:
 
 ```bash
-# JWT secret (>= 256-bit) and each DB password
-openssl rand -base64 64 | tr -d '\n'      # JWT_SECRET
+# JWT RS256 keypair — auth-service signs with the private key; every other service
+# verifies with the public key only. Prints JWT_PRIVATE_KEY= and JWT_PUBLIC_KEY=
+# (base64 DER, one line each) ready to paste into .env:
+./scripts/gen-jwt-keys.sh                 # or: ./scripts/gen-jwt-keys.sh >> .env
 openssl rand -base64 24 | tr -d '/+=\n'   # each *_DB_PASSWORD, MYSQL_ROOT_PASSWORD, GF_SECURITY_ADMIN_PASSWORD
 ```
+
+Both key vars have **no default** — every service fails fast if `JWT_PRIVATE_KEY` /
+`JWT_PUBLIC_KEY` is unset. Generate the pair **once** and keep it stable across restarts
+(regenerating invalidates all existing tokens).
 
 Required for prod (in addition to the dev vars):
 
@@ -266,9 +274,10 @@ Flyway applies any new migrations on service startup; the named volumes persist 
 network, Grafana hardened, nightly backup, one-command update.
 
 **Deliberately out of scope** (see `project-status.md` §6 / §10 — future work / interview talking
-points): RS256/JWKS instead of the shared HMAC secret, edge rate limiting, transactional outbox,
-managed/replicated MySQL, distributed tracing, Prometheus alerting, and any multi-host / HA
-topology. For "production-grade", that is Path B.
+points): **JWKS endpoint + JWT key rotation** (signing is already RS256 asymmetric, but there is no
+published JWKS or rotation flow), edge rate limiting, transactional outbox, managed/replicated MySQL,
+distributed tracing, Prometheus alerting, and any multi-host / HA topology. For "production-grade",
+that is Path B.
 
 ## Optional: publish images to a registry (GHCR)
 

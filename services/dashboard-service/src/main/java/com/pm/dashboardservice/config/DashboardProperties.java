@@ -19,7 +19,8 @@ public class DashboardProperties {
     @Getter
     @Setter
     public static class Services {
-        private String userUri;
+        // user-service is now called over gRPC (see GrpcClientConfig / spring.grpc.client);
+        // only the REST upstreams keep a base URI here.
         private String transactionUri;
         private String budgetUri;
     }
