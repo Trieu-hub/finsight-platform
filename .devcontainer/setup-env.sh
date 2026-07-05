@@ -11,10 +11,8 @@ if [ -f .env ]; then
 fi
 
 gen() { openssl rand -base64 24 | tr -d '/+=\n'; }   # DB password (no special chars)
-jwt() { openssl rand -base64 64 | tr -d '\n'; }      # >= 256-bit JWT secret
 
 cat > .env <<EOF
-JWT_SECRET=$(jwt)
 MYSQL_ROOT_PASSWORD=$(gen)
 AUTH_DB_PASSWORD=$(gen)
 USER_DB_PASSWORD=$(gen)
@@ -27,6 +25,11 @@ FINSIGHT_NARRATOR_AI_ENABLED=false
 FINSIGHT_SUMMARIZER_AI_ENABLED=false
 LLM_API_KEY=
 EOF
+
+# JWT is RS256 (asymmetric): auth-service signs with the private key, every other service
+# verifies with the public key only. Reuse the repo's canonical generator — it appends
+# JWT_PRIVATE_KEY= and JWT_PUBLIC_KEY= (base64 DER, one line each) to the .env we just wrote.
+bash scripts/gen-jwt-keys.sh >> .env
 
 echo "Generated .env with random demo secrets."
 echo "Next:  docker compose -f docker-compose.yml -f docker-compose.codespaces.yml up -d --build"
