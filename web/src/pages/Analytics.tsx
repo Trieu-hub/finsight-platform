@@ -13,6 +13,7 @@ import type {
   SpendForecast,
 } from '../api/types'
 import { money } from '../lib/format'
+import { useI18n, type Lang } from '../i18n'
 
 const BAR_COLORS = ['#10b981', '#14b8a6', '#06b6d4', '#f59e0b', '#f43f5e', '#a78bfa', '#64748b']
 
@@ -23,6 +24,7 @@ export default function Analytics() {
   const [summary, setSummary] = useState<MonthlySummary | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+  const { t, lang } = useI18n()
 
   useEffect(() => {
     ;(async () => {
@@ -62,17 +64,17 @@ export default function Analytics() {
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-2xl font-semibold text-neutral-100">Analytics</h1>
+        <h1 className="text-2xl font-semibold text-neutral-100">{t('an.title')}</h1>
         <p className="mt-1 text-sm text-neutral-400">
-          {overview ? monthLabel(overview.yearMonth) : 'This month'} · built from your transaction history
+          {overview ? monthLabel(overview.yearMonth, lang) : t('an.thisMonth')} · {t('an.subtitle')}
         </p>
       </header>
 
       {/* AI / rule-based monthly summary */}
       {summary && (
-        <section className="rounded-2xl border border-emerald-900/40 bg-gradient-to-br from-emerald-950/40 to-neutral-900 p-5">
+        <section data-tour="analytics-summary" className="rounded-2xl border border-emerald-900/40 bg-gradient-to-br from-emerald-950/40 to-neutral-900 p-5">
           <div className="mb-2 flex items-center gap-2">
-            <span className="text-sm font-medium text-emerald-300">Monthly summary</span>
+            <span className="text-sm font-medium text-emerald-300">{t('an.monthlySummary')}</span>
             <span
               className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
                 summary.aiGenerated
@@ -80,7 +82,7 @@ export default function Analytics() {
                   : 'bg-neutral-700/50 text-neutral-300'
               }`}
             >
-              {summary.aiGenerated ? 'AI' : 'Rule-based'}
+              {summary.aiGenerated ? t('an.ai') : t('an.ruleBased')}
             </span>
           </div>
           <p className="text-[15px] leading-relaxed text-neutral-100">{summary.summary}</p>
@@ -90,7 +92,7 @@ export default function Analytics() {
       {/* Headline stats */}
       {overview && (
         <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard label="Savings rate">
+          <StatCard label={t('an.savingsRate')}>
             <div className="text-3xl font-semibold text-neutral-100">{pct(overview.savingsRate)}</div>
             <p className="mt-1 text-xs text-neutral-400">
               {savingsDelta >= 0 ? (
@@ -98,25 +100,25 @@ export default function Analytics() {
               ) : (
                 <span className="text-rose-400">▼ {pct(Math.abs(savingsDelta))}</span>
               )}{' '}
-              vs last month
+              {t('an.vsLastMonth')}
             </p>
           </StatCard>
 
-          <StatCard label="Income">
+          <StatCard label={t('an.income')}>
             <div className="text-2xl font-semibold text-emerald-400">{money(overview.income, currency)}</div>
             <div className="mt-1">
               <DeltaChip value={overview.incomeChangePct} goodWhenUp />
             </div>
           </StatCard>
 
-          <StatCard label="Expense">
+          <StatCard label={t('an.expense')}>
             <div className="text-2xl font-semibold text-rose-400">{money(overview.expense, currency)}</div>
             <div className="mt-1">
               <DeltaChip value={overview.expenseChangePct} goodWhenUp={false} />
             </div>
           </StatCard>
 
-          <StatCard label="Net">
+          <StatCard label={t('an.net')}>
             <div
               className={`text-2xl font-semibold ${
                 overview.net >= 0 ? 'text-neutral-100' : 'text-rose-400'
@@ -124,7 +126,7 @@ export default function Analytics() {
             >
               {money(overview.net, currency)}
             </div>
-            <p className="mt-1 text-xs text-neutral-500">income − expense</p>
+            <p className="mt-1 text-xs text-neutral-500">{t('an.netHint')}</p>
           </StatCard>
         </section>
       )}
@@ -132,19 +134,17 @@ export default function Analytics() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Spend forecast */}
         {forecast && (
-          <section className="rounded-2xl border border-neutral-800 bg-neutral-900 p-5">
-            <h2 className="text-sm font-medium text-neutral-300">Spend forecast</h2>
+          <section data-tour="analytics-forecast" className="rounded-2xl border border-neutral-800 bg-neutral-900 p-5">
+            <h2 className="text-sm font-medium text-neutral-300">{t('an.forecast')}</h2>
             <p className="mt-3 text-3xl font-semibold text-neutral-100">
               {money(forecast.projectedExpense, currency)}
             </p>
-            <p className="mt-1 text-xs text-neutral-400">
-              projected by month-end at the current pace
-            </p>
+            <p className="mt-1 text-xs text-neutral-400">{t('an.forecastHint')}</p>
 
             <div className="mt-4">
               <div className="mb-1 flex justify-between text-xs text-neutral-400">
-                <span>Day {forecast.dayOfMonth} of {forecast.daysInMonth}</span>
-                <span>{money(forecast.expenseToDate, currency)} so far</span>
+                <span>{t('an.dayOf', { d: forecast.dayOfMonth, n: forecast.daysInMonth })}</span>
+                <span>{t('an.soFar', { amount: money(forecast.expenseToDate, currency) })}</span>
               </div>
               <div className="h-2 w-full overflow-hidden rounded-full bg-neutral-800">
                 <div
@@ -155,7 +155,9 @@ export default function Analytics() {
                 />
               </div>
               <p className="mt-3 text-xs text-neutral-400">
-                Averaging <span className="text-neutral-200">{money(forecast.dailyAverage, currency)}</span> / day
+                {t('an.averagingPre')}{' '}
+                <span className="text-neutral-200">{money(forecast.dailyAverage, currency)}</span>{' '}
+                {t('an.averagingPost')}
               </p>
             </div>
           </section>
@@ -164,9 +166,9 @@ export default function Analytics() {
         {/* Top movers */}
         {overview && (
           <section className="rounded-2xl border border-neutral-800 bg-neutral-900 p-5">
-            <h2 className="text-sm font-medium text-neutral-300">Top movers vs last month</h2>
+            <h2 className="text-sm font-medium text-neutral-300">{t('an.topMovers')}</h2>
             {overview.topMovers.length === 0 ? (
-              <p className="mt-4 text-sm text-neutral-500">No category activity yet.</p>
+              <p className="mt-4 text-sm text-neutral-500">{t('an.noCategory')}</p>
             ) : (
               <ul className="mt-3 space-y-2">
                 {overview.topMovers.map((m) => (
@@ -189,9 +191,9 @@ export default function Analytics() {
 
       {/* Category breakdown */}
       <section className="rounded-2xl border border-neutral-800 bg-neutral-900 p-5">
-        <h2 className="text-sm font-medium text-neutral-300">Spending by category</h2>
+        <h2 className="text-sm font-medium text-neutral-300">{t('an.spendingByCategory')}</h2>
         {expenseSlices.length === 0 ? (
-          <p className="mt-4 text-sm text-neutral-500">No spending recorded for this period.</p>
+          <p className="mt-4 text-sm text-neutral-500">{t('an.noSpending')}</p>
         ) : (
           <ul className="mt-4 space-y-3">
             {expenseSlices.map((c, i) => (
@@ -230,8 +232,9 @@ function StatCard({ label, children }: { label: string; children: ReactNode }) {
 }
 
 function DeltaChip({ value, goodWhenUp }: { value: number | null; goodWhenUp: boolean }) {
+  const { t } = useI18n()
   if (value === null || value === undefined) {
-    return <span className="text-xs text-neutral-500">new</span>
+    return <span className="text-xs text-neutral-500">{t('an.new')}</span>
   }
   const up = value >= 0
   const good = up === goodWhenUp
@@ -243,9 +246,12 @@ function DeltaChip({ value, goodWhenUp }: { value: number | null; goodWhenUp: bo
   )
 }
 
-function monthLabel(ym: string) {
+function monthLabel(ym: string, lang: Lang) {
   const [y, m] = ym.split('-').map(Number)
-  return new Date(y, m - 1, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' })
+  return new Date(y, m - 1, 1).toLocaleString(lang === 'vi' ? 'vi-VN' : 'en-US', {
+    month: 'long',
+    year: 'numeric',
+  })
 }
 
 function pct(v: number) {

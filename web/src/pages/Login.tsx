@@ -3,6 +3,8 @@ import { Link, useNavigate } from 'react-router-dom'
 import { login } from '../api/endpoints'
 import { errorMessage } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
+import { useI18n } from '../i18n'
+import LanguageToggle from '../components/LanguageToggle'
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -10,6 +12,7 @@ export default function Login() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const { signIn } = useAuth()
+  const { t } = useI18n()
   const navigate = useNavigate()
 
   async function handleSubmit(e: FormEvent) {
@@ -29,23 +32,23 @@ export default function Login() {
   }
 
   return (
-    <AuthShell title="Sign in to FinSight">
+    <AuthShell title={t('login.title')}>
       <form onSubmit={handleSubmit} className="space-y-4">
-        <Field label="Email" type="email" value={email} onChange={setEmail} />
-        <Field label="Password" type="password" value={password} onChange={setPassword} />
+        <Field label={t('login.email')} type="email" value={email} onChange={setEmail} />
+        <Field label={t('login.password')} type="password" value={password} onChange={setPassword} />
         {error && <p className="text-sm text-red-400">{error}</p>}
         <button
           type="submit"
           disabled={loading}
           className="w-full rounded-lg bg-emerald-600 py-2.5 font-semibold text-white shadow-lg shadow-emerald-900/40 transition hover:bg-emerald-500 disabled:opacity-60"
         >
-          {loading ? 'Signing in…' : 'Sign in'}
+          {loading ? t('login.submitting') : t('login.submit')}
         </button>
       </form>
       <p className="mt-5 text-center text-sm text-neutral-500">
-        No account?{' '}
+        {t('login.noAccount')}{' '}
         <Link to="/register" className="font-medium text-emerald-400 hover:text-emerald-300">
-          Create one
+          {t('login.createOne')}
         </Link>
       </p>
     </AuthShell>
@@ -55,12 +58,15 @@ export default function Login() {
 export function AuthShell({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-neutral-950 px-4">
+      <div className="absolute right-4 top-4">
+        <LanguageToggle />
+      </div>
       {/* ambient glow */}
       <div className="pointer-events-none absolute -top-32 left-1/2 h-72 w-72 -translate-x-1/2 rounded-full bg-emerald-600/20 blur-3xl" />
       <div className="relative w-full max-w-sm rounded-2xl border border-neutral-800 bg-neutral-900/80 p-8 shadow-2xl shadow-black/40 backdrop-blur">
         <div className="mb-6 text-center">
           <span className="bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-2xl font-extrabold tracking-tight text-transparent">
-            FinSight
+            Vernfy
           </span>
           <h1 className="mt-3 text-base font-medium text-neutral-300">{title}</h1>
         </div>

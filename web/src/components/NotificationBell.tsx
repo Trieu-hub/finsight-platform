@@ -6,6 +6,9 @@ import {
   markNotificationRead,
   unreadNotificationCount,
 } from '../api/endpoints'
+import { useI18n } from '../i18n'
+
+type TFunc = (key: string, vars?: Record<string, string | number>) => string
 
 // Poll the unread count this often. Notifications arrive via Kafka on the backend,
 // so the FE has no push channel — a light poll is enough for a bell badge.
@@ -22,17 +25,17 @@ function severityDot(severity: string) {
   return SEVERITY_STYLES[severity as NotificationSeverity] ?? 'bg-neutral-500'
 }
 
-function timeAgo(iso: string): string {
+function timeAgo(iso: string, t: TFunc): string {
   const then = new Date(iso).getTime()
   if (Number.isNaN(then)) return ''
   const secs = Math.max(0, Math.floor((Date.now() - then) / 1000))
-  if (secs < 60) return 'just now'
+  if (secs < 60) return t('time.justNow')
   const mins = Math.floor(secs / 60)
-  if (mins < 60) return `${mins}m ago`
+  if (mins < 60) return t('time.mAgo', { m: mins })
   const hours = Math.floor(mins / 60)
-  if (hours < 24) return `${hours}h ago`
+  if (hours < 24) return t('time.hAgo', { h: hours })
   const days = Math.floor(hours / 24)
-  return `${days}d ago`
+  return t('time.dAgo', { d: days })
 }
 
 export default function NotificationBell() {
@@ -41,6 +44,7 @@ export default function NotificationBell() {
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  const { t } = useI18n()
 
   // Poll the unread count. Wrapped in try/catch so a transient gateway error
   // (or the user simply not being logged in) never bubbles up and breaks Layout.
@@ -112,7 +116,7 @@ export default function NotificationBell() {
     <div ref={containerRef} className="relative">
       <button
         onClick={toggle}
-        aria-label="Notifications"
+        aria-label={t('notif.title')}
         className="relative rounded-lg border border-neutral-800 px-2.5 py-1.5 text-neutral-400 transition hover:border-neutral-700 hover:bg-neutral-800 hover:text-neutral-100"
       >
         {/* bell glyph */}
@@ -139,22 +143,22 @@ export default function NotificationBell() {
       {open && (
         <div className="absolute right-0 z-20 mt-2 w-80 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 shadow-xl shadow-black/40">
           <div className="flex items-center justify-between border-b border-neutral-800 px-4 py-2.5">
-            <span className="text-sm font-semibold text-neutral-200">Notifications</span>
+            <span className="text-sm font-semibold text-neutral-200">{t('notif.title')}</span>
             {unread > 0 && (
               <button
                 onClick={onMarkAll}
                 className="text-xs font-medium text-emerald-400 hover:text-emerald-300"
               >
-                Mark all read
+                {t('notif.markAll')}
               </button>
             )}
           </div>
 
           <div className="max-h-96 overflow-y-auto">
             {loading ? (
-              <p className="px-4 py-6 text-center text-sm text-neutral-500">Loading…</p>
+              <p className="px-4 py-6 text-center text-sm text-neutral-500">{t('notif.loading')}</p>
             ) : items.length === 0 ? (
-              <p className="px-4 py-6 text-center text-sm text-neutral-500">No notifications</p>
+              <p className="px-4 py-6 text-center text-sm text-neutral-500">{t('notif.empty')}</p>
             ) : (
               items.map((n) => (
                 <button
@@ -171,7 +175,7 @@ export default function NotificationBell() {
                         {n.title}
                       </span>
                       <span className="shrink-0 text-[11px] text-neutral-500">
-                        {timeAgo(n.createdAt)}
+                        {timeAgo(n.createdAt, t)}
                       </span>
                     </span>
                     <span className="mt-0.5 block text-xs text-neutral-400">{n.message}</span>

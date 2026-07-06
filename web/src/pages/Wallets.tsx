@@ -3,6 +3,7 @@ import { createWallet, deleteWallet, listWallets } from '../api/endpoints'
 import { errorMessage } from '../api/client'
 import type { Wallet, WalletKind } from '../api/types'
 import { groupThousands, money } from '../lib/format'
+import { useI18n } from '../i18n'
 
 const CURRENCIES = ['VND', 'USD'] as const
 const KINDS: WalletKind[] = ['CASH', 'BANK', 'CARD', 'SAVINGS', 'OTHER']
@@ -20,14 +21,6 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-const kindLabel: Record<WalletKind, string> = {
-  CASH: 'Cash',
-  BANK: 'Bank',
-  CARD: 'Card',
-  SAVINGS: 'Savings',
-  OTHER: 'Other',
-}
-
 export default function Wallets() {
   const [wallets, setWallets] = useState<Wallet[]>([])
   const [error, setError] = useState('')
@@ -38,6 +31,7 @@ export default function Wallets() {
   const [currency, setCurrency] = useState<string>('VND')
   const [initialBalance, setInitialBalance] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const { t } = useI18n()
 
   async function load() {
     try {
@@ -58,7 +52,7 @@ export default function Wallets() {
     e.preventDefault()
     setError('')
     if (!name.trim()) {
-      setError('Enter a wallet name.')
+      setError(t('wallet.errName'))
       return
     }
     setSubmitting(true)
@@ -95,25 +89,25 @@ export default function Wallets() {
 
   return (
     <div className="grid gap-6 md:grid-cols-3">
-      <section className="md:col-span-1">
+      <section data-tour="wallet-form" className="md:col-span-1">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-400">
-          New wallet
+          {t('wallet.new')}
         </h2>
         <form
           onSubmit={handleSubmit}
           className="space-y-4 rounded-2xl border border-neutral-800 bg-neutral-900 p-5"
         >
-          <Field label="Name">
+          <Field label={t('wallet.name')}>
             <input
               type="text"
-              placeholder="e.g. Checking"
+              placeholder={t('wallet.namePlaceholder')}
               value={name}
               onChange={(e) => setName(e.target.value)}
               className={inputClass}
             />
           </Field>
 
-          <Field label="Type">
+          <Field label={t('wallet.type')}>
             <select
               value={type}
               onChange={(e) => setType(e.target.value as WalletKind)}
@@ -121,13 +115,13 @@ export default function Wallets() {
             >
               {KINDS.map((k) => (
                 <option key={k} value={k}>
-                  {kindLabel[k]}
+                  {t(`kind.${k}`)}
                 </option>
               ))}
             </select>
           </Field>
 
-          <Field label="Opening balance">
+          <Field label={t('wallet.opening')}>
             <div className="flex gap-2">
               <input
                 type="text"
@@ -157,17 +151,19 @@ export default function Wallets() {
             disabled={submitting}
             className="w-full rounded-lg bg-emerald-600 py-2.5 font-semibold text-white shadow-lg shadow-emerald-900/40 transition hover:bg-emerald-500 disabled:opacity-60"
           >
-            {submitting ? 'Saving…' : 'Add wallet'}
+            {submitting ? t('wallet.saving') : t('wallet.add')}
           </button>
         </form>
       </section>
 
-      <section className="md:col-span-2">
+      <section data-tour="wallet-list" className="md:col-span-2">
         <div className="mb-3 flex items-baseline justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-400">Wallets</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-400">
+            {t('wallet.title')}
+          </h2>
           {singleCurrency && (
             <span className="text-sm text-neutral-400">
-              Total{' '}
+              {t('wallet.total')}{' '}
               <span className="font-semibold text-neutral-100">
                 {money(total, wallets[0].currency)}
               </span>
@@ -176,9 +172,9 @@ export default function Wallets() {
         </div>
         {error && <p className="mb-3 text-sm text-red-400">{error}</p>}
         {loading ? (
-          <p className="text-neutral-500">Loading…</p>
+          <p className="text-neutral-500">{t('common.loading')}</p>
         ) : wallets.length === 0 ? (
-          <p className="text-neutral-500">No wallets yet. Create one to track balances and transfers.</p>
+          <p className="text-neutral-500">{t('wallet.empty')}</p>
         ) : (
           <div className="space-y-3">
             {wallets.map((w) => (
@@ -189,7 +185,7 @@ export default function Wallets() {
                 <div>
                   <div className="font-medium text-neutral-200">{w.name}</div>
                   <div className="mt-0.5 text-xs uppercase tracking-wide text-neutral-500">
-                    {kindLabel[w.type]} · {w.currency}
+                    {t(`kind.${w.type}`)} · {w.currency}
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
@@ -200,10 +196,10 @@ export default function Wallets() {
                   </span>
                   <button
                     onClick={() => handleDelete(w)}
-                    title="Delete wallet"
+                    title={t('wallet.deleteTitle')}
                     className="rounded-lg border border-neutral-800 px-2.5 py-1 text-xs text-neutral-400 transition hover:border-rose-800 hover:bg-rose-950/40 hover:text-rose-300"
                   >
-                    Delete
+                    {t('wallet.delete')}
                   </button>
                 </div>
               </div>

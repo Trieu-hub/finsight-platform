@@ -1,7 +1,11 @@
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
+import { useI18n } from '../i18n'
 import NotificationBell from './NotificationBell'
+import OnboardingTour from './OnboardingTour'
+import LanguageToggle from './LanguageToggle'
+import { markTourSeen, shouldAutoOpenTour } from '../lib/onboarding'
 
 // Inline icons keep the nav lightweight (no icon library). 18px, stroked.
 const icons: Record<string, ReactNode> = {
@@ -43,11 +47,11 @@ const icons: Record<string, ReactNode> = {
 }
 
 const baseLinks = [
-  { to: '/', label: 'Dashboard', end: true },
-  { to: '/transactions', label: 'Transactions' },
-  { to: '/budgets', label: 'Budgets' },
-  { to: '/wallets', label: 'Wallets' },
-  { to: '/analytics', label: 'Analytics' },
+  { to: '/', labelKey: 'nav.dashboard', end: true },
+  { to: '/transactions', labelKey: 'nav.transactions' },
+  { to: '/budgets', labelKey: 'nav.budgets' },
+  { to: '/wallets', labelKey: 'nav.wallets' },
+  { to: '/analytics', labelKey: 'nav.analytics' },
 ]
 
 function NavIcon({ to }: { to: string }) {
@@ -69,10 +73,22 @@ function NavIcon({ to }: { to: string }) {
 
 export default function Layout() {
   const { signOut, isAdmin } = useAuth()
+  const { t } = useI18n()
   const navigate = useNavigate()
 
+  // Guided tour: auto-open for a brand-new account (or the first visit on this browser),
+  // then remember it was seen so it doesn't reopen.
+  const [tourOpen, setTourOpen] = useState(false)
+  useEffect(() => {
+    if (shouldAutoOpenTour()) setTourOpen(true)
+  }, [])
+  const closeTour = () => {
+    setTourOpen(false)
+    markTourSeen()
+  }
+
   // Admin link is shown only to ROLE_ADMIN (UX only; backend enforces access).
-  const links = isAdmin ? [...baseLinks, { to: '/admin', label: 'Admin' }] : baseLinks
+  const links = isAdmin ? [...baseLinks, { to: '/admin', labelKey: 'nav.admin' }] : baseLinks
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-200">
@@ -80,7 +96,7 @@ export default function Layout() {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-3.5">
           <div className="flex items-center gap-7">
             <span className="bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-lg font-extrabold tracking-tight text-transparent">
-              FinSight
+              Vernfy
             </span>
             <nav className="flex gap-1">
               {links.map((l) => (
@@ -97,13 +113,25 @@ export default function Layout() {
                   }
                 >
                   <NavIcon to={l.to} />
-                  <span className="hidden sm:inline">{l.label}</span>
+                  <span className="hidden sm:inline">{t(l.labelKey)}</span>
                 </NavLink>
               ))}
             </nav>
           </div>
           <div className="flex items-center gap-2">
-            <NotificationBell />
+            <LanguageToggle />
+            <button
+              onClick={() => setTourOpen(true)}
+              data-tour="help-btn"
+              aria-label={t('nav.tour')}
+              title={t('nav.tour')}
+              className="flex h-[34px] w-[34px] items-center justify-center rounded-lg border border-neutral-800 text-sm font-bold text-neutral-400 transition hover:border-neutral-700 hover:bg-neutral-800 hover:text-neutral-100"
+            >
+              ?
+            </button>
+            <span data-tour="notif-bell" className="inline-flex">
+              <NotificationBell />
+            </span>
             <button
               onClick={() => {
                 signOut()
@@ -111,7 +139,7 @@ export default function Layout() {
               }}
               className="rounded-lg border border-neutral-800 px-3 py-1.5 text-sm font-medium text-neutral-400 transition hover:border-neutral-700 hover:bg-neutral-800 hover:text-neutral-100"
             >
-              Sign out
+              {t('nav.signOut')}
             </button>
           </div>
         </div>
@@ -120,8 +148,10 @@ export default function Layout() {
         <Outlet />
       </main>
       <footer className="mx-auto max-w-6xl px-5 py-8 text-center text-xs text-neutral-600">
-        FinSight · event-driven finance platform · Spring Boot · Kafka · React
+        Vernfy · {t('footer.tagline')} · Spring Boot · Kafka · React
       </footer>
+
+      <OnboardingTour open={tourOpen} onClose={closeTour} />
     </div>
   )
 }
