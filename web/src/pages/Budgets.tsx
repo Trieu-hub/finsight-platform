@@ -3,6 +3,7 @@ import { createBudget, listBudgets, listCategories } from '../api/endpoints'
 import { errorMessage } from '../api/client'
 import type { Budget, BudgetPeriod, Category } from '../api/types'
 import { categoryName, groupThousands, money } from '../lib/format'
+import { useI18n } from '../i18n'
 
 const firstOfMonth = () => new Date().toISOString().slice(0, 8) + '01'
 const lastOfMonth = () => {
@@ -40,6 +41,7 @@ export default function Budgets() {
   const [startDate, setStartDate] = useState(firstOfMonth())
   const [endDate, setEndDate] = useState(lastOfMonth())
   const [submitting, setSubmitting] = useState(false)
+  const { t } = useI18n()
 
   async function load() {
     try {
@@ -66,7 +68,7 @@ export default function Budgets() {
     setError('')
     const value = Number(limitAmount)
     if (!limitAmount || value <= 0) {
-      setError('Enter a limit greater than 0.')
+      setError(t('budget.errLimit'))
       return
     }
     setSubmitting(true)
@@ -92,25 +94,25 @@ export default function Budgets() {
 
   return (
     <div className="grid gap-6 md:grid-cols-3">
-      <section className="md:col-span-1">
+      <section data-tour="budget-form" className="md:col-span-1">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-400">
-          New budget
+          {t('budget.new')}
         </h2>
         <form
           onSubmit={handleSubmit}
           className="space-y-4 rounded-2xl border border-neutral-800 bg-neutral-900 p-5"
         >
-          <Field label="Name">
+          <Field label={t('budget.name')}>
             <input
               type="text"
-              placeholder="Optional"
+              placeholder={t('common.optional')}
               value={name}
               onChange={(e) => setName(e.target.value)}
               className={inputClass}
             />
           </Field>
 
-          <Field label="Category">
+          <Field label={t('budget.category')}>
             <select
               value={categoryId}
               onChange={(e) => setCategoryId(e.target.value)}
@@ -126,20 +128,20 @@ export default function Budgets() {
             </select>
           </Field>
 
-          <Field label="Period">
+          <Field label={t('budget.period')}>
             <select
               value={periodType}
               onChange={(e) => setPeriodType(e.target.value as BudgetPeriod)}
               className={inputClass}
             >
-              <option value="MONTHLY">Monthly</option>
-              <option value="WEEKLY">Weekly</option>
-              <option value="YEARLY">Yearly</option>
-              <option value="CUSTOM">Custom</option>
+              <option value="MONTHLY">{t('period.MONTHLY')}</option>
+              <option value="WEEKLY">{t('period.WEEKLY')}</option>
+              <option value="YEARLY">{t('period.YEARLY')}</option>
+              <option value="CUSTOM">{t('period.CUSTOM')}</option>
             </select>
           </Field>
 
-          <Field label="Limit amount">
+          <Field label={t('budget.limit')}>
             <div className="flex gap-2">
               <input
                 type="text"
@@ -165,7 +167,7 @@ export default function Budgets() {
             </div>
           </Field>
 
-          <Field label="Start">
+          <Field label={t('budget.start')}>
             <input
               type="date"
               value={startDate}
@@ -175,7 +177,7 @@ export default function Budgets() {
             />
           </Field>
 
-          <Field label="End">
+          <Field label={t('budget.end')}>
             <input
               type="date"
               value={endDate}
@@ -190,20 +192,20 @@ export default function Budgets() {
             disabled={submitting}
             className="w-full rounded-lg bg-emerald-600 py-2.5 font-semibold text-white shadow-lg shadow-emerald-900/40 transition hover:bg-emerald-500 disabled:opacity-60"
           >
-            {submitting ? 'Saving…' : 'Add budget'}
+            {submitting ? t('budget.saving') : t('budget.add')}
           </button>
         </form>
       </section>
 
-      <section className="md:col-span-2">
+      <section data-tour="budget-list" className="md:col-span-2">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-400">
-          Budgets
+          {t('budget.title')}
         </h2>
         {error && <p className="mb-3 text-sm text-red-400">{error}</p>}
         {loading ? (
-          <p className="text-neutral-500">Loading…</p>
+          <p className="text-neutral-500">{t('common.loading')}</p>
         ) : budgets.length === 0 ? (
-          <p className="text-neutral-500">No budgets yet.</p>
+          <p className="text-neutral-500">{t('dashboard.noBudgets')}</p>
         ) : (
           <div className="space-y-3">
             {budgets.map((b) => {
@@ -226,8 +228,8 @@ export default function Budgets() {
                     />
                   </div>
                   <div className="mt-1.5 text-xs text-neutral-500">
-                    {over && <span className="mr-2 font-medium text-rose-400">Over budget</span>}
-                    {b.periodType} · {b.startDate} → {b.endDate}
+                    {over && <span className="mr-2 font-medium text-rose-400">{t('budget.over')}</span>}
+                    {t(`period.${b.periodType}`)} · {b.startDate} → {b.endDate}
                   </div>
                 </div>
               )

@@ -3,6 +3,7 @@ import { listBudgets, listCategories, listTransactions } from '../api/endpoints'
 import { errorMessage } from '../api/client'
 import type { Budget, Category, Transaction } from '../api/types'
 import { categoryName, money } from '../lib/format'
+import { useI18n } from '../i18n'
 
 // Bar colours for the category breakdown, picked to read on a dark background.
 const BAR_COLORS = ['#10b981', '#14b8a6', '#06b6d4', '#f59e0b', '#f43f5e', '#a78bfa', '#64748b']
@@ -13,6 +14,7 @@ export default function Dashboard() {
   const [categories, setCategories] = useState<Category[]>([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+  const { t } = useI18n()
 
   useEffect(() => {
     ;(async () => {
@@ -79,10 +81,13 @@ export default function Dashboard() {
   return (
     <div className="space-y-8">
       {/* Hero: net balance is the "hero number" with room to breathe; income/expense support it. */}
-      <section className="rounded-3xl border border-neutral-800 bg-gradient-to-br from-emerald-500/15 via-neutral-900 to-neutral-900 p-7">
+      <section
+        data-tour="dash-hero"
+        className="rounded-3xl border border-neutral-800 bg-gradient-to-br from-emerald-500/15 via-neutral-900 to-neutral-900 p-7"
+      >
         <div className="flex items-center justify-between">
           <span className="text-xs font-medium uppercase tracking-wider text-neutral-400">
-            Net balance
+            {t('dashboard.netBalance')}
           </span>
           <SavingsPill rate={savingsRate} hasIncome={income > 0} />
         </div>
@@ -94,8 +99,8 @@ export default function Dashboard() {
           {money(balance, currency)}
         </div>
         <div className="mt-6 flex flex-wrap gap-x-10 gap-y-4">
-          <MiniStat label="Income" value={money(income, currency)} dot="bg-emerald-400" />
-          <MiniStat label="Expense" value={money(expense, currency)} dot="bg-rose-400" />
+          <MiniStat label={t('dashboard.income')} value={money(income, currency)} dot="bg-emerald-400" />
+          <MiniStat label={t('dashboard.expense')} value={money(expense, currency)} dot="bg-rose-400" />
         </div>
       </section>
 
@@ -104,12 +109,12 @@ export default function Dashboard() {
       <CategoryColumns byCategory={byCategory} categories={categories} currency={currency} />
 
       <div className="grid gap-6 md:grid-cols-2">
-        <section>
+        <section data-tour="dash-recent">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-400">
-            Recent transactions
+            {t('dashboard.recent')}
           </h2>
           {recent.length === 0 ? (
-            <EmptyCard>No transactions yet.</EmptyCard>
+            <EmptyCard>{t('dashboard.noTx')}</EmptyCard>
           ) : (
             <div className="overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900">
               {recent.map((t) => (
@@ -137,12 +142,12 @@ export default function Dashboard() {
           )}
         </section>
 
-        <section>
+        <section data-tour="dash-budgets">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-400">
-            Budgets
+            {t('dashboard.budgets')}
           </h2>
           {budgets.length === 0 ? (
-            <EmptyCard>No budgets yet.</EmptyCard>
+            <EmptyCard>{t('dashboard.noBudgets')}</EmptyCard>
           ) : (
             <div className="space-y-3">
               {budgets.slice(0, 5).map((b) => (
@@ -163,11 +168,12 @@ function TrendChart({
   series: { date: string; value: number }[]
   currency: string
 }) {
+  const { t } = useI18n()
   if (series.length === 0) {
     return (
-      <section>
-        <SectionTitle>Balance trend</SectionTitle>
-        <EmptyCard>Add transactions to see your balance trend.</EmptyCard>
+      <section data-tour="dash-trend">
+        <SectionTitle>{t('dashboard.balanceTrend')}</SectionTitle>
+        <EmptyCard>{t('dashboard.trendEmpty')}</EmptyCard>
       </section>
     )
   }
@@ -203,12 +209,12 @@ function TrendChart({
   const tickVal = (f: number) => max - f * (max - min)
 
   return (
-    <section>
+    <section data-tour="dash-trend">
       <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-5">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-400">
-              Balance trend
+              {t('dashboard.balanceTrend')}
             </h2>
             <div
               className={`mt-1 text-2xl font-bold tracking-tight ${
@@ -299,10 +305,11 @@ function TrendChart({
 }
 
 function SavingsPill({ rate, hasIncome }: { rate: number; hasIncome: boolean }) {
+  const { t } = useI18n()
   if (!hasIncome) {
     return (
       <span className="rounded-full border border-neutral-700 px-2.5 py-1 text-xs font-medium text-neutral-400">
-        Savings rate —
+        {t('dashboard.savingsRateNone')}
       </span>
     )
   }
@@ -315,7 +322,7 @@ function SavingsPill({ rate, hasIncome }: { rate: number; hasIncome: boolean }) 
           : 'border border-rose-500/30 bg-rose-500/10 text-rose-300'
       }`}
     >
-      {positive ? '▲' : '▼'} {Math.abs(rate).toFixed(0)}% saved
+      {positive ? '▲' : '▼'} {t('dashboard.savedPct', { pct: Math.abs(rate).toFixed(0) })}
     </span>
   )
 }
@@ -344,11 +351,12 @@ function CategoryColumns({
   categories: Category[]
   currency: string
 }) {
+  const { t } = useI18n()
   if (byCategory.length === 0) {
     return (
-      <section>
-        <SectionTitle>Spending by category</SectionTitle>
-        <EmptyCard>Add an expense to see the breakdown.</EmptyCard>
+      <section data-tour="dash-categories">
+        <SectionTitle>{t('dashboard.spendingByCategory')}</SectionTitle>
+        <EmptyCard>{t('dashboard.categoryEmpty')}</EmptyCard>
       </section>
     )
   }
@@ -358,8 +366,8 @@ function CategoryColumns({
   const ticks = [0, 0.25, 0.5, 0.75, 1]
 
   return (
-    <section>
-      <SectionTitle>Spending by category</SectionTitle>
+    <section data-tour="dash-categories">
+      <SectionTitle>{t('dashboard.spendingByCategory')}</SectionTitle>
       <div className="rounded-2xl border border-neutral-800 bg-neutral-900 p-5">
         <div className="relative h-56 pl-16">
           {/* Y-axis gridlines + labels (top = max, bottom = 0). */}

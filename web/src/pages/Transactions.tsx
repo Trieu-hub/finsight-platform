@@ -8,6 +8,7 @@ import {
 import { errorMessage } from '../api/client'
 import type { Category, Transaction, TransactionType, Wallet } from '../api/types'
 import { categoryName, groupThousands, money } from '../lib/format'
+import { useI18n } from '../i18n'
 
 const today = () => new Date().toISOString().slice(0, 10)
 const CURRENCIES = ['VND', 'USD'] as const
@@ -43,6 +44,7 @@ export default function Transactions() {
   const [description, setDescription] = useState('')
   const [date, setDate] = useState(today())
   const [submitting, setSubmitting] = useState(false)
+  const { t } = useI18n()
 
   const isTransfer = type === 'TRANSFER'
   const transferCat = useMemo(() => categories.find((c) => c.type === 'TRANSFER'), [categories])
@@ -93,22 +95,22 @@ export default function Transactions() {
     setError('')
     const value = Number(amount)
     if (!amount || value <= 0) {
-      setError('Enter an amount greater than 0.')
+      setError(t('tx.errAmount'))
       return
     }
 
     try {
       if (isTransfer) {
         if (!walletId || !toWalletId) {
-          setError('Choose both a source and a destination wallet.')
+          setError(t('tx.errWallets'))
           return
         }
         if (walletId === toWalletId) {
-          setError('Source and destination wallets must be different.')
+          setError(t('tx.errSameWallet'))
           return
         }
         if (!transferCat) {
-          setError('Transfer category is unavailable.')
+          setError(t('tx.errTransferCat'))
           return
         }
         setSubmitting(true)
@@ -152,27 +154,27 @@ export default function Transactions() {
   return (
     <div className="grid gap-6 md:grid-cols-3">
       {/* Create form */}
-      <section className="md:col-span-1">
+      <section data-tour="tx-form" className="md:col-span-1">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-400">
-          New transaction
+          {t('tx.new')}
         </h2>
         <form
           onSubmit={handleSubmit}
           className="space-y-4 rounded-2xl border border-neutral-800 bg-neutral-900 p-5"
         >
-          <Field label="Type">
+          <Field label={t('tx.type')}>
             <select
               value={type}
               onChange={(e) => onTypeChange(e.target.value as TransactionType)}
               className={inputClass}
             >
-              <option value="EXPENSE">Expense</option>
-              <option value="INCOME">Income</option>
-              <option value="TRANSFER">Transfer</option>
+              <option value="EXPENSE">{t('tx.expense')}</option>
+              <option value="INCOME">{t('tx.income')}</option>
+              <option value="TRANSFER">{t('tx.transfer')}</option>
             </select>
           </Field>
 
-          <Field label="Amount">
+          <Field label={t('tx.amount')}>
             <div className="flex gap-2">
               <input
                 type="text"
@@ -189,7 +191,7 @@ export default function Transactions() {
                 disabled={!!lockedCurrency}
                 className={`${fieldBase} w-20 shrink-0 disabled:opacity-60`}
                 aria-label="Currency"
-                title={lockedCurrency ? 'Currency is set by the selected wallet' : undefined}
+                title={lockedCurrency ? t('tx.currencyLocked') : undefined}
               >
                 {CURRENCIES.map((c) => (
                   <option key={c} value={c}>
@@ -205,7 +207,7 @@ export default function Transactions() {
 
           {isTransfer ? (
             <>
-              <Field label="From wallet">
+              <Field label={t('tx.fromWallet')}>
                 <select
                   value={walletId}
                   onChange={(e) => {
@@ -214,7 +216,7 @@ export default function Transactions() {
                   }}
                   className={inputClass}
                 >
-                  <option value="">Select…</option>
+                  <option value="">{t('common.select')}</option>
                   {wallets.map((w) => (
                     <option key={w.id} value={w.id}>
                       {w.name} · {money(w.balance, w.currency)}
@@ -223,14 +225,14 @@ export default function Transactions() {
                 </select>
               </Field>
 
-              <Field label="To wallet">
+              <Field label={t('tx.toWallet')}>
                 <select
                   value={toWalletId}
                   onChange={(e) => setToWalletId(e.target.value)}
                   disabled={!sourceWallet}
                   className={`${inputClass} disabled:opacity-60`}
                 >
-                  <option value="">Select…</option>
+                  <option value="">{t('common.select')}</option>
                   {destinationWallets.map((w) => (
                     <option key={w.id} value={w.id}>
                       {w.name} · {money(w.balance, w.currency)}
@@ -241,7 +243,7 @@ export default function Transactions() {
             </>
           ) : (
             <>
-              <Field label="Category">
+              <Field label={t('tx.category')}>
                 <select
                   value={categoryId}
                   onChange={(e) => setCategoryId(e.target.value)}
@@ -257,13 +259,13 @@ export default function Transactions() {
                 </select>
               </Field>
 
-              <Field label="Wallet">
+              <Field label={t('tx.wallet')}>
                 <select
                   value={walletId}
                   onChange={(e) => setWalletId(e.target.value)}
                   className={inputClass}
                 >
-                  <option value="">None</option>
+                  <option value="">{t('common.none')}</option>
                   {wallets.map((w) => (
                     <option key={w.id} value={w.id}>
                       {w.name} · {money(w.balance, w.currency)}
@@ -274,17 +276,17 @@ export default function Transactions() {
             </>
           )}
 
-          <Field label="Description">
+          <Field label={t('tx.description')}>
             <input
               type="text"
-              placeholder="Optional"
+              placeholder={t('common.optional')}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               className={inputClass}
             />
           </Field>
 
-          <Field label="Date">
+          <Field label={t('tx.date')}>
             <input
               type="date"
               value={date}
@@ -299,30 +301,30 @@ export default function Transactions() {
             disabled={submitting}
             className="w-full rounded-lg bg-emerald-600 py-2.5 font-semibold text-white shadow-lg shadow-emerald-900/40 transition hover:bg-emerald-500 disabled:opacity-60"
           >
-            {submitting ? 'Saving…' : 'Add transaction'}
+            {submitting ? t('tx.saving') : t('tx.add')}
           </button>
         </form>
       </section>
 
       {/* List */}
-      <section className="md:col-span-2">
+      <section data-tour="tx-list" className="md:col-span-2">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-400">
-          Transactions
+          {t('tx.title')}
         </h2>
         {error && <p className="mb-3 text-sm text-red-400">{error}</p>}
         {loading ? (
-          <p className="text-neutral-500">Loading…</p>
+          <p className="text-neutral-500">{t('common.loading')}</p>
         ) : transactions.length === 0 ? (
-          <p className="text-neutral-500">No transactions yet.</p>
+          <p className="text-neutral-500">{t('dashboard.noTx')}</p>
         ) : (
           <div className="overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900">
             <table className="w-full text-sm">
               <thead className="bg-neutral-950/40 text-left text-neutral-400">
                 <tr>
-                  <th className="px-4 py-2.5 font-medium">Date</th>
-                  <th className="px-4 py-2.5 font-medium">Category</th>
-                  <th className="px-4 py-2.5 font-medium">Description</th>
-                  <th className="px-4 py-2.5 text-right font-medium">Amount</th>
+                  <th className="px-4 py-2.5 font-medium">{t('tx.colDate')}</th>
+                  <th className="px-4 py-2.5 font-medium">{t('tx.colCategory')}</th>
+                  <th className="px-4 py-2.5 font-medium">{t('tx.colDescription')}</th>
+                  <th className="px-4 py-2.5 text-right font-medium">{t('tx.colAmount')}</th>
                 </tr>
               </thead>
               <tbody>
