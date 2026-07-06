@@ -29,7 +29,7 @@ export default function Login() {
   }
 
   return (
-    <AuthShell title="Sign in to FinSight">
+    <AuthShell title="Sign in to Vernfy">
       <form onSubmit={handleSubmit} className="space-y-4">
         <Field label="Email" type="email" value={email} onChange={setEmail} />
         <Field label="Password" type="password" value={password} onChange={setPassword} />
@@ -60,7 +60,7 @@ export function AuthShell({ title, children }: { title: string; children: React.
       <div className="relative w-full max-w-sm rounded-2xl border border-neutral-800 bg-neutral-900/80 p-8 shadow-2xl shadow-black/40 backdrop-blur">
         <div className="mb-6 text-center">
           <span className="bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-2xl font-extrabold tracking-tight text-transparent">
-            FinSight
+            Vernfy
           </span>
           <h1 className="mt-3 text-base font-medium text-neutral-300">{title}</h1>
         </div>

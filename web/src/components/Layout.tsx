@@ -80,7 +80,7 @@ export default function Layout() {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-3.5">
           <div className="flex items-center gap-7">
             <span className="bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-lg font-extrabold tracking-tight text-transparent">
-              FinSight
+              Vernfy
             </span>
             <nav className="flex gap-1">
               {links.map((l) => (
@@ -120,7 +120,7 @@ export default function Layout() {
         <Outlet />
       </main>
       <footer className="mx-auto max-w-6xl px-5 py-8 text-center text-xs text-neutral-600">
-        FinSight · event-driven finance platform · Spring Boot · Kafka · React
+        Vernfy · event-driven finance platform · Spring Boot · Kafka · React
       </footer>
     </div>
   )

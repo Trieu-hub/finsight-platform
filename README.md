@@ -1,11 +1,11 @@
-# FinSight
+# Vernfy
 
 [![CI](https://github.com/Trieu-hub/finsight-platform/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Trieu-hub/finsight-platform/actions/workflows/ci.yml)
 
 **Financial Intelligence & Risk Monitoring Platform** — a Spring Boot 4 / Java 21
 microservice monorepo.
 
-FinSight is an event-driven finance platform: users record transactions and budgets over a
+Vernfy is an event-driven finance platform: users record transactions and budgets over a
 REST API, and an asynchronous Kafka backbone feeds a **risk-intelligence** service that
 derives risk alerts, behavioral insights, and anomalies from the activity. Each service owns
 its own database and the only synchronous fan-out is a read-only BFF; all other cross-service

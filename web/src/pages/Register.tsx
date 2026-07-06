@@ -32,7 +32,7 @@ export default function Register() {
   }
 
   return (
-    <AuthShell title="Create your FinSight account">
+    <AuthShell title="Create your Vernfy account">
       <form onSubmit={handleSubmit} className="space-y-4">
         <Field label="Username" type="text" value={username} onChange={setUsername} />
         <Field label="Email" type="email" value={email} onChange={setEmail} />
