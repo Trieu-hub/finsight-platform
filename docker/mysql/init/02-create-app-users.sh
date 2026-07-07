@@ -13,9 +13,14 @@
 # NOTE: init scripts only run when the data directory is empty (first start). For an
 # existing volume, recreate it (`docker compose down -v`) or run these statements
 # manually as root.
-set -euo pipefail
+# Run the body in a subshell so `set -u`/`-e` never leak into MySQL's own
+# entrypoint when this file is *sourced* (which the entrypoint does whenever the
+# file lacks the executable bit — e.g. after a checkout that dropped +x). A leaked
+# `set -u` aborts the entrypoint on its own unset $MYSQL_ONETIME_PASSWORD.
+(
+  set -euo pipefail
 
-mysql --protocol=socket -uroot -p"${MYSQL_ROOT_PASSWORD}" <<SQL
+  mysql --protocol=socket -uroot -p"${MYSQL_ROOT_PASSWORD}" <<SQL
 CREATE USER IF NOT EXISTS 'auth_user'@'%'        IDENTIFIED BY '${AUTH_DB_PASSWORD}';
 CREATE USER IF NOT EXISTS 'user_user'@'%'        IDENTIFIED BY '${USER_DB_PASSWORD}';
 CREATE USER IF NOT EXISTS 'transaction_user'@'%' IDENTIFIED BY '${TRANSACTION_DB_PASSWORD}';
@@ -35,4 +40,5 @@ GRANT ALL PRIVILEGES ON analytics_db.*   TO 'analytics_user'@'%';
 FLUSH PRIVILEGES;
 SQL
 
-echo "[02-create-app-users] created per-service least-privilege DB users"
+  echo "[02-create-app-users] created per-service least-privilege DB users"
+)
