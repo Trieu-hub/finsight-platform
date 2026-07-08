@@ -209,7 +209,7 @@ export default function Layout() {
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl px-5 py-10">
+      <main className="mx-auto max-w-6xl overflow-x-clip px-4 py-8 sm:px-5 sm:py-10">
         <Outlet />
       </main>
       <footer className="mx-auto max-w-6xl px-5 py-8 text-center text-xs text-neutral-600">
