@@ -6,6 +6,13 @@
 }
 
 {$FINSIGHT_DOMAIN} {
+	# Cloudflare Origin certificate (15-year), used when the site sits behind Cloudflare's
+	# proxy (orange cloud). Cloudflare terminates the browser-facing TLS; this cert only
+	# secures the Cloudflare<->origin leg. No ACME needed, so it keeps working even though
+	# the proxy blocks Let's Encrypt's TLS-ALPN challenge. NOTE: this cert is trusted ONLY by
+	# Cloudflare, not by browsers — so the proxy MUST stay ON and SSL/TLS mode = Full (strict).
+	tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin.key
+
 	encode gzip zstd
 
 	# API traffic (the SPA calls a relative /api/v1/...) goes to the gateway, which
