@@ -17,6 +17,9 @@ Thumbs.db
 # Env
 .env
 
+# Cloudflare Origin certificate + private key (mounted into Caddy in prod). NEVER commit.
+docker/caddy/certs/
+
 # Maven Wrapper
 .mvn/wrapper/maven-wrapper.jar
 
