@@ -3,6 +3,7 @@ package com.pm.budgetservice.dto;
 import com.pm.budgetservice.enums.BudgetPeriod;
 import com.pm.budgetservice.validation.ValidCurrency;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.Getter;
@@ -38,6 +39,7 @@ public class CreateBudgetRequest {
 
     @NotNull(message = "limitAmount is required")
     @DecimalMin(value = "0.0", inclusive = false, message = "limitAmount must be greater than 0")
+    @Digits(integer = 15, fraction = 4, message = "limitAmount is out of range")
     private BigDecimal limitAmount;
 
     @NotNull(message = "currency is required")

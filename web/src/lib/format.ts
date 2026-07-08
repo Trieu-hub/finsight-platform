@@ -18,3 +18,13 @@ export function groupThousands(value: string): string {
   const digits = value.replace(/\D/g, '')
   return digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
 }
+
+// Money inputs are whole units of digits only. Cap the length to the backend column
+// (BigDecimal(19,4) → 15 integer digits) so the UI can never submit a value the API
+// would reject, and never overflow JS's safe-integer range. Mirror of the backend's
+// @Digits(integer = 15) guard.
+export const MAX_MONEY_DIGITS = 15
+
+export function sanitizeMoneyInput(value: string): string {
+  return value.replace(/\D/g, '').slice(0, MAX_MONEY_DIGITS)
+}

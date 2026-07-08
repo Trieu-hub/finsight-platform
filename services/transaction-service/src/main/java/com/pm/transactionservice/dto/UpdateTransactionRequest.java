@@ -3,6 +3,7 @@ package com.pm.transactionservice.dto;
 import com.pm.transactionservice.enums.TransactionType;
 import com.pm.transactionservice.validation.ValidCurrency;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
@@ -22,6 +23,7 @@ public class UpdateTransactionRequest {
     private TransactionType type;
 
     @DecimalMin(value = "0.0", inclusive = false, message = "amount must be greater than 0")
+    @Digits(integer = 15, fraction = 4, message = "amount is out of range")
     private BigDecimal amount;
 
     @ValidCurrency

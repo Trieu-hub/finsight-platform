@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { createBudget, listBudgets, listCategories, listWallets } from '../api/endpoints'
 import { errorMessage } from '../api/client'
 import type { Budget, BudgetPeriod, Category, Wallet } from '../api/types'
-import { categoryName, groupThousands, money } from '../lib/format'
+import { categoryName, groupThousands, money, sanitizeMoneyInput } from '../lib/format'
 import { useI18n } from '../i18n'
 
 // Local (not UTC) yyyy-mm-dd so week/month edges don't slip a day in +07:00.
@@ -208,7 +208,7 @@ export default function Budgets() {
                 inputMode="numeric"
                 placeholder="0"
                 value={groupThousands(limitAmount)}
-                onChange={(e) => setLimitAmount(e.target.value.replace(/\D/g, ''))}
+                onChange={(e) => setLimitAmount(sanitizeMoneyInput(e.target.value))}
                 required
                 className={`${fieldBase} min-w-0 flex-1`}
               />

@@ -7,7 +7,7 @@ import {
 } from '../api/endpoints'
 import { errorMessage } from '../api/client'
 import type { Category, Transaction, TransactionType, Wallet } from '../api/types'
-import { categoryName, groupThousands, money } from '../lib/format'
+import { categoryName, groupThousands, money, sanitizeMoneyInput } from '../lib/format'
 import { useI18n } from '../i18n'
 
 const today = () => new Date().toISOString().slice(0, 10)
@@ -181,7 +181,7 @@ export default function Transactions() {
                 inputMode="numeric"
                 placeholder="0"
                 value={groupThousands(amount)}
-                onChange={(e) => setAmount(e.target.value.replace(/\D/g, ''))}
+                onChange={(e) => setAmount(sanitizeMoneyInput(e.target.value))}
                 required
                 className={`${fieldBase} min-w-0 flex-1`}
               />
