@@ -26,3 +26,11 @@ docker/caddy/certs/
 # Internal scratch / review reports (not for portfolio)
 *_REPORT.md
 *_REVIEW.md
+
+# Stray SSH keypair committed by mistake — `finsight.pub` is actually a PRIVATE key.
+# Rotate it (treat as compromised) and never commit keys.
+/finsight.pub
+/finsight.pub.pub
+
+# Debug/error screenshots shared for support — not part of the project.
+ErrorImage/
