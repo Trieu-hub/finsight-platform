@@ -67,6 +67,10 @@ services:
     image: apache/kafka:3.9.1
     container_name: finsight-kafka
     environment:
+      # Cap the broker JVM heap. The image defaults to ~1G; on the 8GB single-VPS deploy
+      # that ~1G on top of nine 384m app JVMs + MySQL is what tips the box into swap. A
+      # single-broker, low-throughput demo runs comfortably in 512m.
+      KAFKA_HEAP_OPTS: "-Xmx512m -Xms256m"
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
