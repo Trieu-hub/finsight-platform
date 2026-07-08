@@ -3,6 +3,7 @@ package com.pm.transactionservice.dto;
 import com.pm.transactionservice.enums.WalletType;
 import com.pm.transactionservice.validation.ValidCurrency;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -31,5 +32,6 @@ public class CreateWalletRequest {
 
     /** Opening balance; defaults to 0 when omitted. Must not be negative. */
     @DecimalMin(value = "0.0", message = "initialBalance must not be negative")
+    @Digits(integer = 15, fraction = 4, message = "initialBalance is out of range")
     private BigDecimal initialBalance;
 }

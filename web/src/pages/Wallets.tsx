@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { createWallet, deleteWallet, listWallets } from '../api/endpoints'
 import { errorMessage } from '../api/client'
 import type { Wallet, WalletKind } from '../api/types'
-import { groupThousands, money } from '../lib/format'
+import { groupThousands, money, sanitizeMoneyInput } from '../lib/format'
 import { useI18n } from '../i18n'
 
 const CURRENCIES = ['VND', 'USD'] as const
@@ -128,7 +128,7 @@ export default function Wallets() {
                 inputMode="numeric"
                 placeholder="0"
                 value={groupThousands(initialBalance)}
-                onChange={(e) => setInitialBalance(e.target.value.replace(/\D/g, ''))}
+                onChange={(e) => setInitialBalance(sanitizeMoneyInput(e.target.value))}
                 className={`${fieldBase} min-w-0 flex-1`}
               />
               <select

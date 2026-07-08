@@ -27,6 +27,7 @@ const en: Dict = {
   'nav.admin': 'Admin',
   'nav.signOut': 'Sign out',
   'nav.tour': 'Guided tour',
+  'nav.menu': 'Menu',
   'footer.tagline': 'event-driven finance platform',
 
   'login.title': 'Sign in to Vernfy',
@@ -233,6 +234,7 @@ const vi: Dict = {
   'nav.admin': 'Quản trị',
   'nav.signOut': 'Đăng xuất',
   'nav.tour': 'Hướng dẫn',
+  'nav.menu': 'Menu',
   'footer.tagline': 'nền tảng tài chính hướng sự kiện',
 
   'login.title': 'Đăng nhập Vernfy',
