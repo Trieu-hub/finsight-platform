@@ -1,15 +1,42 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
-import { createBudget, listBudgets, listCategories } from '../api/endpoints'
+import { Link } from 'react-router-dom'
+import { createBudget, listBudgets, listCategories, listWallets } from '../api/endpoints'
 import { errorMessage } from '../api/client'
-import type { Budget, BudgetPeriod, Category } from '../api/types'
+import type { Budget, BudgetPeriod, Category, Wallet } from '../api/types'
 import { categoryName, groupThousands, money } from '../lib/format'
 import { useI18n } from '../i18n'
 
-const firstOfMonth = () => new Date().toISOString().slice(0, 8) + '01'
-const lastOfMonth = () => {
-  const d = new Date()
-  return new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().slice(0, 10)
+// Local (not UTC) yyyy-mm-dd so week/month edges don't slip a day in +07:00.
+const toISODate = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+// Default [start, end] for a period, anchored on today. CUSTOM keeps the user's
+// own dates (returns null) so switching to it never wipes what they typed.
+function rangeFor(period: BudgetPeriod, ref = new Date()): { start: string; end: string } | null {
+  const d = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate())
+  if (period === 'WEEKLY') {
+    const start = new Date(d)
+    start.setDate(d.getDate() - ((d.getDay() + 6) % 7)) // back to Monday
+    const end = new Date(start)
+    end.setDate(start.getDate() + 6) // through Sunday
+    return { start: toISODate(start), end: toISODate(end) }
+  }
+  if (period === 'MONTHLY') {
+    return {
+      start: toISODate(new Date(d.getFullYear(), d.getMonth(), 1)),
+      end: toISODate(new Date(d.getFullYear(), d.getMonth() + 1, 0)),
+    }
+  }
+  if (period === 'YEARLY') {
+    return {
+      start: toISODate(new Date(d.getFullYear(), 0, 1)),
+      end: toISODate(new Date(d.getFullYear(), 11, 31)),
+    }
+  }
+  return null // CUSTOM
 }
+
+const MONTHLY_RANGE = rangeFor('MONTHLY')!
 const CURRENCIES = ['VND', 'USD'] as const
 
 const fieldBase =
@@ -29,6 +56,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 export default function Budgets() {
   const [budgets, setBudgets] = useState<Budget[]>([])
   const [categories, setCategories] = useState<Category[]>([])
+  const [wallets, setWallets] = useState<Wallet[]>([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
 
@@ -38,16 +66,17 @@ export default function Budgets() {
   // `limitAmount` holds raw digits; rendered grouped (10.000.000).
   const [limitAmount, setLimitAmount] = useState('')
   const [currency, setCurrency] = useState<string>('VND')
-  const [startDate, setStartDate] = useState(firstOfMonth())
-  const [endDate, setEndDate] = useState(lastOfMonth())
+  const [startDate, setStartDate] = useState(MONTHLY_RANGE.start)
+  const [endDate, setEndDate] = useState(MONTHLY_RANGE.end)
   const [submitting, setSubmitting] = useState(false)
   const { t } = useI18n()
 
   async function load() {
     try {
-      const [bs, cats] = await Promise.all([listBudgets(), listCategories()])
+      const [bs, cats, ws] = await Promise.all([listBudgets(), listCategories(), listWallets()])
       setBudgets(bs)
       setCategories(cats)
+      setWallets(ws)
       // Budgets cap spending, so only EXPENSE categories make sense.
       const firstExpense = cats.find((c) => c.type === 'EXPENSE')
       if (firstExpense && !categoryId) setCategoryId(String(firstExpense.id))
@@ -62,6 +91,17 @@ export default function Budgets() {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Switching the period snaps the dates to that period (this week / this month /
+  // this year). CUSTOM leaves them alone so the user can pick any range by hand.
+  function handlePeriodChange(next: BudgetPeriod) {
+    setPeriodType(next)
+    const r = rangeFor(next)
+    if (r) {
+      setStartDate(r.start)
+      setEndDate(r.end)
+    }
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -92,12 +132,32 @@ export default function Budgets() {
     }
   }
 
+  // A budget caps real spending, and spending always comes out of a wallet — so a
+  // wallet must exist first. Available balance is scoped to the picked currency (no FX).
+  const hasWallets = wallets.length > 0
+  const availableBalance = wallets
+    .filter((w) => w.currency === currency)
+    .reduce((sum, w) => sum + w.balance, 0)
+  const overBalance = Number(limitAmount) > 0 && Number(limitAmount) > availableBalance
+
   return (
     <div className="grid gap-6 md:grid-cols-3">
       <section data-tour="budget-form" className="md:col-span-1">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-400">
           {t('budget.new')}
         </h2>
+        {!loading && !hasWallets ? (
+          <div className="space-y-3 rounded-2xl border border-neutral-800 bg-neutral-900 p-5 text-center">
+            <p className="font-medium text-neutral-200">{t('budget.needWallet')}</p>
+            <p className="text-sm text-neutral-400">{t('budget.needWalletHint')}</p>
+            <Link
+              to="/wallets"
+              className="inline-block rounded-lg bg-emerald-600 px-4 py-2 font-semibold text-white shadow-lg shadow-emerald-900/40 transition hover:bg-emerald-500"
+            >
+              {t('budget.createWallet')}
+            </Link>
+          </div>
+        ) : (
         <form
           onSubmit={handleSubmit}
           className="space-y-4 rounded-2xl border border-neutral-800 bg-neutral-900 p-5"
@@ -131,7 +191,7 @@ export default function Budgets() {
           <Field label={t('budget.period')}>
             <select
               value={periodType}
-              onChange={(e) => setPeriodType(e.target.value as BudgetPeriod)}
+              onChange={(e) => handlePeriodChange(e.target.value as BudgetPeriod)}
               className={inputClass}
             >
               <option value="MONTHLY">{t('period.MONTHLY')}</option>
@@ -165,6 +225,11 @@ export default function Budgets() {
                 ))}
               </select>
             </div>
+            {overBalance && (
+              <p className="mt-1.5 text-xs text-amber-400">
+                {t('budget.overBalance', { balance: money(availableBalance, currency) })}
+              </p>
+            )}
           </Field>
 
           <Field label={t('budget.start')}>
@@ -187,6 +252,10 @@ export default function Budgets() {
             />
           </Field>
 
+          {periodType !== 'CUSTOM' && (
+            <p className="-mt-2 text-xs text-neutral-500">{t('budget.dateHint')}</p>
+          )}
+
           <button
             type="submit"
             disabled={submitting}
@@ -195,6 +264,7 @@ export default function Budgets() {
             {submitting ? t('budget.saving') : t('budget.add')}
           </button>
         </form>
+        )}
       </section>
 
       <section data-tour="budget-list" className="md:col-span-2">
