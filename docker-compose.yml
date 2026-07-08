@@ -421,6 +421,9 @@ services:
   prometheus:
     image: prom/prometheus:v3.12.0
     container_name: finsight-prometheus
+    # Monitoring is opt-in: it only starts with `--profile monitoring`. On the 8GB VPS
+    # prod deploy we leave it off to save ~0.5GB; enable it locally when you want dashboards.
+    profiles: ["monitoring"]
     volumes:
       - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
@@ -431,6 +434,7 @@ services:
   grafana:
     image: grafana/grafana:12.3.7
     container_name: finsight-grafana
+    profiles: ["monitoring"]
     depends_on:
       - prometheus
     environment:
