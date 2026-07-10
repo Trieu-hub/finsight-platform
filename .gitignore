@@ -34,3 +34,6 @@ docker/caddy/certs/
 
 # Debug/error screenshots shared for support — not part of the project.
 ErrorImage/
+# Personal scratch notes
+/state.md
+/project-status.md
