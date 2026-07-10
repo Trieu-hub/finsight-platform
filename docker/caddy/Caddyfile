@@ -3,6 +3,10 @@
 {
 	# ACME account email (optional but recommended for expiry notices). Empty is allowed.
 	email {$FINSIGHT_ACME_EMAIL}
+
+	# rate_limit is a third-party directive (caddy-ratelimit plugin) — tell Caddy where it
+	# sits in the middleware chain so it runs before the request is proxied.
+	order rate_limit before basicauth
 }
 
 {$FINSIGHT_DOMAIN} {
@@ -14,6 +18,20 @@
 	tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin.key
 
 	encode gzip zstd
+
+	# Edge rate limiting on the auth endpoints — stops bulk registration / login
+	# brute-force (a load test once created ~84k accounts here). Keyed on the REAL client IP
+	# via Cloudflare's CF-Connecting-IP header, because we sit behind Cloudflare's proxy and
+	# {remote_host} would otherwise be a shared Cloudflare address (throttling everyone as one).
+	# 10 requests / minute / IP; excess gets HTTP 429. Humans never hit this; scripts do.
+	@auth path /api/v1/auth/register /api/v1/auth/login
+	rate_limit @auth {
+		zone auth {
+			key    {http.request.header.CF-Connecting-IP}
+			events 10
+			window 1m
+		}
+	}
 
 	# API traffic (the SPA calls a relative /api/v1/...) goes to the gateway, which
 	# validates the JWT at the edge and forwards to the services on the internal network.
