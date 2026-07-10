@@ -15,7 +15,8 @@
 # in `.env`: FINSIGHT_DOMAIN, FINSIGHT_ACME_EMAIL, GF_SECURITY_ADMIN_PASSWORD.
 services:
   caddy:
-    image: caddy:2-alpine
+    build: ./docker/caddy
+    image: finsight-caddy:ratelimit
     container_name: finsight-caddy
     depends_on:
       - api-gateway
