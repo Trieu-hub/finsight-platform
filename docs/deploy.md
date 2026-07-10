@@ -246,16 +246,92 @@ publish it to localhost only, or run `docker compose exec`/`docker inspect` to r
 simplest option for a demo is to leave dashboards internal and screenshot them from an SSH
 session. Log in with `admin` / `GF_SECURITY_ADMIN_PASSWORD` (anonymous admin is disabled).
 
-## 7. Backups
+## 7. Backups & host hardening
 
-Snapshot the MySQL volume nightly (cron). Minimal dump of all app databases:
+### 7.1 Database backups (nightly, automated)
+
+The live deploy runs `/root/backup-finsight.sh` via cron (`0 3 * * *`): it dumps **all** databases
+from the `finsight-mysql` container, gzips into `/root/backups/`, keeps the newest 7, and aborts if
+the dump is suspiciously small.
 
 ```bash
-docker compose exec mysql sh -c \
-  'exec mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --all-databases' > backup-$(date +%F).sql
+#!/bin/sh
+set -eu
+BACKUP_DIR=/root/backups; RETAIN=7; mkdir -p "$BACKUP_DIR"
+FILE="$BACKUP_DIR/finsight-$(date +%F_%H%M).sql.gz"
+docker exec finsight-mysql sh -c \
+  'exec mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --all-databases --single-transaction --quick' \
+  | gzip > "$FILE"
+[ "$(stat -c%s "$FILE")" -ge 1024 ] || { rm -f "$FILE"; echo "dump too small" >&2; exit 1; }
+ls -1t "$BACKUP_DIR"/finsight-*.sql.gz | tail -n +$((RETAIN + 1)) | xargs -r rm -f
 ```
 
-Keep a few rotations off-box.
+Install the cron entry (idempotent):
+
+```bash
+( crontab -l 2>/dev/null | grep -v backup-finsight.sh; \
+  echo '0 3 * * * /root/backup-finsight.sh >> /root/backups/backup.log 2>&1' ) | crontab -
+```
+
+**Restore** a dump:
+
+```bash
+gunzip -c /root/backups/finsight-YYYY-MM-DD_HHMM.sql.gz | \
+  docker exec -i finsight-mysql sh -c 'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD"'
+```
+
+### 7.2 Off-box copies
+
+Backups on the same VPS are lost if the VPS is. Pull them elsewhere (a workstation or cloud). From
+a machine with SSH access:
+
+```bash
+scp <user>@<host>:'/root/backups/*.sql.gz' /path/to/local/backups/
+```
+
+Schedule this (cron / Windows Task Scheduler) so at least the latest rotation lives off the box.
+
+### 7.3 SSH, firewall & fail2ban
+
+- **SSH is key-only** — password + keyboard-interactive auth disabled, root logs in by key only.
+  Enforced by `/etc/ssh/sshd_config.d/99-hardening.conf`:
+  ```
+  PasswordAuthentication no
+  KbdInteractiveAuthentication no
+  PermitRootLogin prohibit-password
+  ```
+  (The provider's web console still offers password login as an out-of-band recovery path.)
+- **Firewall (ufw)** — default-deny inbound, only 22/80/443 open:
+  ```bash
+  ufw default deny incoming && ufw default allow outgoing
+  ufw allow 22/tcp && ufw allow 80/tcp && ufw allow 443/tcp
+  ufw --force enable
+  ```
+  Note: Docker publishes 80/443 through its own iptables chain, bypassing ufw — fine here, since
+  those are the only published ports and are meant to be public; everything else is un-published
+  (internal Docker network). ufw guards host-level ports such as SSH.
+- **fail2ban** — bans IPs that hammer SSH. `/etc/fail2ban/jail.local`:
+  ```ini
+  [sshd]
+  enabled  = true
+  backend  = systemd
+  maxretry = 5
+  findtime = 10m
+  bantime  = 1h
+  ```
+  ```bash
+  apt-get install -y fail2ban && systemctl enable --now fail2ban
+  fail2ban-client status sshd          # list banned IPs
+  fail2ban-client set sshd unbanip <IP>
+  ```
+
+### 7.4 Edge rate limiting
+
+Auth endpoints are rate-limited at Caddy (custom build with the `caddy-ratelimit` plugin — see
+`docker/caddy/Dockerfile`): `/api/v1/auth/register` + `/login` capped at 10 req/min/IP (keyed on
+`CF-Connecting-IP`) → HTTP 429. Cloudflare **Bot Fight Mode** + a rate-limiting rule add a second
+edge layer. **Never run load tests against production** — a load test once created ~84k junk
+accounts here.
 
 ## 8. Updating
 
@@ -270,14 +346,15 @@ Flyway applies any new migrations on service startup; the named volumes persist 
 
 ## What this Path A deploy does and does NOT cover
 
-**Covered:** public HTTPS URL, TLS auto-renew, single-origin reverse proxy, only-Caddy-exposed
-network, Grafana hardened, nightly backup, one-command update.
+**Covered:** public HTTPS URL, single-origin reverse proxy, only-Caddy-exposed network, Grafana
+hardened, automated nightly backup, **SSH key-only**, **ufw firewall**, **fail2ban**, **edge rate
+limiting** (Caddy `caddy-ratelimit` + Cloudflare Bot Fight Mode), one-command update.
 
 **Deliberately out of scope** (see `project-status.md` §6 / §10 — future work / interview talking
 points): **JWKS endpoint + JWT key rotation** (signing is already RS256 asymmetric, but there is no
-published JWKS or rotation flow), edge rate limiting, transactional outbox, managed/replicated MySQL,
-distributed tracing, Prometheus alerting, and any multi-host / HA topology. For "production-grade",
-that is Path B.
+published JWKS or rotation flow), transactional outbox, managed/replicated MySQL, distributed
+tracing, Prometheus alerting, off-box/remote backup automation, and any multi-host / HA topology.
+For "production-grade", that is Path B.
 
 ## Optional: publish images to a registry (GHCR)
 
