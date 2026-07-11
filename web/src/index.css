@@ -35,16 +35,17 @@ body {
   }
 }
 
-/* Coin is tossed up in an arc during the flip (synced with the spin duration). */
+/* Coin is tossed up in an arc AND scaled toward the viewer during the flip
+   (synced with the spin duration) — the "Gamble with your Friends" toss feel. */
 @keyframes luckyme-toss {
   0% {
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
   }
-  50% {
-    transform: translateY(-120px);
+  45% {
+    transform: translateY(-150px) scale(1.18);
   }
   100% {
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
   }
 }
 
