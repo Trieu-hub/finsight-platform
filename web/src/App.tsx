@@ -10,6 +10,7 @@ import Budgets from './pages/Budgets'
 import Wallets from './pages/Wallets'
 import Analytics from './pages/Analytics'
 import Admin from './pages/Admin'
+import LuckyMe from './pages/LuckyMe'
 
 export default function App() {
   return (
@@ -26,6 +27,7 @@ export default function App() {
           <Route path="/budgets" element={<Budgets />} />
           <Route path="/wallets" element={<Wallets />} />
           <Route path="/analytics" element={<Analytics />} />
+          <Route path="/luckyme" element={<LuckyMe />} />
           {/* Admin-only (also enforced server-side) */}
           <Route element={<AdminRoute />}>
             <Route path="/admin" element={<Admin />} />
