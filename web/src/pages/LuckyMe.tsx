@@ -284,31 +284,34 @@ export default function LuckyMe() {
     return (
       <>
         <Confetti />
-        <section>
-          <header className="mb-8 text-center">
-            <h2 className="bg-gradient-to-r from-emerald-300 via-teal-300 to-sky-300 bg-clip-text text-3xl font-black tracking-tight text-transparent sm:text-4xl">
+        {/* The grid is flex-1 so the four cards stretch to fill the viewport height. */}
+        <section className="flex min-h-[calc(100vh-11rem)] flex-col">
+          <header className="mb-7 shrink-0 text-center">
+            <h2 className="bg-gradient-to-r from-emerald-300 via-teal-300 to-sky-300 bg-clip-text text-4xl font-black tracking-tight text-transparent sm:text-5xl">
               {t('luckyme.games.title')}
             </h2>
-            <p className="mt-2 text-sm text-neutral-400">{t('luckyme.games.subtitle')}</p>
+            <p className="mt-2 text-base text-neutral-400">{t('luckyme.games.subtitle')}</p>
           </header>
 
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid flex-1 grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {GAMES.map((g) => (
               <article
                 key={g.key}
-                className={`group flex flex-col overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900/60 transition hover:-translate-y-1 hover:border-neutral-700 hover:shadow-2xl ${g.glow}`}
+                className={`group flex h-full min-h-[300px] flex-col overflow-hidden rounded-3xl border border-neutral-800 bg-neutral-900/60 transition hover:-translate-y-1.5 hover:border-neutral-700 hover:shadow-2xl ${g.glow}`}
               >
-                <div className={`flex h-40 items-center justify-center p-6 ${g.art}`}>
-                  <div className="h-28 w-28 transition-transform duration-300 group-hover:scale-110">
+                <div className={`flex flex-1 items-center justify-center p-8 ${g.art}`}>
+                  <div className="aspect-square w-full max-w-[190px] transition-transform duration-300 group-hover:scale-110">
                     {g.render()}
                   </div>
                 </div>
-                <div className="flex flex-1 flex-col gap-2 border-t border-neutral-800 p-4">
-                  <h3 className="font-semibold text-neutral-100">{t(`luckyme.game.${g.key}.name`)}</h3>
-                  <p className="flex-1 text-sm leading-relaxed text-neutral-400">
+                <div className="flex shrink-0 flex-col gap-2 border-t border-neutral-800 p-5">
+                  <h3 className="text-xl font-bold text-neutral-100">
+                    {t(`luckyme.game.${g.key}.name`)}
+                  </h3>
+                  <p className="text-sm leading-relaxed text-neutral-400">
                     {t(`luckyme.game.${g.key}.desc`)}
                   </p>
-                  <span className="mt-1 inline-flex w-fit rounded-full border border-neutral-700 bg-neutral-800/80 px-2.5 py-1 text-xs font-medium text-neutral-400">
+                  <span className="mt-1 inline-flex w-fit rounded-full border border-neutral-700 bg-neutral-800/80 px-3 py-1 text-xs font-medium text-neutral-400">
                     {t('luckyme.games.soon')}
                   </span>
                 </div>
