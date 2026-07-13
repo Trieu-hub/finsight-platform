@@ -9,6 +9,7 @@ import com.pm.notificationservice.narrator.AlertNarrator;
 import com.pm.notificationservice.repository.NotificationRepository;
 import com.pm.notificationservice.repository.ProcessedEventRepository;
 import com.pm.notificationservice.service.NotificationService;
+import com.pm.notificationservice.stream.NotificationStream;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -25,15 +26,18 @@ public class NotificationServiceImpl implements NotificationService {
     private final NotificationRepository notificationRepository;
     private final ProcessedEventRepository processedEventRepository;
     private final AlertNarrator narrator;
+    private final NotificationStream notificationStream;
     private final TransactionTemplate transactionTemplate;
 
     public NotificationServiceImpl(NotificationRepository notificationRepository,
                                    ProcessedEventRepository processedEventRepository,
                                    AlertNarrator narrator,
+                                   NotificationStream notificationStream,
                                    PlatformTransactionManager transactionManager) {
         this.notificationRepository = notificationRepository;
         this.processedEventRepository = processedEventRepository;
         this.narrator = narrator;
+        this.notificationStream = notificationStream;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -53,9 +57,9 @@ public class NotificationServiceImpl implements NotificationService {
 
         AlertContent content = narrator.narrate(event);
 
-        return Boolean.TRUE.equals(transactionTemplate.execute(status -> {
+        Notification created = transactionTemplate.execute(status -> {
             if (processedEventRepository.existsById(event.eventId())) {
-                return false;
+                return null;
             }
             LocalDateTime now = LocalDateTime.now();
 
@@ -76,8 +80,17 @@ public class NotificationServiceImpl implements NotificationService {
                     .eventId(event.eventId())
                     .processedAt(now)
                     .build());
-            return true;
-        }));
+            return notification;
+        });
+
+        if (created == null) {
+            return false;
+        }
+        // Push AFTER the commit: a rolled-back insert must never surface in a user's bell.
+        // Best-effort — the row is already durable, so a failed push only costs the client its
+        // fallback poll interval.
+        notificationStream.publish(created);
+        return true;
     }
 
     @Override

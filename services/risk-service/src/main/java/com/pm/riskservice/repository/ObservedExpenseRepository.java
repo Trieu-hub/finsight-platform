@@ -135,6 +135,44 @@ public interface ObservedExpenseRepository extends JpaRepository<ExpenseObservat
     ExpenseBaseline expenseBaselineBefore(@Param("userId") Long userId,
                                           @Param("before") Instant before);
 
+    /** Count of a user's INCOME observations with occurredAt in [from, to] (both inclusive). */
+    @Query("""
+            select count(e)
+            from ExpenseObservation e
+            where e.userId = :userId
+              and e.transactionType = 'INCOME'
+              and e.occurredAt between :from and :to
+            """)
+    long countIncomeByUserIdAndOccurredAtBetween(@Param("userId") Long userId,
+                                                 @Param("from") Instant from,
+                                                 @Param("to") Instant to);
+
+    /** Total income amount for a user on a calendar day (0 when none). */
+    @Query("""
+            select coalesce(sum(e.amount), 0)
+            from ExpenseObservation e
+            where e.userId = :userId
+              and e.transactionType = 'INCOME'
+              and e.transactionDate = :date
+            """)
+    BigDecimal sumIncomeForDay(@Param("userId") Long userId, @Param("date") LocalDate date);
+
+    /**
+     * The INCOME_SPIKE baseline: count and average amount of a user's INCOME observations
+     * strictly before {@code before} (excluding the just-recorded triggering income, whose
+     * occurredAt equals {@code before}). Mirrors {@link #expenseBaselineBefore} and hits the
+     * same (user_id, transaction_type, occurred_at) index.
+     */
+    @Query("""
+            select count(e) as count, avg(e.amount) as average
+            from ExpenseObservation e
+            where e.userId = :userId
+              and e.transactionType = 'INCOME'
+              and e.occurredAt < :before
+            """)
+    ExpenseBaseline incomeBaselineBefore(@Param("userId") Long userId,
+                                         @Param("before") Instant before);
+
     /** Projection for {@link #expenseBaselineBefore} — prior-expense count and average amount. */
     interface ExpenseBaseline {
         long getCount();

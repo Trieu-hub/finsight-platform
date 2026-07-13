@@ -7,8 +7,10 @@ import com.pm.notificationservice.dto.UnreadCountResponse;
 import com.pm.notificationservice.entity.Notification;
 import com.pm.notificationservice.security.JwtUserPrincipal;
 import com.pm.notificationservice.service.NotificationService;
+import com.pm.notificationservice.stream.NotificationStream;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -16,6 +18,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 import java.util.UUID;
@@ -33,9 +36,27 @@ public class NotificationController {
     private static final int MAX_LIMIT = 100;
 
     private final NotificationService notificationService;
+    private final NotificationStream notificationStream;
 
-    public NotificationController(NotificationService notificationService) {
+    public NotificationController(NotificationService notificationService,
+                                  NotificationStream notificationStream) {
         this.notificationService = notificationService;
+        this.notificationStream = notificationStream;
+    }
+
+    /**
+     * Live push channel: an SSE stream of this user's notifications, so the bell updates the
+     * moment an alert is created rather than on the next poll. Emits an {@code open} event on
+     * connect, a {@code notification} event per alert, and a comment heartbeat to survive idle
+     * proxy timeouts.
+     *
+     * <p>Note for callers: the browser's {@code EventSource} cannot set an {@code Authorization}
+     * header, so the web client consumes this with {@code fetch} + a stream reader instead. The
+     * token is never put in the query string, where it would land in access logs.
+     */
+    @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter stream(@AuthenticationPrincipal JwtUserPrincipal principal) {
+        return notificationStream.open(principal.getUserId());
     }
 
     @GetMapping

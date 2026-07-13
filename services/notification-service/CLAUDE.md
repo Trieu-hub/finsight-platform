@@ -99,4 +99,20 @@ Layering is strict and one-directional: `controller → service → repository`.
   (stable code `NOTIFICATION_NOT_FOUND`).
 - Endpoints (all require a Bearer JWT, all user-scoped):
   `GET /api/v1/notifications`, `GET /api/v1/notifications/unread-count`,
-  `PATCH /api/v1/notifications/{id}/read`, `PATCH /api/v1/notifications/read-all`.
+  `PATCH /api/v1/notifications/{id}/read`, `PATCH /api/v1/notifications/read-all`,
+  `GET /api/v1/notifications/stream` (SSE).
+
+### Live push (SSE)
+- `NotificationStream` holds the open `SseEmitter`s in a per-user, **in-process** registry.
+  `NotificationServiceImpl.createFromEvent` pushes each new notification to it *after* the
+  commit, so a rolled-back insert never reaches a bell. Delivery is best-effort — the row is
+  already durable in MySQL, and the client keeps a slow poll as a fallback.
+- A `@Scheduled` comment heartbeat (25 s) keeps idle streams from being culled by proxies;
+  `@EnableScheduling` on the application class exists for this.
+- **The registry is per-process.** Running more than one instance would need the push fanned
+  out over a shared bus (a user's stream may live on a different instance than the consumer
+  that produced their notification). Not built — this deployment runs one instance.
+- Two things had to change elsewhere for this to work end-to-end: **api-gateway** buffers whole
+  responses, so it now relays `Accept: text/event-stream` on a separate unbuffered path with no
+  read timeout; and the **web client** consumes the stream with `fetch` (not `EventSource`,
+  which cannot send an `Authorization` header).

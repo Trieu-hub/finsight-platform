@@ -13,7 +13,20 @@ public enum RiskRule {
     /** Many EXPENSE transactions for one user in a short window. */
     RAPID_SPENDING("MEDIUM"),
     /** A user's EXPENSE total for a single day exceeding a threshold. */
-    LARGE_DAILY_SPEND("HIGH");
+    LARGE_DAILY_SPEND("HIGH"),
+
+    /** A single INCOME at or above a high amount — unexplained money arriving. */
+    HIGH_AMOUNT_INCOME("MEDIUM"),
+    /** Many INCOME transactions for one user in a short window. */
+    RAPID_INCOME("MEDIUM"),
+    /** A user's INCOME total for a single day exceeding a threshold. */
+    LARGE_DAILY_INCOME("MEDIUM"),
+    /**
+     * An INCOME far above the user's own historical average — the income-side mirror of
+     * UNUSUAL_TRANSACTION_AMOUNT, and the strongest "this doesn't look like you" signal
+     * because it is relative to the user rather than to a fixed number.
+     */
+    INCOME_SPIKE("HIGH");
 
     private final String severity;
 

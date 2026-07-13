@@ -38,6 +38,26 @@ public class TemplateNarrator implements AlertNarrator {
                 message = "Your total spending today is unusually high compared with "
                         + "your normal activity.";
             }
+            case "HIGH_AMOUNT_INCOME" -> {
+                title = "Large income detected";
+                message = "An unusually large payment arrived on your account. "
+                        + "Confirm you know where it came from.";
+            }
+            case "RAPID_INCOME" -> {
+                title = "Rapid income detected";
+                message = "Several payments were credited in a short window. "
+                        + "Check that all of them were expected.";
+            }
+            case "LARGE_DAILY_INCOME" -> {
+                title = "High income today";
+                message = "The money credited to your account today is unusually high "
+                        + "compared with your normal activity.";
+            }
+            case "INCOME_SPIKE" -> {
+                title = "Income far above your usual";
+                message = "This payment is several times larger than your typical income. "
+                        + "Review it if you weren't expecting it.";
+            }
             default -> {
                 title = "Risk alert";
                 message = "A potential risk was detected on your account. "

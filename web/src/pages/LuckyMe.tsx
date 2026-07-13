@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { useI18n } from '../i18n'
 import redMeme from '../assets/luckyme-red.jpg'
+import Roulette from '../games/roulette/Roulette'
 
 // LuckyMe: flip a two-sided coin, biased 3:1 toward red — styled after the
 // "Gamble with your Friends" coin toss: a real 3D coin (two faces + a solid
@@ -194,27 +195,32 @@ function GamepadFace() {
 }
 
 // Left to right, in the order the user asked for. `key` doubles as the i18n suffix.
+// Only roulette is playable; the rest are art + a "coming soon" badge for now.
 const GAMES = [
   {
     key: 'roulette',
+    playable: true,
     render: () => <RouletteArt />,
     art: 'bg-gradient-to-br from-red-950/60 to-neutral-950',
     glow: 'hover:shadow-red-900/30',
   },
   {
     key: 'blackjack',
+    playable: false,
     render: () => <BlackjackArt />,
     art: 'bg-gradient-to-br from-emerald-950/60 to-neutral-950',
     glow: 'hover:shadow-emerald-900/30',
   },
   {
     key: 'duckrace',
+    playable: false,
     render: () => <DuckRaceArt />,
     art: 'bg-gradient-to-br from-sky-950/60 to-neutral-950',
     glow: 'hover:shadow-sky-900/30',
   },
   {
     key: 'dice',
+    playable: false,
     render: () => <DiceArt />,
     art: 'bg-gradient-to-br from-amber-950/60 to-neutral-950',
     glow: 'hover:shadow-amber-900/30',
@@ -227,6 +233,9 @@ export default function LuckyMe() {
   const navigate = useNavigate()
 
   const [phase, setPhase] = useState<Phase>('idle')
+  // The open game, if any. Kept in this component (rather than a route) so that leaving a
+  // game returns to the lobby without re-flipping the coin — a re-flip would risk a logout.
+  const [game, setGame] = useState<(typeof GAMES)[number]['key'] | null>(null)
   const [rotation, setRotation] = useState(0) // absolute degrees, only ever increases
   const timers = useRef<ReturnType<typeof setTimeout>[]>([])
 
@@ -279,7 +288,12 @@ export default function LuckyMe() {
     )
   }
 
-  // GREEN: coin gone; confetti burst + the mini-games interface only.
+  // A game is open: it takes over the whole view.
+  if (phase === 'green' && game === 'roulette') {
+    return <Roulette onBack={() => setGame(null)} />
+  }
+
+  // GREEN: coin gone; confetti burst + the mini-games lobby.
   if (phase === 'green') {
     return (
       <>
@@ -297,7 +311,12 @@ export default function LuckyMe() {
             {GAMES.map((g) => (
               <article
                 key={g.key}
-                className={`group flex h-full min-h-[300px] flex-col overflow-hidden rounded-3xl border border-neutral-800 bg-neutral-900/60 transition hover:-translate-y-1.5 hover:border-neutral-700 hover:shadow-2xl ${g.glow}`}
+                onClick={() => g.playable && setGame(g.key)}
+                className={`group flex h-full min-h-[300px] flex-col overflow-hidden rounded-3xl border bg-neutral-900/60 transition hover:-translate-y-1.5 hover:shadow-2xl ${g.glow} ${
+                  g.playable
+                    ? 'cursor-pointer border-emerald-800/70 hover:border-emerald-600'
+                    : 'border-neutral-800 hover:border-neutral-700'
+                }`}
               >
                 <div className={`flex flex-1 items-center justify-center p-8 ${g.art}`}>
                   <div className="aspect-square w-full max-w-[190px] transition-transform duration-300 group-hover:scale-110">
@@ -311,9 +330,20 @@ export default function LuckyMe() {
                   <p className="text-sm leading-relaxed text-neutral-400">
                     {t(`luckyme.game.${g.key}.desc`)}
                   </p>
-                  <span className="mt-1 inline-flex w-fit rounded-full border border-neutral-700 bg-neutral-800/80 px-3 py-1 text-xs font-medium text-neutral-400">
-                    {t('luckyme.games.soon')}
-                  </span>
+                  {g.playable ? (
+                    <div className="mt-1 flex items-center gap-2">
+                      <span className="inline-flex w-fit rounded-full border border-emerald-500/40 bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-300">
+                        {t('luckyme.games.available')}
+                      </span>
+                      <span className="text-xs font-semibold text-emerald-400 opacity-0 transition group-hover:opacity-100">
+                        {t('luckyme.games.play')} →
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="mt-1 inline-flex w-fit rounded-full border border-neutral-700 bg-neutral-800/80 px-3 py-1 text-xs font-medium text-neutral-400">
+                      {t('luckyme.games.soon')}
+                    </span>
+                  )}
                 </div>
               </article>
             ))}

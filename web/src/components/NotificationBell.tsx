@@ -6,13 +6,16 @@ import {
   markNotificationRead,
   unreadNotificationCount,
 } from '../api/endpoints'
+import { subscribeToNotifications } from '../api/notificationStream'
 import { useI18n } from '../i18n'
 
 type TFunc = (key: string, vars?: Record<string, string | number>) => string
 
-// Poll the unread count this often. Notifications arrive via Kafka on the backend,
-// so the FE has no push channel — a light poll is enough for a bell badge.
-const POLL_MS = 25_000
+// Notifications now arrive by push: notification-service holds an SSE stream open and sends each
+// alert the moment it writes it, so the bell updates essentially instantly. The poll is kept only
+// as a safety net for the window where the stream is down and reconnecting — hence the long
+// interval, where it used to be the primary mechanism at 25s.
+const POLL_MS = 120_000
 
 // Severity → dot/accent colour. Falls back to neutral for anything unexpected.
 const SEVERITY_STYLES: Record<NotificationSeverity, string> = {
@@ -60,6 +63,20 @@ export default function NotificationBell() {
     refreshCount()
     const id = setInterval(refreshCount, POLL_MS)
     return () => clearInterval(id)
+  }, [refreshCount])
+
+  // The live push channel. A pushed alert bumps the badge immediately and, if the panel happens
+  // to be open, drops straight into the list. Reconnecting re-reads the count, which repairs
+  // anything missed while the stream was down.
+  useEffect(() => {
+    const unsubscribe = subscribeToNotifications({
+      onOpen: refreshCount,
+      onNotification: (n) => {
+        setUnread((c) => c + 1)
+        setItems((prev) => (prev.some((it) => it.id === n.id) ? prev : [n, ...prev]))
+      },
+    })
+    return unsubscribe
   }, [refreshCount])
 
   // Close on click outside.

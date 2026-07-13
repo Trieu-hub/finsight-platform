@@ -4,6 +4,7 @@ import com.pm.gateway.config.GatewayProperties;
 import com.pm.gateway.logging.CorrelationIdFilter;
 import com.pm.gateway.security.JwtAuthenticator;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -56,12 +57,15 @@ public class GatewayProxyController {
 
     private final GatewayProperties properties;
     private final RestClient client;
+    private final java.net.http.HttpClient streamingClient;
     private final JwtAuthenticator authenticator;
 
     public GatewayProxyController(GatewayProperties properties, RestClient client,
+                                  java.net.http.HttpClient streamingClient,
                                   JwtAuthenticator authenticator) {
         this.properties = properties;
         this.client = client;
+        this.streamingClient = streamingClient;
         this.authenticator = authenticator;
     }
 
@@ -121,6 +125,106 @@ public class GatewayProxyController {
             return error(HttpStatus.SERVICE_UNAVAILABLE, "SERVICE_UNAVAILABLE",
                     "Downstream service is unavailable");
         }
+    }
+
+    /**
+     * Relays a downstream event stream (SSE) to the caller <b>without buffering it</b>.
+     *
+     * <p>A separate handler rather than a branch inside {@link #proxy}: {@code produces} makes this
+     * mapping win whenever the caller's Accept header asks for an event stream, and it keeps the
+     * buffering catch-all (which reads the whole body before replying, and would therefore never
+     * answer an endless stream at all) untouched.
+     *
+     * <p><b>Why this writes to the raw {@link HttpServletResponse} instead of returning a
+     * {@code StreamingResponseBody}.</b> The Spring-idiomatic streaming return types put the write
+     * on an async dispatch, and there {@code flush()} did not push bytes onto the socket — the
+     * relay read and wrote every event correctly and the client still received nothing until the
+     * exchange finished, which for an endless stream is never. Writing to the servlet stream on the
+     * request thread and calling {@link HttpServletResponse#flushBuffer()} commits the headers
+     * immediately and pushes each event as it arrives. The cost is one blocked Tomcat thread per
+     * open stream, which at this scale is a fine trade for a mechanism that actually works.
+     *
+     * <p>{@code send()} returns as soon as the response headers arrive, so the status is known
+     * before the body is pumped. The loop ends when the downstream closes or the client goes away
+     * (an IOException on write — expected, not an error).
+     */
+    @RequestMapping(value = "/**", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public void proxyStream(HttpServletRequest request, HttpServletResponse response)
+            throws IOException {
+        String path = request.getRequestURI();
+
+        GatewayProperties.Route route = resolve(path);
+        if (route == null) {
+            writeError(response, error(HttpStatus.NOT_FOUND, "ROUTE_NOT_FOUND",
+                    "No route matches " + path));
+            return;
+        }
+        if (!isPublic(request.getMethod(), path)) {
+            ResponseEntity<byte[]> authError = authenticate(request);
+            if (authError != null) {
+                writeError(response, authError);
+                return;
+            }
+        }
+
+        URI target = buildTargetUri(route, path, request.getQueryString());
+
+        java.net.http.HttpRequest.Builder builder =
+                java.net.http.HttpRequest.newBuilder(target).GET();
+        String authorization = request.getHeader(AUTHORIZATION);
+        if (authorization != null) {
+            builder.header(AUTHORIZATION, authorization);
+        }
+        builder.header(HttpHeaders.ACCEPT, MediaType.TEXT_EVENT_STREAM_VALUE);
+        String correlationId = MDC.get(CorrelationIdFilter.CORRELATION_ID_MDC_KEY);
+        if (correlationId != null) {
+            builder.header(CorrelationIdFilter.CORRELATION_ID_HEADER, correlationId);
+        }
+
+        java.net.http.HttpResponse<java.io.InputStream> downstream;
+        try {
+            downstream = streamingClient.send(builder.build(),
+                    java.net.http.HttpResponse.BodyHandlers.ofInputStream());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            writeError(response, error(HttpStatus.SERVICE_UNAVAILABLE, "SERVICE_UNAVAILABLE",
+                    "Downstream service is unavailable"));
+            return;
+        } catch (IOException e) {
+            log.warn("Stream unreachable: {} -> {}", path, target, e);
+            writeError(response, error(HttpStatus.SERVICE_UNAVAILABLE, "SERVICE_UNAVAILABLE",
+                    "Downstream service is unavailable"));
+            return;
+        }
+
+        response.setStatus(downstream.statusCode());
+        response.setContentType(MediaType.TEXT_EVENT_STREAM_VALUE);
+        response.setHeader(HttpHeaders.CACHE_CONTROL, "no-cache");
+        // Tells any buffering reverse proxy in front of us not to hold the stream back.
+        response.setHeader("X-Accel-Buffering", "no");
+        response.flushBuffer(); // commit the headers now, before the first event exists
+
+        try (java.io.InputStream in = downstream.body();
+             java.io.OutputStream out = response.getOutputStream()) {
+            byte[] buffer = new byte[1024];
+            int read;
+            while ((read = in.read(buffer)) != -1) {
+                out.write(buffer, 0, read);
+                out.flush(); // each event goes out on its own, not when a buffer happens to fill
+            }
+        } catch (IOException disconnected) {
+            log.debug("SSE client disconnected: {}", target);
+        }
+    }
+
+    /** Writes a gateway error envelope to a raw response (the streaming handler's error path). */
+    private void writeError(HttpServletResponse response, ResponseEntity<byte[]> error)
+            throws IOException {
+        byte[] payload = error.getBody() == null ? new byte[0] : error.getBody();
+        response.setStatus(error.getStatusCode().value());
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.getOutputStream().write(payload);
+        response.flushBuffer();
     }
 
     /**

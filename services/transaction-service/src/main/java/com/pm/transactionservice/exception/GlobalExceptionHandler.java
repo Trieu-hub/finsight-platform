@@ -48,6 +48,20 @@ public class GlobalExceptionHandler {
                 .body(new ErrorResponse("WALLET_NOT_EMPTY", ex.getMessage()));
     }
 
+    @ExceptionHandler(com.pm.transactionservice.game.GameBannedException.class)
+    public ResponseEntity<ErrorResponse> handleGameBanned(
+            com.pm.transactionservice.game.GameBannedException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(new ErrorResponse("GAME_BANNED", ex.getMessage()));
+    }
+
+    @ExceptionHandler(com.pm.transactionservice.game.InvalidBetException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidBet(
+            com.pm.transactionservice.game.InvalidBetException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(new ErrorResponse("INVALID_BET", ex.getMessage()));
+    }
+
     @ExceptionHandler(InvalidTransactionDataException.class)
     public ResponseEntity<ErrorResponse> handleInvalidData(InvalidTransactionDataException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
