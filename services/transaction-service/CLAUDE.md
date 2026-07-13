@@ -116,3 +116,24 @@ Layering is strict and one-directional: `controller → service → repository`.
   (no FX); a wallet referenced by a transaction must be owned by the same user. A wallet
   with a non-zero balance cannot be deleted (`WALLET_NOT_EMPTY`). `wallet_id`/`to_wallet_id`
   remain **opaque** at the DB level (no FK) — integrity is enforced in the service.
+
+### Games (`game/`, `/api/v1/game`)
+The LuckyMe mini-games live here — not in a service of their own — because a round moves real
+wallet money, and settling it through `TransactionService.create` in one DB transaction is the
+only way to keep the balance, the audit log and the `TransactionCreated` event consistent
+without a cross-service call.
+
+- **Server-authoritative, on purpose.** The client sends only *which pockets each chip covers*.
+  The server draws the outcome (`Roulette.spin`, `SecureRandom`), derives each bet's type — and
+  therefore its payout — from its pockets via the generated 161-position legal table, settles,
+  and writes the money. A client can neither pick the winner nor invent its own odds.
+- **One net transaction per round**: a losing round is an `EXPENSE`, a winning one an `INCOME`,
+  a break-even one writes nothing (amount must be > 0). Categories 12 `Games` / 13 `Winnings`,
+  seeded `is_system` by `V7` — **11 is already V5's `Transfer`**, mind the ids.
+  Because the round goes down the normal transaction path, the risk rules see it for free.
+- **Debt lockout** (`game_bans`, `BanTier`): play requires a positive balance; a round may take
+  the wallet negative (stake is capped at balance + `OVERDRAFT`), and a negative balance bans
+  the user. Length escalates on two axes — how deep the debt, and how many prior bans. Enforced
+  in the DB so clearing the browser's localStorage does not buy another spin.
+- `docs/games/american-roulette.md` is the reference for the maths this encodes; `RouletteTest`
+  asserts the invariant that catches any payout bug: every non-basket payout is `(36 − n)/n`.

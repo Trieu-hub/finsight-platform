@@ -152,6 +152,66 @@ export async function markAllNotificationsRead(): Promise<void> {
   await api.patch('/notifications/read-all')
 }
 
+// ---- LuckyMe games (transaction-service; a round settles to a real net transaction) ----
+// The server spins, settles and moves the money: the client sends only which pockets each chip
+// covers, never an outcome and never a bet type — so it cannot pick the winner or its own payout.
+
+export interface GameBan {
+  tier: string
+  debt: number
+  bannedUntil: string
+  secondsRemaining: number
+}
+
+export interface GameStatus {
+  walletId: number
+  currency: string
+  balance: number
+  maxStake: number
+  canPlay: boolean
+  ban: GameBan | null
+}
+
+export interface SettledBet {
+  type: string
+  pockets: string[]
+  amount: number
+  won: boolean
+  payout: number
+}
+
+export interface SpinResult {
+  result: string
+  colour: 'red' | 'black' | 'green'
+  pocketIndex: number
+  bets: SettledBet[]
+  staked: number
+  returned: number
+  net: number
+  balance: number
+  currency: string
+  canPlay: boolean
+  ban: GameBan | null
+}
+
+export async function rouletteStatus(walletId?: number): Promise<GameStatus> {
+  const { data } = await api.get<ApiResponse<GameStatus>>('/game/roulette/status', {
+    params: walletId ? { walletId } : {},
+  })
+  return data.data
+}
+
+export async function rouletteSpin(
+  walletId: number,
+  bets: { pockets: string[]; amount: number }[],
+): Promise<SpinResult> {
+  const { data } = await api.post<ApiResponse<SpinResult>>('/game/roulette/spin', {
+    walletId,
+    bets,
+  })
+  return data.data
+}
+
 // ---- Analytics (analytics-service; rollup read model built from TransactionCreated) ----
 // year/month default to the current month server-side; currency is optional (the user's
 // dominant currency for the period is used when omitted).

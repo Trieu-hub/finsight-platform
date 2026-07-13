@@ -19,6 +19,10 @@ gateway:
       uri: ${TRANSACTION_SERVICE_URI:http://localhost:8083}
     - prefix: /api/v1/wallets
       uri: ${TRANSACTION_SERVICE_URI:http://localhost:8083}
+    # LuckyMe games. In transaction-service because a round settles to a real transaction and
+    # must move the wallet balance atomically — no cross-service call, no drift.
+    - prefix: /api/v1/game
+      uri: ${TRANSACTION_SERVICE_URI:http://localhost:8083}
     - prefix: /api/v1/budgets
       uri: ${BUDGET_SERVICE_URI:http://localhost:8084}
     - prefix: /api/v1/dashboard

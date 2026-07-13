@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { useI18n } from '../i18n'
 import redMeme from '../assets/luckyme-red.jpg'
+import Roulette from '../games/roulette/Roulette'
 
 // LuckyMe: flip a two-sided coin, biased 3:1 toward red — styled after the
 // "Gamble with your Friends" coin toss: a real 3D coin (two faces + a solid
@@ -10,6 +11,9 @@ import redMeme from '../assets/luckyme-red.jpg'
 // spun about a tilted axis before decelerating onto a face.
 //   * Red (75%)  -> KO face; show the meme full-view, then sign the user out.
 //   * Green (25%) -> gamepad face; confetti burst, then the mini-games interface.
+// Admins are exempt from the bias and always land green — the house never fires
+// itself. This follows the live JWT role, so promoting a user to admin (and their
+// re-login) flips them to 100% green with no extra wiring.
 
 type Phase = 'idle' | 'flipping' | 'red' | 'green'
 
@@ -79,6 +83,98 @@ function KoFace() {
   )
 }
 
+// --- Mini-game cards (art only; none of the games are implemented yet) -------
+
+// Roulette wheel: alternating red/black pockets, one green zero, ball on the rim.
+function RouletteArt() {
+  const pockets = Array.from({ length: 16 }, (_, i) => i)
+  return (
+    <svg viewBox="0 0 100 100" className="h-full w-full" aria-hidden>
+      <circle cx="50" cy="50" r="46" fill="#1c1917" stroke="#a16207" strokeWidth="3" />
+      {pockets.map((i) => (
+        <path
+          key={i}
+          d="M50 50 L50 7 A43 43 0 0 1 66.5 10.3 Z"
+          fill={i === 0 ? '#059669' : i % 2 ? '#dc2626' : '#171717'}
+          transform={`rotate(${i * 22.5} 50 50)`}
+        />
+      ))}
+      <circle cx="50" cy="50" r="20" fill="#292524" stroke="#a16207" strokeWidth="2.5" />
+      <circle cx="50" cy="50" r="5" fill="#eab308" />
+      <circle cx="50" cy="14" r="4" fill="#fafafa" />
+    </svg>
+  )
+}
+
+// Blackjack: an ace and a face-down card, fanned.
+function BlackjackArt() {
+  return (
+    <svg viewBox="0 0 100 100" className="h-full w-full" aria-hidden>
+      <g transform="rotate(-14 50 55)">
+        <rect x="20" y="22" width="42" height="60" rx="6" fill="#1e3a8a" stroke="#93c5fd" strokeWidth="2" />
+        <path d="M28 30h26M28 38h26M28 46h26M28 54h26M28 62h26M28 70h26" stroke="#3b82f6" strokeWidth="2" />
+      </g>
+      <g transform="rotate(10 60 55)">
+        <rect x="42" y="20" width="42" height="60" rx="6" fill="#fafafa" stroke="#d4d4d4" strokeWidth="2" />
+        <text x="49" y="36" fontSize="15" fontWeight="700" fill="#171717" fontFamily="sans-serif">A</text>
+        <path d="M63 44l9 12h-18z" fill="#dc2626" />
+        <path d="M63 68l-6-8h12z" fill="#dc2626" />
+        <text x="70" y="76" fontSize="15" fontWeight="700" fill="#171717" fontFamily="sans-serif">A</text>
+      </g>
+    </svg>
+  )
+}
+
+// Duck race: a rubber duck on water, finish flag ahead.
+function DuckRaceArt() {
+  return (
+    <svg viewBox="0 0 100 100" className="h-full w-full" aria-hidden>
+      <path d="M0 70h100v30H0z" fill="#0c4a6e" />
+      <path d="M0 70q12 -6 25 0t25 0t25 0t25 0" stroke="#38bdf8" strokeWidth="3" fill="none" />
+      <path d="M0 82q12 -6 25 0t25 0t25 0t25 0" stroke="#0ea5e9" strokeWidth="3" fill="none" />
+      <g transform="translate(-4 0)">
+        <ellipse cx="44" cy="62" rx="26" ry="15" fill="#facc15" />
+        <circle cx="60" cy="40" r="13" fill="#fde047" />
+        <circle cx="64" cy="37" r="2.6" fill="#171717" />
+        <path d="M72 41h13l-5 6h-8z" fill="#f97316" />
+      </g>
+      <path d="M84 16v50" stroke="#a3a3a3" strokeWidth="3" />
+      <path d="M84 16h16v13H84z" fill="#fafafa" />
+      <path d="M84 16h8v6.5h-8zM92 22.5h8V29h-8z" fill="#171717" />
+    </svg>
+  )
+}
+
+// Two dice: one red (lose), one green (win).
+function DiceArt() {
+  const pip = (cx: number, cy: number, key: string) => (
+    <circle key={key} cx={cx} cy={cy} r="4" fill="#fafafa" />
+  )
+  return (
+    <svg viewBox="0 0 100 100" className="h-full w-full" aria-hidden>
+      <g transform="rotate(-12 34 56)">
+        <rect x="10" y="34" width="46" height="46" rx="10" fill="#dc2626" stroke="#fca5a5" strokeWidth="2" />
+        {[
+          [22, 46],
+          [44, 46],
+          [33, 57],
+          [22, 68],
+          [44, 68],
+        ].map(([x, y], i) => pip(x, y, `r${i}`))}
+      </g>
+      <g transform="rotate(9 70 42)">
+        <rect x="48" y="16" width="42" height="42" rx="9" fill="#059669" stroke="#6ee7b7" strokeWidth="2" />
+        {[
+          [59, 27],
+          [79, 27],
+          [59, 47],
+          [79, 47],
+        ].map(([x, y], i) => pip(x, y, `g${i}`))}
+      </g>
+    </svg>
+  )
+}
+
 // The gamepad face (green) — neon-glow controller = "mini games".
 function GamepadFace() {
   return (
@@ -98,12 +194,48 @@ function GamepadFace() {
   )
 }
 
+// Left to right, in the order the user asked for. `key` doubles as the i18n suffix.
+// Only roulette is playable; the rest are art + a "coming soon" badge for now.
+const GAMES = [
+  {
+    key: 'roulette',
+    playable: true,
+    render: () => <RouletteArt />,
+    art: 'bg-gradient-to-br from-red-950/60 to-neutral-950',
+    glow: 'hover:shadow-red-900/30',
+  },
+  {
+    key: 'blackjack',
+    playable: false,
+    render: () => <BlackjackArt />,
+    art: 'bg-gradient-to-br from-emerald-950/60 to-neutral-950',
+    glow: 'hover:shadow-emerald-900/30',
+  },
+  {
+    key: 'duckrace',
+    playable: false,
+    render: () => <DuckRaceArt />,
+    art: 'bg-gradient-to-br from-sky-950/60 to-neutral-950',
+    glow: 'hover:shadow-sky-900/30',
+  },
+  {
+    key: 'dice',
+    playable: false,
+    render: () => <DiceArt />,
+    art: 'bg-gradient-to-br from-amber-950/60 to-neutral-950',
+    glow: 'hover:shadow-amber-900/30',
+  },
+] as const
+
 export default function LuckyMe() {
   const { t } = useI18n()
-  const { signOut } = useAuth()
+  const { signOut, isAdmin } = useAuth()
   const navigate = useNavigate()
 
   const [phase, setPhase] = useState<Phase>('idle')
+  // The open game, if any. Kept in this component (rather than a route) so that leaving a
+  // game returns to the lobby without re-flipping the coin — a re-flip would risk a logout.
+  const [game, setGame] = useState<(typeof GAMES)[number]['key'] | null>(null)
   const [rotation, setRotation] = useState(0) // absolute degrees, only ever increases
   const timers = useRef<ReturnType<typeof setTimeout>[]>([])
 
@@ -119,7 +251,8 @@ export default function LuckyMe() {
 
   const flip = () => {
     if (phase === 'flipping') return
-    const result: 'red' | 'green' = Math.random() < RED_PROBABILITY ? 'red' : 'green'
+    const result: 'red' | 'green' =
+      !isAdmin && Math.random() < RED_PROBABILITY ? 'red' : 'green'
     setPhase('flipping')
 
     // Land on 0deg (red = front) or 180deg (green = back), after SPINS turns.
@@ -155,17 +288,65 @@ export default function LuckyMe() {
     )
   }
 
-  // GREEN: coin gone; confetti burst + the mini-games interface only.
+  // A game is open: it takes over the whole view.
+  if (phase === 'green' && game === 'roulette') {
+    return <Roulette onBack={() => setGame(null)} />
+  }
+
+  // GREEN: coin gone; confetti burst + the mini-games lobby.
   if (phase === 'green') {
     return (
       <>
         <Confetti />
-        <section className="mx-auto max-w-3xl">
-          <h2 className="mb-4 text-center text-lg font-semibold text-neutral-200">
-            {t('luckyme.games.title')}
-          </h2>
-          <div className="flex h-64 items-center justify-center rounded-2xl border border-dashed border-neutral-800 bg-neutral-900/60 text-sm text-neutral-500">
-            {t('luckyme.games.empty')}
+        {/* The grid is flex-1 so the four cards stretch to fill the viewport height. */}
+        <section className="flex min-h-[calc(100vh-11rem)] flex-col">
+          <header className="mb-7 shrink-0 text-center">
+            <h2 className="bg-gradient-to-r from-emerald-300 via-teal-300 to-sky-300 bg-clip-text text-4xl font-black tracking-tight text-transparent sm:text-5xl">
+              {t('luckyme.games.title')}
+            </h2>
+            <p className="mt-2 text-base text-neutral-400">{t('luckyme.games.subtitle')}</p>
+          </header>
+
+          <div className="grid flex-1 grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {GAMES.map((g) => (
+              <article
+                key={g.key}
+                onClick={() => g.playable && setGame(g.key)}
+                className={`group flex h-full min-h-[300px] flex-col overflow-hidden rounded-3xl border bg-neutral-900/60 transition hover:-translate-y-1.5 hover:shadow-2xl ${g.glow} ${
+                  g.playable
+                    ? 'cursor-pointer border-emerald-800/70 hover:border-emerald-600'
+                    : 'border-neutral-800 hover:border-neutral-700'
+                }`}
+              >
+                <div className={`flex flex-1 items-center justify-center p-8 ${g.art}`}>
+                  <div className="aspect-square w-full max-w-[190px] transition-transform duration-300 group-hover:scale-110">
+                    {g.render()}
+                  </div>
+                </div>
+                <div className="flex shrink-0 flex-col gap-2 border-t border-neutral-800 p-5">
+                  <h3 className="text-xl font-bold text-neutral-100">
+                    {t(`luckyme.game.${g.key}.name`)}
+                  </h3>
+                  <p className="text-sm leading-relaxed text-neutral-400">
+                    {t(`luckyme.game.${g.key}.desc`)}
+                  </p>
+                  {g.playable ? (
+                    <div className="mt-1 flex items-center gap-2">
+                      <span className="inline-flex w-fit rounded-full border border-emerald-500/40 bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-300">
+                        {t('luckyme.games.available')}
+                      </span>
+                      <span className="text-xs font-semibold text-emerald-400 opacity-0 transition group-hover:opacity-100">
+                        {t('luckyme.games.play')} →
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="mt-1 inline-flex w-fit rounded-full border border-neutral-700 bg-neutral-800/80 px-3 py-1 text-xs font-medium text-neutral-400">
+                      {t('luckyme.games.soon')}
+                    </span>
+                  )}
+                </div>
+              </article>
+            ))}
           </div>
         </section>
       </>
@@ -275,13 +456,10 @@ export default function LuckyMe() {
         </div>
       </div>
 
-      <button
-        onClick={flip}
-        disabled={flipping}
-        className="rounded-2xl bg-gradient-to-r from-amber-400 via-emerald-400 to-teal-400 px-10 py-3.5 text-base font-bold text-neutral-950 shadow-xl shadow-emerald-900/30 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
-      >
+      {/* The coin itself is the button — this is just live status text. */}
+      <p className="text-base font-semibold text-neutral-300">
         {flipping ? t('luckyme.flipping') : t('luckyme.flip')}
-      </button>
+      </p>
     </div>
   )
 }

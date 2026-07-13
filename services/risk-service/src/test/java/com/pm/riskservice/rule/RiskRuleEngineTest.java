@@ -19,8 +19,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Unit tests for the three rules and their crossing semantics, with the repository mocked
- * so the windowed aggregates can be set precisely.
+ * Unit tests for the expense and income rules and their crossing semantics, with the repository
+ * mocked so the windowed aggregates can be set precisely.
  */
 class RiskRuleEngineTest {
 
@@ -86,9 +86,64 @@ class RiskRuleEngineTest {
                         RiskRule.RAPID_SPENDING, RiskRule.LARGE_DAILY_SPEND);
     }
 
+    // --- Income rules --------------------------------------------------------------------
+    // Money arriving is evaluated too: an expense tracker should be as suspicious of unexplained
+    // income as of unexplained spending. The income thresholds sit higher than the expense ones
+    // on purpose — a salary is legitimately large, and reusing the expense threshold would alert
+    // on every payday.
+
     @Test
-    void nonExpenseIsNotEvaluatedOrRecorded() {
-        assertThat(engine.evaluate(event(50L, "INCOME", "99999999"))).isEmpty();
+    void highAmountIncomeFires() {
+        stubIncomeWindow(1, "50000000");
+        assertThat(engine.evaluate(income(50L, "50000000")))
+                .containsExactly(RiskRule.HIGH_AMOUNT_INCOME);
+    }
+
+    @Test
+    void ordinaryIncomeFiresNothing() {
+        // 15M would have tripped the EXPENSE threshold (10M). As income it is just a good month.
+        stubIncomeWindow(1, "15000000");
+        assertThat(engine.evaluate(income(50L, "15000000"))).isEmpty();
+    }
+
+    @Test
+    void rapidIncomeFiresOnTheFifthInWindow() {
+        stubIncomeWindow(5, "100.00");
+        assertThat(engine.evaluate(income(50L, "100.00")))
+                .containsExactly(RiskRule.RAPID_INCOME);
+    }
+
+    @Test
+    void largeDailyIncomeFiresOnTheCrossingEvent() {
+        // Before this event the day's income was 80M (<= 100M); this 30M pushes it to 110M.
+        stubIncomeWindow(1, "110000000");
+        assertThat(engine.evaluate(income(50L, "30000000")))
+                .containsExactly(RiskRule.LARGE_DAILY_INCOME);
+    }
+
+    @Test
+    void incomeSpikeFiresAtThreeTimesTheUsersOwnMean() {
+        stubIncomeWindow(1, "3000000");
+        stubIncomeBaseline(12, "1000000"); // 12 prior incomes averaging 1M
+        assertThat(engine.evaluate(income(50L, "3000000")))
+                .containsExactly(RiskRule.INCOME_SPIKE);
+    }
+
+    @Test
+    void incomeSpikeNeedsEnoughHistoryToHaveAMean() {
+        // Same 3x jump, but on only 4 prior incomes the "mean" means nothing yet.
+        stubIncomeWindow(1, "3000000");
+        stubIncomeBaseline(4, "1000000");
+        assertThat(engine.evaluate(income(50L, "3000000"))).isEmpty();
+    }
+
+    // --- Shared ---------------------------------------------------------------------------
+
+    @Test
+    void transferIsNotEvaluatedOrRecorded() {
+        // TRANSFER moves money between the user's own wallets — it is neither income nor spending,
+        // so no rule applies and it must not pollute the windowed aggregates.
+        assertThat(engine.evaluate(event(50L, "TRANSFER", "99999999"))).isEmpty();
         verify(repository, never()).save(any());
     }
 
@@ -106,8 +161,28 @@ class RiskRuleEngineTest {
         when(repository.sumAmountForDay(any(), any())).thenReturn(new BigDecimal(dayTotal));
     }
 
+    /** The income equivalents. The baseline defaults to "no history", so no spike unless stubbed. */
+    private void stubIncomeWindow(long windowCount, String dayTotal) {
+        when(repository.countIncomeByUserIdAndOccurredAtBetween(any(), any(), any()))
+                .thenReturn(windowCount);
+        when(repository.sumIncomeForDay(any(), any())).thenReturn(new BigDecimal(dayTotal));
+        stubIncomeBaseline(0, null);
+    }
+
+    private void stubIncomeBaseline(long count, String average) {
+        ObservedExpenseRepository.ExpenseBaseline baseline =
+                mock(ObservedExpenseRepository.ExpenseBaseline.class);
+        when(baseline.getCount()).thenReturn(count);
+        when(baseline.getAverage()).thenReturn(average == null ? null : new BigDecimal(average));
+        when(repository.incomeBaselineBefore(any(), any())).thenReturn(baseline);
+    }
+
     private TransactionCreatedEvent expense(long userId, String amount) {
         return event(userId, "EXPENSE", amount);
+    }
+
+    private TransactionCreatedEvent income(long userId, String amount) {
+        return event(userId, "INCOME", amount);
     }
 
     private TransactionCreatedEvent event(long userId, String type, String amount) {

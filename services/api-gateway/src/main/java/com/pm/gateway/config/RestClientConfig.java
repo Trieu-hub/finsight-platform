@@ -19,6 +19,25 @@ import java.time.Duration;
 @Configuration
 public class RestClientConfig {
 
+    /**
+     * A second client for streaming relays (SSE). Deliberately has <b>no read timeout</b>: an
+     * event stream is idle by nature between events, and the {@code readMs} that protects the
+     * request/response path would tear a healthy stream down every 10 seconds. Liveness is the
+     * stream's own problem — notification-service sends a heartbeat comment.
+     */
+    @Bean
+    HttpClient streamingClient(GatewayProperties properties) {
+        return HttpClient.newBuilder()
+                .connectTimeout(Duration.ofMillis(properties.getTimeouts().getConnectMs()))
+                .followRedirects(HttpClient.Redirect.NEVER)
+                // Pinned to HTTP/1.1. The JDK client otherwise attempts an h2c upgrade on
+                // cleartext, which buys nothing for a one-way event stream and complicates when
+                // bytes are actually handed to the reader. SSE wants the simplest possible
+                // chunked-transfer path.
+                .version(HttpClient.Version.HTTP_1_1)
+                .build();
+    }
+
     @Bean
     RestClient downstreamClient(GatewayProperties properties) {
         GatewayProperties.Timeouts t = properties.getTimeouts();

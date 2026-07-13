@@ -7,6 +7,7 @@ import com.pm.notificationservice.narrator.TemplateNarrator;
 import com.pm.notificationservice.repository.NotificationRepository;
 import com.pm.notificationservice.repository.ProcessedEventRepository;
 import com.pm.notificationservice.service.impl.NotificationServiceImpl;
+import com.pm.notificationservice.stream.NotificationStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -36,8 +37,11 @@ class NotificationServiceImplTest {
         // returns a null status, commit is a no-op) — enough to exercise the persist path.
         PlatformTransactionManager txManager = mock(PlatformTransactionManager.class);
         // Real narrator: deterministic, no need to mock.
+        // The SSE stream is mocked: publishing to live browsers is a side channel, and this test
+        // is about what gets persisted.
         service = new NotificationServiceImpl(
-                notificationRepository, processedEventRepository, new TemplateNarrator(), txManager);
+                notificationRepository, processedEventRepository, new TemplateNarrator(),
+                mock(NotificationStream.class), txManager);
     }
 
     @Test
