@@ -7,6 +7,9 @@ interface AuthState {
   role: string | null
   email: string | null
   isAdmin: boolean
+  isGamer: boolean
+  // May open the LuckyMe mini-games section: gamers and admins only.
+  canPlayLuckyMe: boolean
   isAuthenticated: boolean
   signIn: (accessToken: string, refreshToken?: string) => void
   signOut: () => void
@@ -20,11 +23,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthState>(() => {
     const payload = decodeJwt(token)
     const role = payload?.role ?? null
+    const isAdmin = role === 'ROLE_ADMIN'
+    const isGamer = role === 'ROLE_GAMER'
     return {
       token,
       role,
       email: payload?.email ?? null,
-      isAdmin: role === 'ROLE_ADMIN',
+      isAdmin,
+      isGamer,
+      canPlayLuckyMe: isAdmin || isGamer,
       isAuthenticated: !!token,
       signIn: (accessToken: string, refreshToken?: string) => {
         tokenStore.set(accessToken, refreshToken)

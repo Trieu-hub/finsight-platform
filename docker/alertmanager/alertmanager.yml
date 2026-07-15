@@ -1,0 +1,35 @@
+# Alertmanager routing for the FinSight stack (opt-in `monitoring` profile).
+#
+# By default there is NO delivery channel wired: firing alerts are grouped and visible in the
+# Alertmanager UI (http://localhost:9093), which is enough to demonstrate the full pipeline
+# Prometheus rule -> Alertmanager -> route. Add a real receiver (Slack / email / generic
+# webhook) under `receivers` when you want notifications delivered — see the commented example.
+route:
+  receiver: default
+  # Collapse alerts that share these labels into one notification.
+  group_by: ['alertname', 'job']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 3h
+
+receivers:
+  - name: default
+    # No integration on purpose — alerts still show in the Alertmanager UI. To deliver them,
+    # wire a channel here, e.g. a Slack incoming webhook:
+    #
+    # slack_configs:
+    #   - api_url: https://hooks.slack.com/services/XXXX/YYYY/ZZZZ
+    #     channel: '#finsight-alerts'
+    #     send_resolved: true
+    #
+    # or a generic webhook:
+    #
+    # webhook_configs:
+    #   - url: https://example.com/alerts
+
+# Silence a critical alert if it implies a warning is redundant (e.g. a down service will also
+# trip its error-rate rule). Optional; kept minimal for the demo.
+inhibit_rules:
+  - source_matchers: [severity = "critical"]
+    target_matchers: [severity = "warning"]
+    equal: ['job']

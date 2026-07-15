@@ -462,9 +462,24 @@ services:
     profiles: ["monitoring"]
     volumes:
       - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./docker/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus_data:/prometheus
     ports:
       - "9090:9090"
+    restart: unless-stopped
+
+  # Alertmanager: receives firing alerts from Prometheus, dedups/groups/routes them. Opt-in
+  # with the same `monitoring` profile. No delivery channel is wired by default — alerts are
+  # visible in its UI on :9093; add a Slack/email/webhook receiver in alertmanager.yml to deliver.
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    container_name: finsight-alertmanager
+    profiles: ["monitoring"]
+    volumes:
+      - ./docker/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    ports:
+      - "9093:9093"
     restart: unless-stopped
 
   grafana:
@@ -507,3 +522,4 @@ volumes:
   prometheus_data:
   grafana_data:
   tempo_data:
+  alertmanager_data:

@@ -58,7 +58,6 @@ const baseLinks = [
   { to: '/budgets', labelKey: 'nav.budgets' },
   { to: '/wallets', labelKey: 'nav.wallets' },
   { to: '/analytics', labelKey: 'nav.analytics' },
-  { to: '/luckyme', labelKey: 'nav.luckyme' },
 ]
 
 function NavIcon({ to }: { to: string }) {
@@ -79,7 +78,7 @@ function NavIcon({ to }: { to: string }) {
 }
 
 export default function Layout() {
-  const { signOut, isAdmin } = useAuth()
+  const { signOut, isAdmin, canPlayLuckyMe } = useAuth()
   const { t } = useI18n()
   const navigate = useNavigate()
 
@@ -114,8 +113,13 @@ export default function Layout() {
     }
   }, [menuOpen])
 
-  // Admin link is shown only to ROLE_ADMIN (UX only; backend enforces access).
-  const links = isAdmin ? [...baseLinks, { to: '/admin', labelKey: 'nav.admin' }] : baseLinks
+  // LuckyMe is shown only to gamers/admins, the admin link only to ROLE_ADMIN (UX only;
+  // the gateway/backend enforces access regardless of what the menu shows).
+  const links = [
+    ...baseLinks,
+    ...(canPlayLuckyMe ? [{ to: '/luckyme', labelKey: 'nav.luckyme' }] : []),
+    ...(isAdmin ? [{ to: '/admin', labelKey: 'nav.admin' }] : []),
+  ]
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-200">
