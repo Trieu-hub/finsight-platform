@@ -21,6 +21,10 @@
         <spring-grpc.version>1.0.3</spring-grpc.version>
         <grpc.version>1.77.1</grpc.version>
         <protobuf-java.version>4.33.4</protobuf-java.version>
+        <!-- Resilience4j core modules (used programmatically, NOT the Spring Boot AOP starter —
+             that starter's autoconfiguration is not verified on Boot 4, and the tracing work
+             already showed Boot 4 moved autoconfig around; the core libs have no such coupling). -->
+        <resilience4j.version>2.3.0</resilience4j.version>
     </properties>
 
     <dependencyManagement>
@@ -79,6 +83,27 @@
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>
             <scope>runtime</scope>
+        </dependency>
+
+        <!-- Resilience4j: circuit breaker + retry on the BFF's upstream fan-out (transaction/
+             budget over REST, user over gRPC). Used programmatically via a small UpstreamCalls
+             helper — no AOP/annotations, so no Boot-4 autoconfiguration dependency. The
+             micrometer module publishes circuit-breaker state/call metrics to /actuator/prometheus,
+             so Grafana and the new Alertmanager rules can see a breaker trip. -->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-circuitbreaker</artifactId>
+            <version>${resilience4j.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-retry</artifactId>
+            <version>${resilience4j.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-micrometer</artifactId>
+            <version>${resilience4j.version}</version>
         </dependency>
 
         <!-- OpenAPI / Swagger UI. springdoc 3.0.x is the Spring Boot 4 / Spring

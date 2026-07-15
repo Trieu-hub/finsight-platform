@@ -179,7 +179,8 @@ probes at `/actuator/health/{liveness,readiness}`.
   - **FinSight Risk** — detected risks by type and severity.
   - **FinSight Consumer Lag** — Kafka consumer lag per service / group / partition.
 - **Alertmanager** — <http://localhost:9093> — receives firing alerts from Prometheus. Rules in
-  `docker/prometheus/alerts.yml`: service down, 5xx rate, JVM heap, Kafka consumer lag. No delivery
+  `docker/prometheus/alerts.yml`: service down, 5xx rate, JVM heap, Kafka consumer lag, dashboard
+  circuit-breaker open. No delivery
   channel is wired by default (a Slack/email/webhook stub is in `docker/alertmanager/alertmanager.yml`).
 
 > Dev-stack posture, on purpose: Grafana allows anonymous admin and the scrape endpoint is

@@ -3,6 +3,7 @@ package com.pm.dashboardservice.client;
 import com.pm.dashboardservice.client.dto.BudgetDto;
 import com.pm.dashboardservice.config.DashboardProperties;
 import com.pm.dashboardservice.exception.UpstreamException;
+import com.pm.dashboardservice.support.TestUpstreamCalls;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
@@ -26,7 +27,7 @@ class BudgetClientTest {
         serverOut[0] = MockRestServiceServer.bindTo(builder).build();
         DashboardProperties props = new DashboardProperties();
         props.getServices().setBudgetUri("http://budget-service:8084");
-        return new BudgetClient(builder, props);
+        return new BudgetClient(builder, props, TestUpstreamCalls.create());
     }
 
     @Test

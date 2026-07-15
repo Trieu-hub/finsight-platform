@@ -5,17 +5,16 @@ import com.pm.dashboardservice.client.dto.MonthlySummaryDto;
 import com.pm.dashboardservice.client.dto.TransactionDto;
 import com.pm.dashboardservice.client.dto.TrendPointDto;
 import com.pm.dashboardservice.config.DashboardProperties;
-import com.pm.dashboardservice.exception.UpstreamException;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestClientException;
 
 import java.time.LocalDate;
 import java.util.List;
 
-/** Reads spend summaries from transaction-service, relaying the JWT. */
+/** Reads spend summaries from transaction-service, relaying the JWT. Every call is guarded by
+ *  {@link UpstreamCalls} (circuit breaker + retry), which also maps failures to UpstreamException. */
 @Component
 public class TransactionClient {
 
@@ -29,13 +28,16 @@ public class TransactionClient {
             new ParameterizedTypeReference<>() {};
 
     private final RestClient client;
+    private final UpstreamCalls upstreamCalls;
 
-    public TransactionClient(RestClient.Builder builder, DashboardProperties properties) {
+    public TransactionClient(RestClient.Builder builder, DashboardProperties properties,
+                             UpstreamCalls upstreamCalls) {
         this.client = builder.baseUrl(properties.getServices().getTransactionUri()).build();
+        this.upstreamCalls = upstreamCalls;
     }
 
     public List<CategorySummaryDto> categorySummary(String authorization, LocalDate fromDate, LocalDate toDate) {
-        try {
+        return upstreamCalls.call("transaction-service", () -> {
             UpstreamApiResponse<List<CategorySummaryDto>> body = client.get()
                     .uri(uri -> uri.path("/api/v1/transactions/summary/categories")
                             .queryParam("fromDate", fromDate)
@@ -45,15 +47,13 @@ public class TransactionClient {
                     .retrieve()
                     .body(CATEGORY_LIST);
             return (body == null || body.data() == null) ? List.of() : body.data();
-        } catch (RestClientException e) {
-            throw new UpstreamException("transaction-service", e);
-        }
+        });
     }
 
     /** Most-recent transactions (page 1). Ordering (transactionDate DESC, id ASC) is
      *  enforced by transaction-service; {@code limit} is expected pre-clamped to 1..100. */
     public List<TransactionDto> recentTransactions(String authorization, int limit) {
-        try {
+        return upstreamCalls.call("transaction-service", () -> {
             UpstreamApiResponse<List<TransactionDto>> body = client.get()
                     .uri(uri -> uri.path("/api/v1/transactions")
                             .queryParam("page", 1)
@@ -63,14 +63,12 @@ public class TransactionClient {
                     .retrieve()
                     .body(TRANSACTION_LIST);
             return (body == null || body.data() == null) ? List.of() : body.data();
-        } catch (RestClientException e) {
-            throw new UpstreamException("transaction-service", e);
-        }
+        });
     }
 
     /** DAILY income/expense/balance series for the inclusive [fromDate, toDate] window. */
     public List<TrendPointDto> trend(String authorization, LocalDate fromDate, LocalDate toDate) {
-        try {
+        return upstreamCalls.call("transaction-service", () -> {
             UpstreamApiResponse<List<TrendPointDto>> body = client.get()
                     .uri(uri -> uri.path("/api/v1/transactions/summary/trend")
                             .queryParam("fromDate", fromDate)
@@ -80,13 +78,11 @@ public class TransactionClient {
                     .retrieve()
                     .body(TREND_LIST);
             return (body == null || body.data() == null) ? List.of() : body.data();
-        } catch (RestClientException e) {
-            throw new UpstreamException("transaction-service", e);
-        }
+        });
     }
 
     public MonthlySummaryDto monthly(String authorization, int year, int month) {
-        try {
+        return upstreamCalls.call("transaction-service", () -> {
             UpstreamApiResponse<MonthlySummaryDto> body = client.get()
                     .uri(uri -> uri.path("/api/v1/transactions/summary/monthly")
                             .queryParam("year", year)
@@ -96,8 +92,6 @@ public class TransactionClient {
                     .retrieve()
                     .body(MONTHLY);
             return body == null ? null : body.data();
-        } catch (RestClientException e) {
-            throw new UpstreamException("transaction-service", e);
-        }
+        });
     }
 }

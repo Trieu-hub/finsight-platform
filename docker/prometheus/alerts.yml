@@ -49,6 +49,19 @@ groups:
           summary: "{{ $labels.job }} heap above 90%"
           description: "{{ $labels.job }} JVM heap has stayed above 90% of max for 10m (value: {{ $value | humanizePercentage }})."
 
+  - name: finsight-resilience
+    rules:
+      # A dashboard upstream circuit breaker has tripped OPEN — the BFF is short-circuiting calls
+      # to that service (transaction/budget/user). Metric from resilience4j-micrometer.
+      - alert: CircuitBreakerOpen
+        expr: resilience4j_circuitbreaker_state{state="open"} == 1
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Circuit breaker '{{ $labels.name }}' is open"
+          description: "The dashboard circuit breaker for {{ $labels.name }} has been OPEN for 1m — that upstream is being short-circuited."
+
   - name: finsight-kafka
     rules:
       # A consumer group is falling behind: >1000 unconsumed records on a finsight.* topic
