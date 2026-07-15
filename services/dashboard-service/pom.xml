@@ -62,6 +62,15 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
+        <!-- Distributed tracing (Boot 4): one starter pulls the Micrometer→OTel bridge, the OTel
+             SDK, and the OTLP/HTTP exporter. Spans ship to Tempo; trace context propagates across
+             the gateway and Kafka. Exports only when a non-zero sampling probability is set
+             (off by default) — see application.yml. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-opentelemetry</artifactId>
+        </dependency>
+
         <!-- Prometheus metrics export (/actuator/prometheus). Boot 4: the export
              autoconfiguration lives in spring-boot-micrometer-metrics (pulled in by
              the actuator starter) and activates when this registry is on the

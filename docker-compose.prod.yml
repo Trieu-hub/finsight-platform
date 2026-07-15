@@ -59,6 +59,8 @@ services:
     ports: !override []
   prometheus:
     ports: !override []
+  tempo:
+    ports: !override []
 
   # Grafana: disable the dev anonymous-admin, require a real login + strong password.
   # Not published — reach it in prod over an SSH tunnel to 127.0.0.1:3000 if needed.

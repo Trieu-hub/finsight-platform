@@ -106,6 +106,10 @@ services:
       # Cap JVM heap so 8 services starting in parallel don't each grab 25% of host RAM
       # (the default), which overcommits memory and makes every startup swap-slow.
       JAVA_TOOL_OPTIONS: -Xmx384m
+      # Distributed tracing → OTLP → Tempo. Off by default (sampling 0): set
+      # TRACING_SAMPLING_PROBABILITY=1.0 in .env and run `--profile monitoring` to enable.
+      OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
+      TRACING_SAMPLING_PROBABILITY: ${TRACING_SAMPLING_PROBABILITY:-0}
       DB_URL: jdbc:mysql://mysql:3306/auth_db
       DB_USERNAME: auth_user
       DB_PASSWORD: ${AUTH_DB_PASSWORD:?set AUTH_DB_PASSWORD in .env}
@@ -134,6 +138,10 @@ services:
         condition: service_healthy
     environment:
       JAVA_TOOL_OPTIONS: -Xmx384m
+      # Distributed tracing → OTLP → Tempo. Off by default (sampling 0): set
+      # TRACING_SAMPLING_PROBABILITY=1.0 in .env and run `--profile monitoring` to enable.
+      OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
+      TRACING_SAMPLING_PROBABILITY: ${TRACING_SAMPLING_PROBABILITY:-0}
       DB_URL: jdbc:mysql://mysql:3306/user_db
       DB_USERNAME: user_user
       DB_PASSWORD: ${USER_DB_PASSWORD:?set USER_DB_PASSWORD in .env}
@@ -164,6 +172,10 @@ services:
         condition: service_healthy
     environment:
       JAVA_TOOL_OPTIONS: -Xmx384m
+      # Distributed tracing → OTLP → Tempo. Off by default (sampling 0): set
+      # TRACING_SAMPLING_PROBABILITY=1.0 in .env and run `--profile monitoring` to enable.
+      OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
+      TRACING_SAMPLING_PROBABILITY: ${TRACING_SAMPLING_PROBABILITY:-0}
       DB_URL: jdbc:mysql://mysql:3306/transaction_db
       DB_USERNAME: transaction_user
       DB_PASSWORD: ${TRANSACTION_DB_PASSWORD:?set TRANSACTION_DB_PASSWORD in .env}
@@ -195,6 +207,10 @@ services:
         condition: service_healthy
     environment:
       JAVA_TOOL_OPTIONS: -Xmx384m
+      # Distributed tracing → OTLP → Tempo. Off by default (sampling 0): set
+      # TRACING_SAMPLING_PROBABILITY=1.0 in .env and run `--profile monitoring` to enable.
+      OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
+      TRACING_SAMPLING_PROBABILITY: ${TRACING_SAMPLING_PROBABILITY:-0}
       DB_URL: jdbc:mysql://mysql:3306/budget_db
       DB_USERNAME: budget_user
       DB_PASSWORD: ${BUDGET_DB_PASSWORD:?set BUDGET_DB_PASSWORD in .env}
@@ -234,6 +250,10 @@ services:
         condition: service_healthy
     environment:
       JAVA_TOOL_OPTIONS: -Xmx384m
+      # Distributed tracing → OTLP → Tempo. Off by default (sampling 0): set
+      # TRACING_SAMPLING_PROBABILITY=1.0 in .env and run `--profile monitoring` to enable.
+      OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
+      TRACING_SAMPLING_PROBABILITY: ${TRACING_SAMPLING_PROBABILITY:-0}
       DB_URL: jdbc:mysql://mysql:3306/risk_db
       DB_USERNAME: risk_user
       DB_PASSWORD: ${RISK_DB_PASSWORD:?set RISK_DB_PASSWORD in .env}
@@ -260,6 +280,10 @@ services:
         condition: service_healthy
     environment:
       JAVA_TOOL_OPTIONS: -Xmx384m
+      # Distributed tracing → OTLP → Tempo. Off by default (sampling 0): set
+      # TRACING_SAMPLING_PROBABILITY=1.0 in .env and run `--profile monitoring` to enable.
+      OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
+      TRACING_SAMPLING_PROBABILITY: ${TRACING_SAMPLING_PROBABILITY:-0}
       DB_URL: jdbc:mysql://mysql:3306/notification_db
       DB_USERNAME: notification_user
       DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD:?set NOTIFICATION_DB_PASSWORD in .env}
@@ -299,6 +323,10 @@ services:
         condition: service_healthy
     environment:
       JAVA_TOOL_OPTIONS: -Xmx384m
+      # Distributed tracing → OTLP → Tempo. Off by default (sampling 0): set
+      # TRACING_SAMPLING_PROBABILITY=1.0 in .env and run `--profile monitoring` to enable.
+      OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
+      TRACING_SAMPLING_PROBABILITY: ${TRACING_SAMPLING_PROBABILITY:-0}
       DB_URL: jdbc:mysql://mysql:3306/analytics_db
       DB_USERNAME: analytics_user
       DB_PASSWORD: ${ANALYTICS_DB_PASSWORD:?set ANALYTICS_DB_PASSWORD in .env}
@@ -339,6 +367,10 @@ services:
         condition: service_healthy
     environment:
       JAVA_TOOL_OPTIONS: -Xmx384m
+      # Distributed tracing → OTLP → Tempo. Off by default (sampling 0): set
+      # TRACING_SAMPLING_PROBABILITY=1.0 in .env and run `--profile monitoring` to enable.
+      OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
+      TRACING_SAMPLING_PROBABILITY: ${TRACING_SAMPLING_PROBABILITY:-0}
       # user-service is called over gRPC (plaintext, internal network); transaction/budget REST.
       USER_SERVICE_GRPC_TARGET: static://user-service:9092
       TRANSACTION_SERVICE_URI: http://transaction-service:8083
@@ -387,6 +419,10 @@ services:
         condition: service_healthy
     environment:
       JAVA_TOOL_OPTIONS: -Xmx384m
+      # Distributed tracing → OTLP → Tempo. Off by default (sampling 0): set
+      # TRACING_SAMPLING_PROBABILITY=1.0 in .env and run `--profile monitoring` to enable.
+      OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
+      TRACING_SAMPLING_PROBABILITY: ${TRACING_SAMPLING_PROBABILITY:-0}
       AUTH_SERVICE_URI: http://auth-service:8081
       USER_SERVICE_URI: http://user-service:8082
       TRANSACTION_SERVICE_URI: http://transaction-service:8083
@@ -449,7 +485,25 @@ services:
       - "3000:3000"
     restart: unless-stopped
 
+  # Distributed-tracing backend. Part of the opt-in `monitoring` profile like Prometheus/Grafana,
+  # so prod (which runs without that profile) never starts it — and the services default to a
+  # sampling probability of 0, so nothing is exported when Tempo is absent. Enable tracing with
+  # `--profile monitoring` and TRACING_SAMPLING_PROBABILITY=1.0 in .env.
+  tempo:
+    image: grafana/tempo:2.9.0
+    container_name: finsight-tempo
+    profiles: ["monitoring"]
+    command: ["-config.file=/etc/tempo/tempo.yml"]
+    volumes:
+      - ./docker/tempo/tempo.yml:/etc/tempo/tempo.yml:ro
+      - tempo_data:/var/tempo
+    ports:
+      - "3200:3200"    # Tempo query API (Grafana datasource)
+      - "4318:4318"    # OTLP/HTTP receiver (services export here)
+    restart: unless-stopped
+
 volumes:
   mysql_data:
   prometheus_data:
   grafana_data:
+  tempo_data:

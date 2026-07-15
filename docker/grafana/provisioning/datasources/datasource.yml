@@ -1,4 +1,4 @@
-# Grafana datasource provisioning: the compose-internal Prometheus.
+# Grafana datasource provisioning: the compose-internal Prometheus + Tempo.
 apiVersion: 1
 
 datasources:
@@ -8,4 +8,13 @@ datasources:
     access: proxy
     url: http://prometheus:9090
     isDefault: true
+    editable: false
+
+  # Distributed traces from the services (OTLP → Tempo). Only useful with the `monitoring`
+  # profile running (which starts Tempo); the datasource simply sits idle otherwise.
+  - name: Tempo
+    uid: tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
     editable: false

@@ -252,19 +252,9 @@ session. Log in with `admin` / `GF_SECURITY_ADMIN_PASSWORD` (anonymous admin is 
 
 The live deploy runs `/root/backup-finsight.sh` via cron (`0 3 * * *`): it dumps **all** databases
 from the `finsight-mysql` container, gzips into `/root/backups/`, keeps the newest 7, and aborts if
-the dump is suspiciously small.
-
-```bash
-#!/bin/sh
-set -eu
-BACKUP_DIR=/root/backups; RETAIN=7; mkdir -p "$BACKUP_DIR"
-FILE="$BACKUP_DIR/finsight-$(date +%F_%H%M).sql.gz"
-docker exec finsight-mysql sh -c \
-  'exec mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --all-databases --single-transaction --quick' \
-  | gzip > "$FILE"
-[ "$(stat -c%s "$FILE")" -ge 1024 ] || { rm -f "$FILE"; echo "dump too small" >&2; exit 1; }
-ls -1t "$BACKUP_DIR"/finsight-*.sql.gz | tail -n +$((RETAIN + 1)) | xargs -r rm -f
-```
+the dump is suspiciously small. The version-controlled source is **`scripts/backup-finsight.sh`** —
+deploy it with `install -m 700 scripts/backup-finsight.sh /root/backup-finsight.sh` (or just copy
+it) so the box runs the reviewed script, not a hand-pasted copy.
 
 Install the cron entry (idempotent):
 
@@ -273,6 +263,9 @@ Install the cron entry (idempotent):
   echo '0 3 * * * /root/backup-finsight.sh >> /root/backups/backup.log 2>&1' ) | crontab -
 ```
 
+The script is configurable by env (`BACKUP_DIR`, `RETAIN`, `MYSQL_CONTAINER`, and `BACKUP_REMOTE`
+for the off-box copy below); with none set it behaves exactly as the original local-only version.
+
 **Restore** a dump:
 
 ```bash
@@ -280,16 +273,39 @@ gunzip -c /root/backups/finsight-YYYY-MM-DD_HHMM.sql.gz | \
   docker exec -i finsight-mysql sh -c 'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD"'
 ```
 
-### 7.2 Off-box copies
+### 7.2 Off-box copies (automated)
 
-Backups on the same VPS are lost if the VPS is. Pull them elsewhere (a workstation or cloud). From
-a machine with SSH access:
+Backups on the same VPS are lost if the VPS is, so `scripts/backup-finsight.sh` can push each dump
+off-box in the same cron run. It uses [rclone](https://rclone.org) so the destination is your
+choice — Backblaze B2, S3, Google Drive, an SFTP host, etc. — configured once and never hardcoded.
+
+One-time setup on the VPS:
+
+```bash
+curl https://rclone.org/install.sh | sudo bash   # or: apt-get install -y rclone
+rclone config                                     # create a remote, e.g. name it "offsite"
+```
+
+Then point the cron entry at the remote (bucket/folder path after the remote name):
+
+```bash
+( crontab -l 2>/dev/null | grep -v backup-finsight.sh; \
+  echo '0 3 * * * BACKUP_REMOTE=offsite:my-bucket/finsight /root/backup-finsight.sh >> /root/backups/backup.log 2>&1' ) | crontab -
+```
+
+Each run uploads the new gzip and prunes the remote to the same `RETAIN` newest dumps as the local
+copy. With `BACKUP_REMOTE` unset the off-box step is skipped (local-only, as before). Verify:
+
+```bash
+rclone ls offsite:my-bucket/finsight            # the rotations should appear after the next run
+```
+
+**Pull-based alternative** (no cloud account): from any machine with SSH access, copy the newest
+rotation down on a schedule (cron / Windows Task Scheduler):
 
 ```bash
 scp <user>@<host>:'/root/backups/*.sql.gz' /path/to/local/backups/
 ```
-
-Schedule this (cron / Windows Task Scheduler) so at least the latest rotation lives off the box.
 
 ### 7.3 SSH, firewall & fail2ban
 
@@ -347,14 +363,15 @@ Flyway applies any new migrations on service startup; the named volumes persist 
 ## What this Path A deploy does and does NOT cover
 
 **Covered:** public HTTPS URL, single-origin reverse proxy, only-Caddy-exposed network, Grafana
-hardened, automated nightly backup, **SSH key-only**, **ufw firewall**, **fail2ban**, **edge rate
-limiting** (Caddy `caddy-ratelimit` + Cloudflare Bot Fight Mode), one-command update.
+hardened, automated nightly backup **with optional off-box copy** (§7.2), **opt-in distributed
+tracing** (OTLP → Tempo, via `--profile monitoring`), **SSH key-only**, **ufw firewall**,
+**fail2ban**, **edge rate limiting** (Caddy `caddy-ratelimit` + Cloudflare Bot Fight Mode),
+one-command update.
 
 **Deliberately out of scope** (see `project-status.md` §6 / §10 — future work / interview talking
 points): **JWKS endpoint + JWT key rotation** (signing is already RS256 asymmetric, but there is no
-published JWKS or rotation flow), transactional outbox, managed/replicated MySQL, distributed
-tracing, Prometheus alerting, off-box/remote backup automation, and any multi-host / HA topology.
-For "production-grade", that is Path B.
+published JWKS or rotation flow), transactional outbox, managed/replicated MySQL, Prometheus
+alerting, and any multi-host / HA topology. For "production-grade", that is Path B.
 
 ## Optional: publish images to a registry (GHCR)
 
