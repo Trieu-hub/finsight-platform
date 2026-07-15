@@ -90,7 +90,20 @@ public class GatewayProxyController {
 
         URI target = buildTargetUri(route, path, request.getQueryString());
         HttpMethod method = HttpMethod.valueOf(request.getMethod());
-        byte[] body = StreamUtils.copyToByteArray(request.getInputStream());
+
+        // Enforce the max body size at the edge. A Content-Length that already exceeds the cap is
+        // rejected without reading a byte; an absent/chunked length is guarded by the bounded read
+        // below, which stops at the limit instead of buffering an unbounded body into memory.
+        long maxBody = properties.getLimits().getMaxBodyBytes();
+        if (request.getContentLengthLong() > maxBody) {
+            return error(HttpStatus.PAYLOAD_TOO_LARGE, "PAYLOAD_TOO_LARGE",
+                    "Request body exceeds the " + maxBody + "-byte limit");
+        }
+        byte[] body = readBoundedBody(request, maxBody);
+        if (body == null) {
+            return error(HttpStatus.PAYLOAD_TOO_LARGE, "PAYLOAD_TOO_LARGE",
+                    "Request body exceeds the " + maxBody + "-byte limit");
+        }
 
         RestClient.RequestBodySpec spec = client.method(method).uri(target);
         copyRequestHeaders(request, spec);
@@ -307,6 +320,28 @@ public class GatewayProxyController {
                 builder.header(name, value);
             }
         });
+    }
+
+    /**
+     * Reads the request body while enforcing {@code maxBody}. Returns the bytes, or {@code null}
+     * if the stream exceeds the cap — read incrementally and abandoned as soon as the limit is
+     * passed, so an oversized (or chunked, length-unknown) body is never buffered whole.
+     */
+    private static byte[] readBoundedBody(HttpServletRequest request, long maxBody) throws IOException {
+        try (java.io.InputStream in = request.getInputStream()) {
+            java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
+            byte[] chunk = new byte[8192];
+            long total = 0;
+            int read;
+            while ((read = in.read(chunk)) != -1) {
+                total += read;
+                if (total > maxBody) {
+                    return null; // over the cap — stop; caller maps this to 413
+                }
+                buffer.write(chunk, 0, read);
+            }
+            return buffer.toByteArray();
+        }
     }
 
     private boolean isTimeout(Throwable e) {

@@ -49,6 +49,12 @@ finsight:
       transaction-created: finsight.transactions.created
       transaction-updated: finsight.transactions.updated
       transaction-deleted: finsight.transactions.deleted
+  # Transactional outbox relay: how often to drain pending events to Kafka, the batch size per
+  # tick, and how long to wait for a broker ack before giving up (retried next tick).
+  outbox:
+    poll-interval-ms: ${OUTBOX_POLL_INTERVAL_MS:1000}
+    batch-size: ${OUTBOX_BATCH_SIZE:100}
+    send-timeout-ms: ${OUTBOX_SEND_TIMEOUT_MS:10000}
 
 management:
   endpoints:
