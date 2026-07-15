@@ -31,8 +31,11 @@ utilization (`spent_amount`) inside budget-service itself.
    events without a parseable `transactionDate` or without an `eventId`.
 4. **Idempotency inbox.** Kafka is at-least-once; each applied event's `eventId` is
    recorded in `processed_events` in the *same DB transaction* as the increment, so a
-   redelivered event is detected and skipped — never double-counted. (This is an inbox
-   dedup table, not a transactional outbox.)
+   redelivered event is detected and skipped — never double-counted. This is the *consumer*
+   side of reliable messaging; the *producer* side is now a **transactional outbox** in
+   transaction-service (the event is written to an `outbox` table in the same transaction as
+   the transaction row, then a relay publishes it to Kafka). Outbox on produce + inbox on
+   consume ⇒ effectively-once end to end, closing the former AFTER_COMMIT dual-write gap.
 5. **Atomic SQL increment.** `spent_amount = spent_amount + :amount` in a single
    `UPDATE` across all matching budgets — never read-modify-write — so concurrent
    events cannot lose updates.

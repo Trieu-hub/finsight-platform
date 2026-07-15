@@ -1,6 +1,7 @@
 package com.pm.dashboardservice.config;
 
 import com.pm.dashboardservice.logging.CorrelationIdFilter;
+import io.micrometer.observation.ObservationRegistry;
 import org.slf4j.MDC;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -27,7 +28,8 @@ import java.time.Duration;
 public class RestClientConfig {
 
     @Bean
-    RestClient.Builder upstreamRestClientBuilder(DashboardProperties properties) {
+    RestClient.Builder upstreamRestClientBuilder(DashboardProperties properties,
+                                                 ObservationRegistry observationRegistry) {
         DashboardProperties.Timeouts t = properties.getTimeouts();
 
         HttpClient httpClient = HttpClient.newBuilder()
@@ -38,8 +40,12 @@ public class RestClientConfig {
         JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(httpClient);
         factory.setReadTimeout(Duration.ofMillis(t.getReadMs()));
 
+        // Observe every upstream call so the BFF's transaction/budget fan-out joins the same
+        // distributed trace: an observed request injects the W3C traceparent, linking each
+        // upstream span under the dashboard request rather than starting fresh traces.
         return RestClient.builder()
                 .requestFactory(factory)
+                .observationRegistry(observationRegistry)
                 .requestInterceptor(correlationIdRelayInterceptor());
     }
 

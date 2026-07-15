@@ -2,6 +2,7 @@ import { Route, Routes } from 'react-router-dom'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
 import AdminRoute from './components/AdminRoute'
+import LuckyMeRoute from './components/LuckyMeRoute'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import Dashboard from './pages/Dashboard'
@@ -27,7 +28,10 @@ export default function App() {
           <Route path="/budgets" element={<Budgets />} />
           <Route path="/wallets" element={<Wallets />} />
           <Route path="/analytics" element={<Analytics />} />
-          <Route path="/luckyme" element={<LuckyMe />} />
+          {/* LuckyMe: gamers + admins only (also enforced server-side) */}
+          <Route element={<LuckyMeRoute />}>
+            <Route path="/luckyme" element={<LuckyMe />} />
+          </Route>
           {/* Admin-only (also enforced server-side) */}
           <Route element={<AdminRoute />}>
             <Route path="/admin" element={<Admin />} />

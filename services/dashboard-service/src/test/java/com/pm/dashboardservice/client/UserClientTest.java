@@ -3,6 +3,7 @@ package com.pm.dashboardservice.client;
 import com.pm.dashboardservice.client.dto.UserProfileDto;
 import com.pm.dashboardservice.config.DashboardProperties;
 import com.pm.dashboardservice.exception.UpstreamException;
+import com.pm.dashboardservice.support.TestUpstreamCalls;
 import com.pm.grpc.user.GetMyProfileRequest;
 import com.pm.grpc.user.GetMyProfileResponse;
 import com.pm.grpc.user.UserProfileServiceGrpc;
@@ -67,7 +68,8 @@ class UserClientTest {
                 .build()
                 .start();
         channel = InProcessChannelBuilder.forName(name).directExecutor().build();
-        return new UserClient(UserProfileServiceGrpc.newBlockingStub(channel), new DashboardProperties());
+        return new UserClient(UserProfileServiceGrpc.newBlockingStub(channel), new DashboardProperties(),
+                TestUpstreamCalls.create());
     }
 
     @Test

@@ -5,11 +5,13 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -30,7 +32,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "gateway.routes[0].prefix=/api/v1/budgets",
         "gateway.routes[0].uri=http://localhost:59999",
         "gateway.timeouts.connect-ms=500",
-        "gateway.timeouts.read-ms=500"
+        "gateway.timeouts.read-ms=500",
+        "gateway.limits.max-body-bytes=16"
 })
 @AutoConfigureMockMvc
 class GatewayRoutingTest {
@@ -58,5 +61,19 @@ class GatewayRoutingTest {
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.error.code").value("SERVICE_UNAVAILABLE"));
+    }
+
+    @Test
+    void oversizedBodyReturnsPayloadTooLarge() throws Exception {
+        // Route matched + valid token, but the body exceeds the 16-byte cap → 413 before the
+        // gateway ever tries to forward it (so it is NOT the dead-backend 503 above).
+        String token = JwtTestTokens.valid("finsight-auth", "finsight-api");
+        mockMvc.perform(post("/api/v1/budgets")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"note\":\"this body is well over sixteen bytes\"}"))
+                .andExpect(status().isPayloadTooLarge())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.code").value("PAYLOAD_TOO_LARGE"));
     }
 }

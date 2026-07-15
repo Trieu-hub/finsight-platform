@@ -1,5 +1,6 @@
 package com.pm.gateway.config;
 
+import io.micrometer.observation.ObservationRegistry;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -39,7 +40,7 @@ public class RestClientConfig {
     }
 
     @Bean
-    RestClient downstreamClient(GatewayProperties properties) {
+    RestClient downstreamClient(GatewayProperties properties, ObservationRegistry observationRegistry) {
         GatewayProperties.Timeouts t = properties.getTimeouts();
 
         HttpClient httpClient = HttpClient.newBuilder()
@@ -52,8 +53,14 @@ public class RestClientConfig {
         JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(httpClient);
         factory.setReadTimeout(Duration.ofMillis(t.getReadMs()));
 
+        // Observe every forwarded call. Besides the client-side metric, this is what makes
+        // distributed tracing span the gateway hop: an observed request injects the current
+        // trace context (W3C traceparent) into the outgoing headers, so the downstream service
+        // continues the SAME trace instead of starting a new one. Without this, the gateway
+        // builds its own RestClient (for the timeout config) and would drop the context.
         return RestClient.builder()
                 .requestFactory(factory)
+                .observationRegistry(observationRegistry)
                 .build();
     }
 }

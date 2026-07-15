@@ -1,0 +1,76 @@
+# Prometheus alerting rules for the FinSight stack. Evaluated by Prometheus and routed to
+# Alertmanager (both live in the opt-in `monitoring` compose profile). Thresholds are tuned
+# for a small single-box demo, not a high-load fleet — adjust `for:`/values under real traffic.
+groups:
+  - name: finsight-availability
+    rules:
+      # A scrape target has been unreachable for 2m. Covers every Spring Boot service
+      # (and Prometheus itself). `up` is synthesised by Prometheus per scrape target.
+      - alert: ServiceDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.job }} is down"
+          description: "Prometheus has failed to scrape {{ $labels.job }} ({{ $labels.instance }}) for 2m."
+
+  - name: finsight-http
+    rules:
+      # More than 5% of a service's HTTP responses are 5xx over the last 5m. The `> 0.05`
+      # naturally suppresses the no-traffic case (0/0 = NaN, and NaN > 0.05 is false).
+      - alert: HighHttpErrorRate
+        expr: |
+          sum by (job) (rate(http_server_requests_seconds_count{status=~"5.."}[5m]))
+            /
+          sum by (job) (rate(http_server_requests_seconds_count[5m]))
+            > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }} 5xx rate above 5%"
+          description: "{{ $labels.job }} has served >5% server errors for 5m (value: {{ $value | humanizePercentage }})."
+
+  - name: finsight-jvm
+    rules:
+      # JVM heap sustained above 90% of max for 10m — the box is memory-squeezed
+      # (services are capped at -Xmx384m to fit the 8GB VPS), a likely precursor to GC thrash / OOM.
+      - alert: HighJvmHeapUsage
+        expr: |
+          sum by (job) (jvm_memory_used_bytes{area="heap"})
+            /
+          sum by (job) (jvm_memory_max_bytes{area="heap"})
+            > 0.9
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }} heap above 90%"
+          description: "{{ $labels.job }} JVM heap has stayed above 90% of max for 10m (value: {{ $value | humanizePercentage }})."
+
+  - name: finsight-resilience
+    rules:
+      # A dashboard upstream circuit breaker has tripped OPEN — the BFF is short-circuiting calls
+      # to that service (transaction/budget/user). Metric from resilience4j-micrometer.
+      - alert: CircuitBreakerOpen
+        expr: resilience4j_circuitbreaker_state{state="open"} == 1
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Circuit breaker '{{ $labels.name }}' is open"
+          description: "The dashboard circuit breaker for {{ $labels.name }} has been OPEN for 1m — that upstream is being short-circuited."
+
+  - name: finsight-kafka
+    rules:
+      # A consumer group is falling behind: >1000 unconsumed records on a finsight.* topic
+      # for 10m. Same metric the consumer-lag Grafana dashboard charts.
+      - alert: KafkaConsumerLagHigh
+        expr: max by (job) (kafka_consumer_fetch_manager_records_lag{topic=~".+[.].+"}) > 1000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }} Kafka consumer lag high"
+          description: "{{ $labels.job }} has >1000 records of consumer lag for 10m (value: {{ $value }})."

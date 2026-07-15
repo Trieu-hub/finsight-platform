@@ -2,12 +2,10 @@ package com.pm.dashboardservice.client;
 
 import com.pm.dashboardservice.client.dto.UserProfileDto;
 import com.pm.dashboardservice.config.DashboardProperties;
-import com.pm.dashboardservice.exception.UpstreamException;
 import com.pm.grpc.user.GetMyProfileRequest;
 import com.pm.grpc.user.GetMyProfileResponse;
 import com.pm.grpc.user.UserProfileServiceGrpc.UserProfileServiceBlockingStub;
 import io.grpc.Metadata;
-import io.grpc.StatusRuntimeException;
 import io.grpc.stub.MetadataUtils;
 import org.springframework.stereotype.Component;
 
@@ -29,10 +27,13 @@ public class UserClient {
 
     private final UserProfileServiceBlockingStub stub;
     private final long deadlineMs;
+    private final UpstreamCalls upstreamCalls;
 
-    public UserClient(UserProfileServiceBlockingStub stub, DashboardProperties properties) {
+    public UserClient(UserProfileServiceBlockingStub stub, DashboardProperties properties,
+                      UpstreamCalls upstreamCalls) {
         this.stub = stub;
         this.deadlineMs = properties.getTimeouts().getReadMs();
+        this.upstreamCalls = upstreamCalls;
     }
 
     /**
@@ -43,15 +44,15 @@ public class UserClient {
     public UserProfileDto me(String authorization) {
         Metadata headers = new Metadata();
         headers.put(AUTHORIZATION, authorization);
-        try {
+        // Guarded by the same circuit breaker + retry as the REST upstreams (UpstreamCalls maps a
+        // transient StatusRuntimeException / a fail-fast open breaker to UpstreamException → 502).
+        return upstreamCalls.call("user-service", () -> {
             GetMyProfileResponse response = stub
                     .withInterceptors(MetadataUtils.newAttachHeadersInterceptor(headers))
                     .withDeadlineAfter(deadlineMs, TimeUnit.MILLISECONDS)
                     .getMyProfile(GetMyProfileRequest.getDefaultInstance());
             return response.getFound() ? toDto(response) : null;
-        } catch (StatusRuntimeException e) {
-            throw new UpstreamException("user-service", e);
-        }
+        });
     }
 
     private static UserProfileDto toDto(GetMyProfileResponse r) {

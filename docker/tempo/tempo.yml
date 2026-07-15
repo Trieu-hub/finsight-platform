@@ -1,0 +1,32 @@
+# Grafana Tempo — single-binary, local-filesystem trace store for the dev/monitoring stack.
+# Receives OTLP over HTTP (4318, what the services export to) and gRPC (4317); Grafana queries
+# it over 3200. Local storage is a demo choice — a real deployment points the backend at object
+# storage (S3/GCS). Kept intentionally minimal: no metrics-generator, no multitenancy.
+server:
+  http_listen_port: 3200
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        http:
+          endpoint: 0.0.0.0:4318
+        grpc:
+          endpoint: 0.0.0.0:4317
+
+ingester:
+  # Flush blocks quickly so traces show up in Grafana within a minute on a low-traffic demo.
+  max_block_duration: 5m
+
+compactor:
+  compaction:
+    # Keep only a day of traces on the box; this is a demo, not an audit store.
+    block_retention: 24h
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/blocks
+    wal:
+      path: /var/tempo/wal

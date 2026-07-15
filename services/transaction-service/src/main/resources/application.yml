@@ -49,6 +49,12 @@ finsight:
       transaction-created: finsight.transactions.created
       transaction-updated: finsight.transactions.updated
       transaction-deleted: finsight.transactions.deleted
+  # Transactional outbox relay: how often to drain pending events to Kafka, the batch size per
+  # tick, and how long to wait for a broker ack before giving up (retried next tick).
+  outbox:
+    poll-interval-ms: ${OUTBOX_POLL_INTERVAL_MS:1000}
+    batch-size: ${OUTBOX_BATCH_SIZE:100}
+    send-timeout-ms: ${OUTBOX_SEND_TIMEOUT_MS:10000}
 
 management:
   endpoints:
@@ -64,6 +70,18 @@ management:
       # histogram_quantile(); without buckets only averages are possible.
       percentiles-histogram:
         http.server.requests: true
+  # Distributed tracing → OTLP/HTTP → Tempo. Off by default (sampling 0) so a bare run or a
+  # prod stack without the monitoring profile exports nothing and stays quiet; set
+  # TRACING_SAMPLING_PROBABILITY=1.0 to record. The endpoint is the full OTLP traces signal URL
+  # (…/v1/traces, not the base) — localhost for a bare run, overridden to Tempo in docker-compose.
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:0}
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          endpoint: ${OTLP_TRACING_ENDPOINT:http://localhost:4318/v1/traces}
   endpoint:
     health:
       show-details: never

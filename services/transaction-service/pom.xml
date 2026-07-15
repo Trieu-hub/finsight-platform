@@ -91,6 +91,17 @@
             <version>3.0.3</version>
         </dependency>
 
+        <!-- Distributed tracing. Boot 4 unified tracing under one starter: it pulls the
+             Micrometer→OpenTelemetry bridge (each Observation — HTTP server/client, JDBC, Kafka —
+             becomes an OTel span), the OTel SDK, and the OTLP/HTTP exporter. Spans ship to Tempo
+             and trace context (traceparent) propagates across the gateway and Kafka, so one user
+             request is a single trace end-to-end. Export activates once
+             management.opentelemetry.tracing.export.otlp.endpoint is set (see application.yml). -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-opentelemetry</artifactId>
+        </dependency>
+
         <!-- Flyway: the Boot starter provides Flyway autoconfiguration + flyway-core;
              flyway-mysql adds MySQL support (required on Flyway 10+). -->
         <dependency>

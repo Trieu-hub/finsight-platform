@@ -4,7 +4,7 @@ import { errorMessage } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import type { AdminUser } from '../api/types'
 
-const ROLES = ['ROLE_USER', 'ROLE_ANALYST', 'ROLE_ADMIN']
+const ROLES = ['ROLE_USER', 'ROLE_GAMER', 'ROLE_ANALYST', 'ROLE_ADMIN']
 
 export default function Admin() {
   const { email: myEmail } = useAuth()

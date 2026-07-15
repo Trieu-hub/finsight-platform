@@ -6,6 +6,17 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
+# Alerting rules are evaluated every `evaluation_interval`; firing alerts are pushed to
+# Alertmanager (started with the same `monitoring` profile). Both are opt-in — prod runs
+# without the profile, so neither Prometheus nor Alertmanager is present there by default.
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
 scrape_configs:
   - job_name: prometheus
     static_configs:

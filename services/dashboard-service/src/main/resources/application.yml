@@ -15,6 +15,17 @@ dashboard:
   timeouts:
     connect-ms: ${DASHBOARD_CONNECT_TIMEOUT_MS:2000}
     read-ms: ${DASHBOARD_READ_TIMEOUT_MS:5000}
+  # Circuit breaker + retry (Resilience4j) around the upstream fan-out — one breaker/retry per
+  # upstream service. Defaults are code-side (DashboardProperties.Resilience); override here or
+  # via env if a deployment needs different sensitivity.
+  resilience:
+    failure-rate-threshold: ${DASHBOARD_CB_FAILURE_RATE:50}
+    sliding-window-size: ${DASHBOARD_CB_WINDOW:10}
+    minimum-number-of-calls: ${DASHBOARD_CB_MIN_CALLS:5}
+    wait-duration-in-open-state: ${DASHBOARD_CB_OPEN_WAIT:10s}
+    permitted-calls-in-half-open-state: ${DASHBOARD_CB_HALF_OPEN_CALLS:3}
+    max-attempts: ${DASHBOARD_RETRY_MAX_ATTEMPTS:2}
+    retry-wait-duration: ${DASHBOARD_RETRY_WAIT:200ms}
 
 # gRPC client channel for user-service's internal UserProfileService. Plaintext on the
 # private network (no TLS between internal services); the deadline is applied per call
@@ -25,6 +36,17 @@ spring.grpc.client.channels:
     negotiation-type: plaintext
 
 management:
+  # Distributed tracing → OTLP → Tempo. Off by default (sampling 0); enable with
+  # TRACING_SAMPLING_PROBABILITY=1.0 and the monitoring profile. The endpoint is the full
+  # OTLP traces signal URL (…/v1/traces), overridden to the Tempo container in docker-compose.
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:0}
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          endpoint: ${OTLP_TRACING_ENDPOINT:http://localhost:4318/v1/traces}
   endpoints:
     web:
       exposure:

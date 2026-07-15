@@ -29,6 +29,7 @@ public class GatewayProperties {
     private List<PublicRoute> publicRoutes = new ArrayList<>();
 
     private Timeouts timeouts = new Timeouts();
+    private Limits limits = new Limits();
 
     @Getter
     @Setter
@@ -55,5 +56,16 @@ public class GatewayProperties {
         private long connectMs = 2000;
         /** Read timeout waiting on a downstream response (ms). */
         private long readMs = 10000;
+    }
+
+    @Getter
+    @Setter
+    public static class Limits {
+        /**
+         * Maximum request body (bytes) the gateway will buffer and forward; a larger body is
+         * rejected with 413 before it is read whole. This API is JSON-only (no file uploads),
+         * so 2 MiB is generous; it caps a trivial memory-exhaustion vector at the edge.
+         */
+        private long maxBodyBytes = 2 * 1024 * 1024;
     }
 }

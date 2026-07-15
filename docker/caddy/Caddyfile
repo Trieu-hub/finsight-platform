@@ -19,12 +19,13 @@
 
 	encode gzip zstd
 
-	# Edge rate limiting on the auth endpoints — stops bulk registration / login
-	# brute-force (a load test once created ~84k accounts here). Keyed on the REAL client IP
-	# via Cloudflare's CF-Connecting-IP header, because we sit behind Cloudflare's proxy and
-	# {remote_host} would otherwise be a shared Cloudflare address (throttling everyone as one).
-	# 10 requests / minute / IP; excess gets HTTP 429. Humans never hit this; scripts do.
-	@auth path /api/v1/auth/register /api/v1/auth/login
+	# Edge rate limiting on the token-minting auth endpoints — stops bulk registration / login
+	# brute-force (a load test once created ~84k accounts here) and abuse of /refresh, which also
+	# issues fresh access tokens. Keyed on the REAL client IP via Cloudflare's CF-Connecting-IP
+	# header, because we sit behind Cloudflare's proxy and {remote_host} would otherwise be a
+	# shared Cloudflare address (throttling everyone as one). 10 requests / minute / IP; excess
+	# gets HTTP 429. Humans never hit this; scripts do.
+	@auth path /api/v1/auth/register /api/v1/auth/login /api/v1/auth/refresh
 	rate_limit @auth {
 		zone auth {
 			key    {http.request.header.CF-Connecting-IP}

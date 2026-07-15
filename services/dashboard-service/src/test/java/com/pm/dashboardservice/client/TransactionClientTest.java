@@ -3,6 +3,7 @@ package com.pm.dashboardservice.client;
 import com.pm.dashboardservice.client.dto.TrendPointDto;
 import com.pm.dashboardservice.config.DashboardProperties;
 import com.pm.dashboardservice.exception.UpstreamException;
+import com.pm.dashboardservice.support.TestUpstreamCalls;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
@@ -27,7 +28,7 @@ class TransactionClientTest {
         serverOut[0] = MockRestServiceServer.bindTo(builder).build();
         DashboardProperties props = new DashboardProperties();
         props.getServices().setTransactionUri("http://transaction-service:8083");
-        return new TransactionClient(builder, props);
+        return new TransactionClient(builder, props, TestUpstreamCalls.create());
     }
 
     @Test

@@ -38,6 +38,10 @@ public class SecurityConfig {
                 .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
                 .requestMatchers("/actuator/prometheus").permitAll()
                 .requestMatchers("/v3/api-docs", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                // LuckyMe mini-games: only ROLE_GAMER and ROLE_ADMIN may play. Everyone else is
+                // denied at the API too, not just hidden in the UI. Authorities carry the role name
+                // (e.g. "ROLE_GAMER"), so hasAnyRole("GAMER","ADMIN") matches.
+                .requestMatchers("/api/v1/game/**").hasAnyRole("GAMER", "ADMIN")
                 .anyRequest().authenticated())
             .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
