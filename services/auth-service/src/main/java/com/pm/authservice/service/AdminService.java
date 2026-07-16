@@ -19,8 +19,9 @@ import java.util.List;
  * assumes the caller is an authenticated administrator.
  *
  * <p>Guard rails: an admin may not change the role of, disable, or delete their OWN
- * account (prevents self-lockout). Role/status changes revoke the target's refresh token
- * so the change takes effect on their next login instead of lingering in a stale JWT.
+ * account (prevents self-lockout). Role/status changes revoke both the target's refresh
+ * token and every access token they already hold, so the change takes effect at once
+ * rather than lingering in a stale JWT until it expires.
  */
 @Service
 public class AdminService {
@@ -28,15 +29,18 @@ public class AdminService {
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final RefreshTokenService refreshTokenService;
+    private final TokenRevocationService tokenRevocationService;
     private final AuditLog auditLog;
 
     public AdminService(UserRepository userRepository,
                         RoleRepository roleRepository,
                         RefreshTokenService refreshTokenService,
+                        TokenRevocationService tokenRevocationService,
                         AuditLog auditLog) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.refreshTokenService = refreshTokenService;
+        this.tokenRevocationService = tokenRevocationService;
         this.auditLog = auditLog;
     }
 
@@ -55,8 +59,10 @@ public class AdminService {
         user.setRole(role);
         userRepository.save(user);
 
-        // Force the user to re-authenticate so their next JWT carries the new role.
+        // Force the user to re-authenticate so their next JWT carries the new role, and drop
+        // the tokens still carrying the old one — a demotion must not wait out the access TTL.
         refreshTokenService.revokeByUser(id);
+        tokenRevocationService.revokeAllForUser(id);
         auditLog.record("UPDATE_ROLE", "user", id, callerEmail, target.name());
         return toResponse(user);
     }
@@ -69,7 +75,9 @@ public class AdminService {
         user.setEnabled(enabled);
         userRepository.save(user);
         if (!enabled) {
-            refreshTokenService.revokeByUser(id); // kill the disabled user's active session
+            // Kill the disabled user's active session, tokens already issued included.
+            refreshTokenService.revokeByUser(id);
+            tokenRevocationService.revokeAllForUser(id);
         }
         auditLog.record("SET_ENABLED", "user", id, callerEmail, enabled);
         return toResponse(user);
@@ -81,6 +89,7 @@ public class AdminService {
         guardNotSelf(user, callerEmail);
 
         refreshTokenService.revokeByUser(id);
+        tokenRevocationService.revokeAllForUser(id);
         userRepository.delete(user);
         auditLog.record("DELETE", "user", id, callerEmail, null);
     }

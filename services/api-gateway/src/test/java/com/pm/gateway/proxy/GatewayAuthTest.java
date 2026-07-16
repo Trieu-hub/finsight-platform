@@ -1,5 +1,6 @@
 package com.pm.gateway.proxy;
 
+import com.pm.gateway.security.TokenRevocationChecker;
 import com.pm.gateway.support.JwtTestTokens;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -7,8 +8,11 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -37,6 +41,14 @@ class GatewayAuthTest {
 
     private static final String ISS = "finsight-auth";
     private static final String AUD = "finsight-api";
+
+    /**
+     * Stands in for the Redis-backed denylist, which has no server here. Mockito's default
+     * {@code false} means "not revoked", so every other test in this class keeps exercising
+     * the pre-existing outcomes untouched; {@link #revokedTokenIsRejected()} stubs it true.
+     */
+    @MockitoBean
+    private TokenRevocationChecker revocationChecker;
 
     @DynamicPropertySource
     static void jwtKey(DynamicPropertyRegistry registry) {
@@ -100,6 +112,21 @@ class GatewayAuthTest {
         mockMvc.perform(get("/api/v1/budgets").header("Authorization", "Bearer " + token))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("TOKEN_INVALID"));
+    }
+
+    @Test
+    void revokedTokenIsRejected() throws Exception {
+        // A fully valid token — right signature, alg, issuer, audience, not expired — that
+        // auth-service has since revoked (logout / ban / role change). It must be rejected at
+        // the edge and never reach the forward, which is what separates this from
+        // protectedRoute_validToken_passesAuthAndForwards below (same token, 503).
+        when(revocationChecker.isRevoked(any())).thenReturn(true);
+
+        String token = JwtTestTokens.valid(ISS, AUD);
+        mockMvc.perform(get("/api/v1/budgets").header("Authorization", "Bearer " + token))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.code").value("TOKEN_REVOKED"));
     }
 
     // ── Passed the edge (reaches forward → 503 against the dead backend) ─────────

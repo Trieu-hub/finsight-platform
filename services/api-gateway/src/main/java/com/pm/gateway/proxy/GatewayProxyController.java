@@ -255,6 +255,8 @@ public class GatewayProxyController {
                     "Access token has expired");
             case INVALID -> error(HttpStatus.UNAUTHORIZED, "TOKEN_INVALID",
                     "Access token is invalid");
+            case REVOKED -> error(HttpStatus.UNAUTHORIZED, "TOKEN_REVOKED",
+                    "Access token has been revoked");
         };
     }
 

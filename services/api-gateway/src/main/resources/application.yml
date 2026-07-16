@@ -4,6 +4,15 @@ server:
 spring:
   application:
     name: api-gateway
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      # Same fail-fast budget as auth-service. This one sits on the hot path of every
+      # authenticated request, so a hung Redis must surface as a fast error the revocation
+      # check can fail open on — never as a stalled request thread.
+      timeout: 2s
+      connect-timeout: 2s
 
 # Routing-only edge (Phase 1). Targets default to localhost for local runs and are
 # overridden to compose service hostnames via env vars in docker-compose.yml.
@@ -86,5 +95,13 @@ management:
       # infra, as required.
       probes:
         enabled: true
-  # Gateway readiness must NOT depend on any external datastore. No Redis health
-  # contributor exists in this phase; keep it that way.
+  # Gateway readiness must NOT depend on any external datastore. Redis is now on the
+  # classpath (revocation denylist), which would otherwise auto-register a health
+  # contributor and drag Redis into /actuator/health — so switch it off explicitly.
+  # The revocation check fails open, meaning the gateway keeps serving correctly while
+  # Redis is down; reporting itself unhealthy would contradict that and pull a working
+  # node out of rotation. Redis outages surface via the
+  # finsight.gateway.revocation.check.failed counter instead.
+  health:
+    redis:
+      enabled: false

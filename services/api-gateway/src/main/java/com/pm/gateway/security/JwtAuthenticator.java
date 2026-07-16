@@ -32,6 +32,8 @@ import java.util.Set;
  *   <li>{@link Outcome#EXPIRED} — signature valid but {@code exp} is in the past.</li>
  *   <li>{@link Outcome#INVALID} — bad signature, wrong {@code alg}, failed
  *       {@code iss}/{@code aud}, or otherwise unparseable.</li>
+ *   <li>{@link Outcome#REVOKED} — token is valid but was revoked (logout / ban / role change);
+ *       see {@link TokenRevocationChecker}.</li>
  * </ul>
  */
 @Component
@@ -41,16 +43,18 @@ public class JwtAuthenticator {
     private static final String REQUIRED_ALG = "RS256";
     private static final String BEARER_PREFIX = "Bearer ";
 
-    public enum Outcome { AUTHENTICATED, MISSING, EXPIRED, INVALID }
+    public enum Outcome { AUTHENTICATED, MISSING, EXPIRED, INVALID, REVOKED }
 
     private final PublicKey publicKey;
     private final String expectedIssuer;
     private final String expectedAudience;
+    private final TokenRevocationChecker revocationChecker;
 
-    public JwtAuthenticator(JwtProperties properties) {
+    public JwtAuthenticator(JwtProperties properties, TokenRevocationChecker revocationChecker) {
         this.publicKey = parsePublicKey(properties.getPublicKey());
         this.expectedIssuer = properties.getIssuer();
         this.expectedAudience = properties.getAudience();
+        this.revocationChecker = revocationChecker;
     }
 
     /**
@@ -86,6 +90,13 @@ public class JwtAuthenticator {
             Set<String> audience = claims.getAudience();
             if (audience == null || !audience.contains(expectedAudience)) {
                 return Outcome.INVALID;
+            }
+
+            // Last: the token is authentic, but may have been revoked since it was minted.
+            // Checked only once the cheap, local checks pass, so a bogus token never costs a
+            // Redis round-trip.
+            if (revocationChecker.isRevoked(claims)) {
+                return Outcome.REVOKED;
             }
             return Outcome.AUTHENTICATED;
 
