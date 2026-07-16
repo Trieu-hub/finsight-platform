@@ -434,6 +434,12 @@ services:
       # shared HMAC secret auth-service signs with (issuer/audience default to the
       # minted values). See docs/ADR-0002.
       JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?set JWT_PUBLIC_KEY in .env}
+      # Read-only access to the access-token revocation denylist auth-service writes, so
+      # logout / ban / role change take effect at the edge immediately instead of waiting out
+      # the token TTL. The check fails open, so this is NOT a hard dependency: no depends_on
+      # on redis, and Redis stays out of the gateway's readiness probe.
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
       # Native Spring Boot 4 structured logging: emit ECS-formatted JSON to stdout for
       # log aggregation (ELK/OpenSearch/Loki-ready). Bound to logging.structured.format.console
       # via relaxed binding; service.name comes from spring.application.name and MDC

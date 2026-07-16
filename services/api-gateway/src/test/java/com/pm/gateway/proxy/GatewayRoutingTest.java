@@ -1,5 +1,6 @@
 package com.pm.gateway.proxy;
 
+import com.pm.gateway.security.TokenRevocationChecker;
 import com.pm.gateway.support.JwtTestTokens;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -8,6 +9,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -37,6 +39,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 })
 @AutoConfigureMockMvc
 class GatewayRoutingTest {
+
+    /** No Redis here; the default "not revoked" keeps these routing assertions about routing. */
+    @MockitoBean
+    private TokenRevocationChecker revocationChecker;
 
     @DynamicPropertySource
     static void jwtKey(DynamicPropertyRegistry registry) {

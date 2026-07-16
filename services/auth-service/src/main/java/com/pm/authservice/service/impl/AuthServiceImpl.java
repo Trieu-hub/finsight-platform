@@ -18,6 +18,7 @@ import com.pm.authservice.security.jwt.JwtService;
 import com.pm.authservice.service.AuthService;
 import com.pm.authservice.service.LoginAttemptService;
 import com.pm.authservice.service.RefreshTokenService;
+import com.pm.authservice.service.TokenRevocationService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +29,7 @@ public class AuthServiceImpl implements AuthService {
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final RefreshTokenService refreshTokenService;
+    private final TokenRevocationService tokenRevocationService;
     private final LoginAttemptService loginAttemptService;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
@@ -35,12 +37,14 @@ public class AuthServiceImpl implements AuthService {
     public AuthServiceImpl(UserRepository userRepository,
                            RoleRepository roleRepository,
                            RefreshTokenService refreshTokenService,
+                           TokenRevocationService tokenRevocationService,
                            LoginAttemptService loginAttemptService,
                            PasswordEncoder passwordEncoder,
                            JwtService jwtService) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.refreshTokenService = refreshTokenService;
+        this.tokenRevocationService = tokenRevocationService;
         this.loginAttemptService = loginAttemptService;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
@@ -123,7 +127,12 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public AuthResponse logout(RefreshTokenRequest request) {
         refreshTokenService.findUserIdByToken(request.getRefreshToken())
-                .ifPresent(refreshTokenService::revokeByUser);
+                .ifPresent(userId -> {
+                    refreshTokenService.revokeByUser(userId);
+                    // Also kill the access token already in the caller's hands; without this,
+                    // "logged out" would remain a client-side fiction for its full TTL.
+                    tokenRevocationService.revokeAllForUser(userId);
+                });
 
         return new AuthResponse(true, "Logged out successfully");
     }

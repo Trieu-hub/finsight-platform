@@ -80,7 +80,9 @@ Gateway codes are edge-namespaced and never collide with domain codes
 | 401 | `UNAUTHENTICATED` | no bearer token / malformed `Authorization` header | Phase 2 |
 | 401 | `TOKEN_INVALID` | bad signature, wrong `alg`, failed `iss`/`aud`, malformed claims | Phase 2 |
 | 401 | `TOKEN_EXPIRED` | signature valid but `exp` is in the past | Phase 2 |
+| 401 | `TOKEN_REVOKED` | signature valid and unexpired, but revoked (logout / ban / role change) | **live** |
 | 404 | `ROUTE_NOT_FOUND` | no route prefix matched | **Phase 1 (live)** |
+| 413 | `PAYLOAD_TOO_LARGE` | request body over `gateway.limits.max-body-bytes` | **live** |
 | 503 | `SERVICE_UNAVAILABLE` | downstream unreachable (connection refused) | **Phase 1 (live)** |
 | 504 | `SERVICE_TIMEOUT` | downstream read timeout | **Phase 1 (live)** |
 
@@ -88,9 +90,41 @@ Notes:
 - **`TOKEN_EXPIRED` is a distinct code** from `TOKEN_INVALID` (expiry is the common,
   client-actionable case → triggers a token refresh; other failures are not). This is
   the deliberate refinement of ADR-0001, which had folded expiry into `TOKEN_INVALID`.
+- **`TOKEN_REVOKED` is now live**, reversing this ADR's original deferral to V2. It is
+  distinct from `TOKEN_EXPIRED` because the client action differs: expiry is refreshable,
+  revocation is not — the client must re-authenticate. See §5a.
 - This table is the **authentication + routing** code set. `RATE_LIMITED` (429, Phase 5)
-  remains frozen under **ADR-0001 §5** and is unaffected. `TOKEN_REVOKED` remains
-  intentionally absent (deferred to V2).
+  remains frozen under **ADR-0001 §5** and is unaffected.
+
+## 5a. Access-token revocation
+
+A signed JWT proves only that auth-service minted it — not that it is still meant to work.
+Until this was added, logout and admin ban/role-change revoked the *refresh* token only, so
+the access token already in the user's hands kept working for the rest of its TTL (15 min).
+
+- **auth-service writes** a per-user cutoff to Redis on logout, ban, role change and delete:
+  `revoked:user:{userId} -> cutoff` (epoch **seconds**), TTL = the access-token lifetime.
+- **api-gateway reads** it and rejects any token with `iat < cutoff` → `401 TOKEN_REVOKED`.
+
+Design points, deliberate:
+
+- **Keyed per user, not per token.** Logout, ban and role change all mean "none of this
+  user's tokens are good any more", so one key kills every outstanding token at once. No
+  `jti`, and therefore **no change to the token contract** — §1–§3 are untouched and
+  downstream services need no change, preserving the invariant that the gateway is removable.
+- **The cutoff is rounded up to the next second.** `iat` has one-second resolution, so a
+  token minted earlier in the same second as the revocation would otherwise survive. Rounding
+  up errs toward revoking a second too much: the worst case is a user who logs in within the
+  same second as logging out and must log in again, versus a revoked token staying valid for
+  its full lifetime.
+- **Enforced at the gateway only**, because it is the single entry point and downstream
+  services are not exposed. This is the same additive-edge-check posture as §5's other codes.
+- **The check fails open.** If Redis is unreachable the request proceeds, and the failure is
+  logged and counted (`finsight.gateway.revocation.check.failed`, alertable). Revocation is a
+  second layer over an already-verified, short-lived token, so a Redis outage must not take
+  the API down; the accepted cost is that revocation does not bite while Redis is down.
+  Consequently Redis is kept **out of the gateway's readiness probe** — a gateway that serves
+  correctly on the fail-open path must not report itself unready.
 
 ## 6. Identity Headers (gateway-injected, informational only)
 
@@ -123,6 +157,7 @@ Untrusted inbound client-supplied correlation hints are handled per **ADR-0001 �
 | §4 public routes | now | Phase 2 (deny-by-default auth) |
 | §5 auth error codes (`UNAUTHENTICATED`, `TOKEN_INVALID`, `TOKEN_EXPIRED`) | now | Phase 2 |
 | §5 routing error codes (`ROUTE_NOT_FOUND`, `SERVICE_UNAVAILABLE`, `SERVICE_TIMEOUT`) | — | **live (Phase 1)** |
+| §5a `TOKEN_REVOKED` + revocation denylist | — | **live** (was deferred to V2) |
 | §6 identity headers | now | Phase 4 |
 | §7 `X-Request-Id` | now | Phase 3 |
 
