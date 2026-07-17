@@ -14,13 +14,15 @@ call each other at runtime. Progress composition is a future dashboard/BFF conce
 
 ```bash
 # requires a running MySQL and: CREATE DATABASE budget_db;
-JWT_SECRET=<same secret as auth-service> \
+JWT_PUBLIC_KEY=<auth-service's public key> \
 DB_URL=jdbc:mysql://localhost:3306/budget_db DB_USERNAME=root DB_PASSWORD= \
 mvnw.cmd spring-boot:run
 ```
 
-`JWT_SECRET` is required (no default). Tokens are validated locally with the secret
-shared with `auth-service`.
+`JWT_PUBLIC_KEY` is required (no default). Tokens are validated locally with
+`auth-service`'s RS256 public key — this service verifies only and cannot mint tokens.
+Set `JWT_JWKS_URI=http://localhost:8081/.well-known/jwks.json` to pick up key rotations
+without a restart.
 
 ## Test
 

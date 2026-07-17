@@ -9,7 +9,7 @@ transactions, never calling another service at request time.
 - **Port:** 8088
 - **Owns:** `analytics_db` (`monthly_category_rollup`, `processed_events`)
 - **Consumes:** `finsight.transactions.created` (owned by transaction-service)
-- **Auth:** Bearer JWT, validated locally with the shared HMAC secret; every figure is
+- **Auth:** Bearer JWT, validated locally with auth-service's RS256 public key; every figure is
   scoped to the caller's `userId`.
 
 ## How it works
@@ -72,7 +72,7 @@ Part of the platform stack:
 docker compose up -d --build analytics-service
 ```
 
-Locally with Maven (needs MySQL + Kafka + `JWT_SECRET`):
+Locally with Maven (needs MySQL + Kafka + `JWT_PUBLIC_KEY`):
 
 ```bash
 mvnw.cmd spring-boot:run

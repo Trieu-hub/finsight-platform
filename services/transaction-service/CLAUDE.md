@@ -28,10 +28,11 @@ mvnw.cmd package                                # build jar
 mvnw.cmd spring-boot:run                        # run locally (needs env below)
 ```
 
-Running locally requires these env vars (DB defaults exist; `JWT_SECRET` does not):
+Running locally requires these env vars (DB defaults exist; `JWT_PUBLIC_KEY` does not):
 
 ```
-JWT_SECRET=<same secret as auth-service>   # required, no default — app won't start without it
+JWT_PUBLIC_KEY=<auth-service's public key>   # required, no default — app won't start without it
+JWT_JWKS_URI=http://localhost:8081/.well-known/jwks.json   # optional; enables key rotation
 DB_URL=jdbc:mysql://localhost:3306/transaction_db
 DB_USERNAME=root
 DB_PASSWORD=
@@ -57,8 +58,10 @@ Layering is strict and one-directional: `controller → service → repository`.
 ### Security / JWT
 - `JwtAuthenticationFilter` (a `OncePerRequestFilter`, acts as the auth guard)
   validates the bearer token on every request and populates the SecurityContext.
-- Tokens are validated **locally** with the shared HMAC `JWT_SECRET`
-  (`JwtService`). Never add a network call to `auth-service` per request.
+- Tokens are validated **locally** with auth-service's RS256 public key
+  (`JwtService`). Never add a network call to `auth-service` per request — the
+  JWK Set lookup behind `JwtKeyResolver` is cached and only refetches on an
+  unknown `kid`.
 - `SecurityConfig` is stateless (no sessions, CSRF disabled). Only
   `/actuator/health` and `/actuator/info` are public; everything else requires a
   valid token.

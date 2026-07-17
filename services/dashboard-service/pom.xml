@@ -48,7 +48,7 @@
             <artifactId>spring-boot-starter-webmvc</artifactId>
         </dependency>
 
-        <!-- Security: validates the JWT locally (same shared secret), like every service. -->
+        <!-- Security: validates the JWT locally (auth-service's public key), like every service. -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>

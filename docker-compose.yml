@@ -5,9 +5,11 @@
 #     on a single shared MySQL 8 instance. (user-service was consolidated off its own
 #     PostgreSQL instance onto MySQL to match the rest of the platform.) dashboard-service
 #     (a BFF) and api-gateway own no database.
-#   * The business services do NOT call each other at runtime. The only coupling is the
-#     shared HMAC JWT secret: auth-service issues tokens; user/transaction/budget — and the
-#     dashboard BFF and the edge gateway — validate them locally with the same secret.
+#   * The business services do NOT call each other at runtime. The only coupling is the RS256
+#     JWT trust anchor: auth-service alone signs, with a private key no other service holds;
+#     user/transaction/budget — and the dashboard BFF and the edge gateway — validate locally
+#     with the public key, discovered by kid from auth-service's JWK Set (cached, not per
+#     request; a static JWT_PUBLIC_KEY bootstraps and covers the set being unreachable).
 #     (risk-service is an internal event consumer with no JWT stack; dashboard-service is the
 #     one service that fans out to user/transaction/budget over HTTP, relaying the caller's
 #     token.) Every DB-backed service still depends only on its own datastore.
@@ -422,7 +424,7 @@ services:
 
   # API Gateway — V1 Phase 2 (routing + edge JWT authentication).
   # Forwards by path prefix to the four services over the compose network, and now
-  # validates the access token at the edge (signature/HS512/issuer/audience) on every
+  # validates the access token at the edge (signature/RS256/issuer/audience) on every
   # non-public route, forwarding the bearer token downstream. The backend services
   # still publish their host ports and still validate tokens themselves; the perimeter
   # cutover (un-publishing them) is a later phase, keeping the gateway removable.
@@ -459,8 +461,8 @@ services:
       DASHBOARD_SERVICE_URI: http://dashboard-service:8085
       NOTIFICATION_SERVICE_URI: http://notification-service:8087
       ANALYTICS_SERVICE_URI: http://analytics-service:8088
-      # Phase 2: the gateway validates the access token at the edge with the same
-      # shared HMAC secret auth-service signs with (issuer/audience default to the
+      # Phase 2: the gateway validates the access token at the edge with the public key
+      # matching the private key auth-service signs with (issuer/audience default to the
       # minted values). See docs/ADR-0002.
       JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?set JWT_PUBLIC_KEY in .env}
       # Discover signing keys from auth-service, so a key rotation needs no restart here.

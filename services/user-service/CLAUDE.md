@@ -26,7 +26,8 @@ Environment variables required before running:
 DB_URL=jdbc:mysql://localhost:3306/user_db
 DB_USERNAME=root
 DB_PASSWORD=<secret>
-JWT_SECRET=<same secret as auth-service>
+JWT_PUBLIC_KEY=<auth-service's public key>                 # verification only
+JWT_JWKS_URI=http://localhost:8081/.well-known/jwks.json   # optional; enables key rotation
 ```
 
 The service starts on port **8082**.
@@ -76,7 +77,7 @@ HTTP Request
 | `email`  | String | `extractEmail()`    |
 | `role`   | String | `extractRole()`     |
 
-Both services must share the same `JWT_SECRET`. If the claim names change in `auth-service`, update `JwtService` accordingly.
+`JWT_PUBLIC_KEY` here must be the pair of `JWT_PRIVATE_KEY` in auth-service — this service verifies only and cannot mint tokens. If the claim names change in `auth-service`, update `JwtService` accordingly.
 
 ## Adding New Endpoints
 

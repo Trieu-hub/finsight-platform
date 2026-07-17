@@ -4,7 +4,7 @@
 
 - **`updateProfile` cannot clear fields to null** — all update guards are `if (field != null)`. A client cannot intentionally remove a phone number or avatar URL. Requires `Optional<T>` fields or JSON Merge Patch (`PATCH` endpoint) to distinguish "absent" from "null".
 - **No JWT expiry validation beyond signature** — `JwtService.validateToken()` relies on JJWT throwing on expiry, but there is no explicit clock skew tolerance or max-age enforcement. Consider adding `JwtParserBuilder.clockSkewSeconds()`.
-- **JWT secret minimum-length is not enforced at startup** — if `JWT_SECRET` is set but shorter than 32 bytes, JJWT will reject it at first token validation rather than at startup. Add a `@PostConstruct` guard in `JwtService`.
+- ~~**JWT secret minimum-length is not enforced at startup**~~ — obsolete: the shared HMAC secret is gone. `JWT_SECRET` was replaced by an RS256 public key, which `JwtKeyResolver` parses in its constructor, so a malformed key now fails at startup rather than at first validation.
 
 ## Refactoring Opportunities
 

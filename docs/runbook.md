@@ -37,12 +37,13 @@ because it has no auth and must stay reachable only on the compose network (SE-2
 2. **Fill in `.env`.** All values are required — compose uses `${VAR:?...}` and refuses to start
    if any are missing. Generate strong values:
    ```bash
-   # JWT_SECRET must be >= 64 bytes (HS512) or every service fails to start
-   openssl rand -base64 64 | tr -d '\n'      # -> JWT_SECRET
+   # RS256 keypair — prints JWT_PRIVATE_KEY and JWT_PUBLIC_KEY; paste both into .env
+   ./scripts/gen-jwt-keys.sh
    openssl rand -base64 24 | tr -d '/+=\n'   # -> each *_DB_PASSWORD and MYSQL_ROOT_PASSWORD
    ```
-   Required keys: `JWT_SECRET`, `MYSQL_ROOT_PASSWORD`, `AUTH_DB_PASSWORD`, `USER_DB_PASSWORD`,
-   `TRANSACTION_DB_PASSWORD`, `BUDGET_DB_PASSWORD`, `RISK_DB_PASSWORD`.
+   Required keys: `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `MYSQL_ROOT_PASSWORD`, `AUTH_DB_PASSWORD`,
+   `USER_DB_PASSWORD`, `TRANSACTION_DB_PASSWORD`, `BUDGET_DB_PASSWORD`, `RISK_DB_PASSWORD`.
+   `JWT_PREVIOUS_PUBLIC_KEYS` stays empty except while rotating the signing key.
 3. **Validate the compose file** (catches missing env early):
    ```bash
    docker compose config >/dev/null && echo OK
@@ -234,8 +235,8 @@ docker compose exec kafka /opt/kafka/bin/kafka-consumer-groups.sh \
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `compose up` aborts: `set JWT_SECRET in .env` (or similar) | a required `.env` key is empty | fill every key in `.env`; re-run `docker compose config` |
-| A service restarts / readiness stays DOWN | `JWT_SECRET` shorter than 64 bytes (HS512), or DB/Kafka not yet healthy | use a ≥64-byte secret; check `docker compose logs <svc>` and that `mysql`/`kafka` are healthy |
+| `compose up` aborts: `set JWT_PRIVATE_KEY in .env` (or similar) | a required `.env` key is empty | fill every key in `.env`; re-run `docker compose config` |
+| A service restarts / readiness stays DOWN | `JWT_PUBLIC_KEY` malformed or not the pair of `JWT_PRIVATE_KEY`, or DB/Kafka not yet healthy | regenerate both with `./scripts/gen-jwt-keys.sh`; check `docker compose logs <svc>` and that `mysql`/`kafka` are healthy |
 | `dashboard-service` returns `DASHBOARD_UPSTREAM_ERROR` / `SERVICE_TIMEOUT` | an upstream (user/transaction/budget) is unreachable or unready | check those services' readiness; the dashboard is strictly fail-fast |
 | Kafka topics missing from `--list` | no producer has run yet, or a producer can't reach the broker | create a transaction/budget; verify `KAFKA_BOOTSTRAP_SERVERS=kafka:9092` and broker health |
 | `spent_amount` not updating | event was non-EXPENSE, had a null/bad date, or no budget matched (user+category+exact currency+date-in-window) | check `finsight_budget_events_ignored_total{reason=...}`; matching is currency-exact |
@@ -267,4 +268,4 @@ docker compose exec kafka /opt/kafka/bin/kafka-consumer-groups.sh \
   operation that restarts auth-service only — the other services rediscover the key through
   its JWK Set. See [security/jwt-key-rotation.md](security/jwt-key-rotation.md).
 - **Dev-stack security posture** (anonymous Grafana, unauthenticated scrape/read endpoints,
-  shared HMAC secret, no TLS) is acceptable locally and **not** a production posture.
+  no TLS) is acceptable locally and **not** a production posture.

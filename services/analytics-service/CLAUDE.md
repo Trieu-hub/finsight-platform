@@ -15,7 +15,7 @@ Listens on port **8088** (auth=8081, user=8082, transaction=8083, budget=8084,
 dashboard=8085, risk=8086, notification=8087 by convention).
 
 It is modelled directly on `notification-service` and shares its conventions verbatim:
-the response envelope, the JWT stack (same shared secret), the exception handler, the
+the response envelope, the JWT stack (same RS256 verification), the exception handler, the
 Kafka consumer + idempotency-inbox pattern, the optional OpenAI-compatible LLM seam, and
 the Testcontainers test style.
 
@@ -50,10 +50,11 @@ mvnw.cmd -o -q test-compile                      # offline compile check
 mvnw.cmd package                                # build jar
 ```
 
-Running locally requires (DB defaults exist; `JWT_SECRET` does not):
+Running locally requires (DB defaults exist; `JWT_PUBLIC_KEY` does not):
 
 ```
-JWT_SECRET=<same secret as auth-service>   # required, no default
+JWT_PUBLIC_KEY=<auth-service's public key>   # required, no default; verification only
+JWT_JWKS_URI=http://localhost:8081/.well-known/jwks.json   # optional; enables key rotation
 DB_URL=jdbc:mysql://localhost:3306/analytics_db
 DB_USERNAME=root
 DB_PASSWORD=

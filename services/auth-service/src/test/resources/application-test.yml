@@ -9,7 +9,7 @@ spring:
     enabled: true
     baseline-on-migrate: true
 
-# Dummy HMAC secret (>= 256 bits) so JwtService can build a signing key in tests.
+# RS256 verification key for JwtService in tests.
 # The RS256 keypair is injected per test via @DynamicPropertySource
 # (AbstractIntegrationTest -> JwtTestTokens private/public key).
 jwt:
