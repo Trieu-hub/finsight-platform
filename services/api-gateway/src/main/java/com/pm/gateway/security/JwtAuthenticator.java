@@ -8,10 +8,6 @@ import io.jsonwebtoken.Jws;
 import io.jsonwebtoken.Jwts;
 import org.springframework.stereotype.Component;
 
-import java.security.KeyFactory;
-import java.security.PublicKey;
-import java.security.spec.X509EncodedKeySpec;
-import java.util.Base64;
 import java.util.Set;
 
 /**
@@ -19,8 +15,9 @@ import java.util.Set;
  * the frozen contract (docs/ADR-0002): algorithm pinned to <b>RS256</b>, issuer
  * {@code == finsight-auth}, audience set contains {@code finsight-api}.
  *
- * <p>Verification uses auth-service's RSA <b>public</b> key only; the gateway cannot
- * mint tokens. This validation is additive: the gateway rejects bad tokens early, but
+ * <p>Verification uses auth-service's RSA <b>public</b> keys only; the gateway cannot
+ * mint tokens. Which key is chosen per token is {@link JwtKeyResolver}'s job, via the
+ * {@code kid} header and auth-service's JWK Set. This validation is additive: the gateway rejects bad tokens early, but
  * every downstream service still validates the token itself (the V1 invariant — the
  * gateway is removable without service changes). The bearer token is therefore
  * forwarded unchanged by the proxy.
@@ -45,13 +42,14 @@ public class JwtAuthenticator {
 
     public enum Outcome { AUTHENTICATED, MISSING, EXPIRED, INVALID, REVOKED }
 
-    private final PublicKey publicKey;
+    private final JwtKeyResolver keyResolver;
     private final String expectedIssuer;
     private final String expectedAudience;
     private final TokenRevocationChecker revocationChecker;
 
-    public JwtAuthenticator(JwtProperties properties, TokenRevocationChecker revocationChecker) {
-        this.publicKey = parsePublicKey(properties.getPublicKey());
+    public JwtAuthenticator(JwtProperties properties, JwtKeyResolver keyResolver,
+                            TokenRevocationChecker revocationChecker) {
+        this.keyResolver = keyResolver;
         this.expectedIssuer = properties.getIssuer();
         this.expectedAudience = properties.getAudience();
         this.revocationChecker = revocationChecker;
@@ -71,14 +69,18 @@ public class JwtAuthenticator {
         }
 
         try {
-            // verifyWith() rejects unsecured ('none') tokens and verifies the RSA signature.
+            // The key comes from the token's own kid via the JWK Set (see JwtKeyResolver), not
+            // from a single key pinned at startup — that is what allows a key to be rotated
+            // without restarting this validator. parseSignedClaims() still demands a *signed*
+            // JWT, so an unsecured ('none') token is rejected before any key is consulted, and
+            // an unknown kid resolves to no key and fails the same way.
             Jws<Claims> jws = Jwts.parser()
-                    .verifyWith(publicKey)
+                    .keyLocator(keyResolver)
                     .build()
                     .parseSignedClaims(token);
 
-            // Pin the algorithm explicitly: verifyWith(PublicKey) would also accept a token
-            // signed RS384/RS512 with the same key, so enforce RS256 here.
+            // Pin the algorithm explicitly: an RSA public key would also verify a token signed
+            // RS384/RS512, so enforce RS256 here.
             if (!REQUIRED_ALG.equals(jws.getHeader().getAlgorithm())) {
                 return Outcome.INVALID;
             }
@@ -107,19 +109,4 @@ public class JwtAuthenticator {
         }
     }
 
-    private static PublicKey parsePublicKey(String pem) {
-        try {
-            byte[] der = Base64.getDecoder().decode(stripArmor(pem));
-            return KeyFactory.getInstance("RSA").generatePublic(new X509EncodedKeySpec(der));
-        } catch (Exception e) {
-            throw new IllegalStateException("Invalid RSA public key in jwt.public-key", e);
-        }
-    }
-
-    /** Strips optional PEM armor and all whitespace, leaving the bare base64 DER body. */
-    private static String stripArmor(String pem) {
-        return pem.replaceAll("-----BEGIN [^-]+-----", "")
-                .replaceAll("-----END [^-]+-----", "")
-                .replaceAll("\\s", "");
-    }
 }

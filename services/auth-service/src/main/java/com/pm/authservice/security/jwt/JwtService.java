@@ -2,17 +2,14 @@ package com.pm.authservice.security.jwt;
 
 import com.pm.authservice.entity.User;
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Header;
 import io.jsonwebtoken.Jws;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.ProtectedHeader;
 import org.springframework.stereotype.Service;
 
-import java.security.KeyFactory;
-import java.security.PrivateKey;
-import java.security.PublicKey;
-import java.security.spec.PKCS8EncodedKeySpec;
-import java.security.spec.X509EncodedKeySpec;
-import java.util.Base64;
+import java.security.Key;
 import java.util.Date;
 import java.util.Set;
 
@@ -25,15 +22,13 @@ public class JwtService {
     // Asymmetric signing (RS256): auth-service holds the private key and is the only
     // component that can mint tokens; every validator verifies with the public key alone.
     // This closes the shared-HMAC weakness where any service could also forge tokens.
-    private final PrivateKey privateKey;
-    private final PublicKey publicKey;
+    private final JwtKeyRegistry keys;
     private final long accessTokenExpiration;
     private final String issuer;
     private final String audience;
 
-    public JwtService(JwtProperties jwtProperties) {
-        this.privateKey = parsePrivateKey(jwtProperties.getPrivateKey());
-        this.publicKey = parsePublicKey(jwtProperties.getPublicKey());
+    public JwtService(JwtKeyRegistry keys, JwtProperties jwtProperties) {
+        this.keys = keys;
         this.accessTokenExpiration = jwtProperties.getAccessTokenExpiration();
         this.issuer = jwtProperties.getIssuer();
         this.audience = jwtProperties.getAudience();
@@ -41,6 +36,10 @@ public class JwtService {
 
     public String generateAccessToken(User user) {
         return Jwts.builder()
+                // Names the key this token was signed with, so a validator can pick the right
+                // one out of the JWKS instead of being pinned to a single key for life. This
+                // is what makes rotation possible without restarting every validator.
+                .header().keyId(keys.signingKeyId()).and()
                 .subject(user.getEmail())
                 .claim("userId", user.getId())
                 .claim("email", user.getEmail())
@@ -49,7 +48,7 @@ public class JwtService {
                 .audience().add(audience).and()
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + accessTokenExpiration))
-                .signWith(privateKey, Jwts.SIG.RS256)
+                .signWith(keys.signingKey(), Jwts.SIG.RS256)
                 .compact();
     }
 
@@ -74,7 +73,7 @@ public class JwtService {
      */
     private Claims parseClaims(String token) {
         Jws<Claims> jws = Jwts.parser()
-                .verifyWith(publicKey)
+                .keyLocator(this::locateKey)
                 .build()
                 .parseSignedClaims(token);
 
@@ -95,28 +94,19 @@ public class JwtService {
         return claims;
     }
 
-    private static PrivateKey parsePrivateKey(String pem) {
-        try {
-            byte[] der = Base64.getDecoder().decode(stripArmor(pem));
-            return KeyFactory.getInstance("RSA").generatePrivate(new PKCS8EncodedKeySpec(der));
-        } catch (Exception e) {
-            throw new IllegalStateException("Invalid RSA private key in jwt.private-key", e);
-        }
-    }
-
-    private static PublicKey parsePublicKey(String pem) {
-        try {
-            byte[] der = Base64.getDecoder().decode(stripArmor(pem));
-            return KeyFactory.getInstance("RSA").generatePublic(new X509EncodedKeySpec(der));
-        } catch (Exception e) {
-            throw new IllegalStateException("Invalid RSA public key in jwt.public-key", e);
-        }
-    }
-
-    /** Strips optional PEM armor and all whitespace, leaving the bare base64 DER body. */
-    private static String stripArmor(String pem) {
-        return pem.replaceAll("-----BEGIN [^-]+-----", "")
-                .replaceAll("-----END [^-]+-----", "")
-                .replaceAll("\\s", "");
+    /**
+     * Picks the verification key named by the token's {@code kid}. Returning {@code null} for
+     * an unknown one makes jjwt reject the token, which is the point: a key dropped from the
+     * registry at the end of a rotation stops being honoured immediately.
+     */
+    private Key locateKey(Header header) {
+        String keyId = header instanceof ProtectedHeader protectedHeader
+                ? protectedHeader.getKeyId()
+                : null;
+        // A token with no kid predates rotation support; it can only have been signed by the
+        // key that was active when it was minted, which is the active key of this deployment.
+        return keyId == null
+                ? keys.verificationKeys().get(keys.signingKeyId())
+                : keys.verificationKeys().get(keyId);
     }
 }

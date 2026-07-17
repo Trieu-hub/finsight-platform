@@ -6,10 +6,6 @@ import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import org.springframework.stereotype.Service;
 
-import java.security.KeyFactory;
-import java.security.PublicKey;
-import java.security.spec.X509EncodedKeySpec;
-import java.util.Base64;
 import java.util.Set;
 
 /**
@@ -19,7 +15,13 @@ import java.util.Set;
  *
  * <p>Validation is identical to the api-gateway's edge check (docs/ADR-0002): RSA
  * signature + expiration (via {@code parseSignedClaims}), algorithm pinned to
- * <b>RS256</b>, issuer {@code == finsight-auth}, audience contains {@code finsight-api}.
+* <b>RS256</b>, issuer {@code == finsight-auth}, audience contains {@code finsight-api}.
+ *
+ * <p><b>Which</b> public key verifies a given token is decided by the token's {@code kid}
+ * against auth-service's published JWK Set -- see {@link JwtKeyResolver} -- rather than a single
+ * key pinned at startup, so a key can be rotated without restarting this service. That lookup
+ * is cached, so it remains true that there is no call to auth-service per request, and it
+ * falls back to the configured key while the JWK Set is unreachable.
  */
 @Service
 public class JwtService {
@@ -27,12 +29,12 @@ public class JwtService {
     /** Pinned signing algorithm; tokens using any other {@code alg} are rejected. */
     private static final String REQUIRED_ALG = "RS256";
 
-    private final PublicKey publicKey;
+    private final JwtKeyResolver keyResolver;
     private final String expectedIssuer;
     private final String expectedAudience;
 
-    public JwtService(JwtProperties jwtProperties) {
-        this.publicKey = parsePublicKey(jwtProperties.getPublicKey());
+    public JwtService(JwtProperties jwtProperties, JwtKeyResolver keyResolver) {
+        this.keyResolver = keyResolver;
         this.expectedIssuer = jwtProperties.getIssuer();
         this.expectedAudience = jwtProperties.getAudience();
     }
@@ -60,15 +62,18 @@ public class JwtService {
     }
 
     private Claims parseClaims(String token) {
-        // verifyWith() rejects unsecured ('none') tokens; parseSignedClaims() verifies
-        // the RSA signature and enforces expiration (throws ExpiredJwtException).
+        // The key is chosen from the token's own kid via auth-service's JWK Set (see
+        // JwtKeyResolver), not pinned at startup -- that is what lets a key be rotated without
+        // restarting this service. parseSignedClaims() still demands a *signed* JWT, so an
+        // unsecured ('none') token is rejected before any key is consulted, and an unknown kid
+        // resolves to no key and fails the same way. Expiration is enforced here too.
         Jws<Claims> jws = Jwts.parser()
-                .verifyWith(publicKey)
+                .keyLocator(keyResolver)
                 .build()
                 .parseSignedClaims(token);
 
-        // verifyWith(PublicKey) accepts the whole RSA family (RS256/384/512), so pin the
-        // algorithm explicitly to the one auth-service issues.
+        // An RSA public key would also verify RS384/RS512, so pin the algorithm explicitly to
+        // the one auth-service issues.
         if (!REQUIRED_ALG.equals(jws.getHeader().getAlgorithm())) {
             throw new JwtException("Unexpected JWT algorithm: " + jws.getHeader().getAlgorithm());
         }
@@ -84,19 +89,4 @@ public class JwtService {
         return claims;
     }
 
-    private static PublicKey parsePublicKey(String pem) {
-        try {
-            byte[] der = Base64.getDecoder().decode(stripArmor(pem));
-            return KeyFactory.getInstance("RSA").generatePublic(new X509EncodedKeySpec(der));
-        } catch (Exception e) {
-            throw new IllegalStateException("Invalid RSA public key in jwt.public-key", e);
-        }
-    }
-
-    /** Strips optional PEM armor and all whitespace, leaving the bare base64 DER body. */
-    private static String stripArmor(String pem) {
-        return pem.replaceAll("-----BEGIN [^-]+-----", "")
-                .replaceAll("-----END [^-]+-----", "")
-                .replaceAll("\\s", "");
-    }
 }

@@ -1,3 +1,4 @@
+
 #!/usr/bin/env bash
 # Generates an RSA-2048 keypair for FinSight's RS256 JWTs and prints the two env values
 # (base64-encoded DER, single line each) ready to paste into .env:

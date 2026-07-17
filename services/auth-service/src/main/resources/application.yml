@@ -87,6 +87,11 @@ jwt:
   # with every validator so they can verify but never forge.
   private-key: ${JWT_PRIVATE_KEY}
   public-key: ${JWT_PUBLIC_KEY}
+  # Keys that no longer sign but must still verify, for the overlap window of a rotation:
+  # tokens minted by the outgoing key stay valid until they expire, so rotating does not log
+  # everyone out. Empty in steady state; set only while rotating, then cleared.
+  # Comma-separated (base64 contains no comma). See scripts/rotate-jwt-key.sh.
+  previous-public-keys: ${JWT_PREVIOUS_PUBLIC_KEYS:}
   access-token-expiration: ${JWT_ACCESS_TOKEN_EXPIRATION:900000}
   refresh-token-expiration: ${JWT_REFRESH_TOKEN_EXPIRATION:604800000}
   # Emitted into issued tokens and logged on validation, but NOT enforced yet.

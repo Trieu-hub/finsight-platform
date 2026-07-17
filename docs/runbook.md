@@ -263,7 +263,8 @@ docker compose exec kafka /opt/kafka/bin/kafka-consumer-groups.sh \
 - **Schema is Flyway-owned** (`ddl-auto: validate`); never hand-edit tables. A new schema change
   is a new `V{n}__*.sql` migration. Wipe with `docker compose down -v` to replay migrations from
   scratch.
-- **Secrets** live only in `.env` (gitignored). For JWT secret rotation see
-  [security/jwt-secret-rotation.md](security/jwt-secret-rotation.md).
+- **Secrets** live only in `.env` (gitignored). Rotating the JWT signing key is a no-downtime
+  operation that restarts auth-service only — the other services rediscover the key through
+  its JWK Set. See [security/jwt-key-rotation.md](security/jwt-key-rotation.md).
 - **Dev-stack security posture** (anonymous Grafana, unauthenticated scrape/read endpoints,
   shared HMAC secret, no TLS) is acceptable locally and **not** a production posture.

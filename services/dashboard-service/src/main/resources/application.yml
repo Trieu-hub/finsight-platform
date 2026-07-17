@@ -78,7 +78,13 @@ management:
 
 # auth-service's RSA public key; validated locally on every request (no call to auth).
 jwt:
+  # Bootstrap key: used until the first JWK Set fetch succeeds, so this service can still
+  # verify tokens if it starts before auth-service is reachable. Once jwks-uri answers, the
+  # published set replaces it -- a key retired there is retired here too.
   public-key: ${JWT_PUBLIC_KEY}
+  # Where signing keys are discovered, so a rotation needs no restart here. Unset (the
+  # default) pins this service to public-key above. Cached, not called per request.
+  jwks-uri: ${JWT_JWKS_URI:}
   # Enforced on validation (parity with the gateway and the minting auth-service).
   issuer: ${JWT_ISSUER:finsight-auth}
   audience: ${JWT_AUDIENCE:finsight-api}

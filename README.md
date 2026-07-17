@@ -315,8 +315,10 @@ These are **absent from the codebase** — do not assume they exist:
   narrator** — OpenAI-compatible, default Groq free tier, off by default with a rule-based
   fallback — *is* built; see [Web frontend](#web-frontend) / `services/notification-service`.)
 - **ML-based intelligence** — current rules are deterministic and threshold-based.
-- **Asymmetric JWT signing** (RS256/JWKS), **edge rate limiting**, **transactional outbox**,
-  **distributed tracing**, **Prometheus alerting**, and a **production deployment target**
-  (Kubernetes/TLS/managed secrets).
+- **A managed secrets store and an orchestrated deployment target** (Kubernetes/ECS, Vault).
+  The live demo runs Docker Compose on a single VPS behind Caddy with TLS, and secrets in a
+  `chmod 600` `.env` — fine at hobby scale, not a secrets manager.
+- **Load/performance testing, whole-stack E2E in CI, and security scanning** (SAST/dependency/
+  secret).
 
 See [`project-status.md`](project-status.md) §5 for the prioritized roadmap.
