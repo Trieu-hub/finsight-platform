@@ -4,9 +4,11 @@ This is the **"demo on the internet"** path from
 [`project-status.md` §10](../project-status.md): one VPS running the existing Docker Compose
 stack, fronted by **Caddy** for automatic HTTPS. It turns the local stack into a public
 `https://…` demo with the least operational cost. It is **not** a production-hardening guide
-(no HA, no managed DB, no JWKS/key rotation) — those stay future-scoped. JWT signing is already
-**RS256 asymmetric** (auth-service holds the private key; every other service verifies with the
-public key only), so this guide has you generate an RSA keypair rather than a shared secret.
+(no HA, no managed DB) — those stay future-scoped. JWT signing is **RS256 asymmetric**
+(auth-service holds the private key; every other service verifies with the public key only), so
+this guide has you generate an RSA keypair rather than a shared secret. That keypair can be
+**rotated without downtime** once deployed — see
+[security/jwt-key-rotation.md](security/jwt-key-rotation.md).
 
 The repo already ships everything you need:
 
@@ -191,7 +193,13 @@ openssl rand -base64 24 | tr -d '/+=\n'   # each *_DB_PASSWORD, MYSQL_ROOT_PASSW
 
 Both key vars have **no default** — every service fails fast if `JWT_PRIVATE_KEY` /
 `JWT_PUBLIC_KEY` is unset. Generate the pair **once** and keep it stable across restarts
-(regenerating invalidates all existing tokens).
+(regenerating by hand invalidates all existing tokens). To *replace* the key later, do not
+hand-edit these — use `./scripts/rotate-jwt-key.sh`, which keeps the outgoing key verifying
+until the tokens it signed expire, so the change costs no downtime and no forced logout
+([security/jwt-key-rotation.md](security/jwt-key-rotation.md)).
+
+`JWT_PREVIOUS_PUBLIC_KEYS` is optional and empty except during a rotation; leaving it out of
+`.env` entirely is fine.
 
 Required for prod (in addition to the dev vars):
 
@@ -369,9 +377,8 @@ tracing** (OTLP → Tempo, via `--profile monitoring`), **SSH key-only**, **ufw 
 one-command update.
 
 **Deliberately out of scope** (see `project-status.md` §6 / §10 — future work / interview talking
-points): **JWKS endpoint + JWT key rotation** (signing is already RS256 asymmetric, but there is no
-published JWKS or rotation flow), transactional outbox, managed/replicated MySQL, Prometheus
-alerting, and any multi-host / HA topology. For "production-grade", that is Path B.
+points): a managed secrets store (`.env` at `chmod 600` is the hobby-scale stand-in),
+managed/replicated MySQL, and any multi-host / HA topology. For "production-grade", that is Path B.
 
 ## Optional: publish images to a registry (GHCR)
 

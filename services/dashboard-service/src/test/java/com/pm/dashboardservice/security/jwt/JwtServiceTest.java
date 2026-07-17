@@ -2,6 +2,7 @@ package com.pm.dashboardservice.security.jwt;
 
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -33,7 +34,7 @@ class JwtServiceTest {
         props.setPublicKey(Base64.getEncoder().encodeToString(KEYS.getPublic().getEncoded()));
         props.setIssuer(ISSUER);
         props.setAudience(AUDIENCE);
-        jwtService = new JwtService(props);
+        jwtService = new JwtService(props, new JwtKeyResolver(props, new SimpleMeterRegistry()));
     }
 
     @Test

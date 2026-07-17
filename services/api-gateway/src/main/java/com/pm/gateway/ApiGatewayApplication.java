@@ -13,7 +13,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
  * path prefix and relays their responses unchanged.
  *
  * <p>Phase 1: routing only. Phase 2 (this change): edge JWT authentication — the
- * gateway validates the access token (signature, HS512, issuer, audience) on every
+ * gateway validates the access token (signature, RS256, issuer, audience) on every
  * non-public route and rejects bad tokens with the frozen auth error contract, while
  * forwarding the bearer token downstream. It still injects NO identity headers, does
  * NO rate limiting, and adds NO correlation IDs — those remain in later phases. The

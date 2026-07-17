@@ -5,9 +5,11 @@
 #     on a single shared MySQL 8 instance. (user-service was consolidated off its own
 #     PostgreSQL instance onto MySQL to match the rest of the platform.) dashboard-service
 #     (a BFF) and api-gateway own no database.
-#   * The business services do NOT call each other at runtime. The only coupling is the
-#     shared HMAC JWT secret: auth-service issues tokens; user/transaction/budget — and the
-#     dashboard BFF and the edge gateway — validate them locally with the same secret.
+#   * The business services do NOT call each other at runtime. The only coupling is the RS256
+#     JWT trust anchor: auth-service alone signs, with a private key no other service holds;
+#     user/transaction/budget — and the dashboard BFF and the edge gateway — validate locally
+#     with the public key, discovered by kid from auth-service's JWK Set (cached, not per
+#     request; a static JWT_PUBLIC_KEY bootstraps and covers the set being unreachable).
 #     (risk-service is an internal event consumer with no JWT stack; dashboard-service is the
 #     one service that fans out to user/transaction/budget over HTTP, relaying the caller's
 #     token.) Every DB-backed service still depends only on its own datastore.
@@ -119,6 +121,11 @@ services:
       # verify tokens on its own admin endpoints. Every other service gets only the public key.
       JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?set JWT_PRIVATE_KEY in .env}
       JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?set JWT_PUBLIC_KEY in .env}
+      # Keys that no longer sign but must still verify, for the overlap window of a key
+      # rotation — tokens minted just before the switch stay valid until they expire, so
+      # rotating does not log everyone out. Empty except while rotating; see
+      # scripts/rotate-jwt-key.sh and docs/runbook.md.
+      JWT_PREVIOUS_PUBLIC_KEYS: ${JWT_PREVIOUS_PUBLIC_KEYS:-}
     ports:
       - "8081:8081"
     restart: unless-stopped
@@ -146,6 +153,10 @@ services:
       DB_USERNAME: user_user
       DB_PASSWORD: ${USER_DB_PASSWORD:?set USER_DB_PASSWORD in .env}
       JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?set JWT_PUBLIC_KEY in .env}
+      # Discover signing keys from auth-service, so a key rotation needs no restart here.
+      # Deliberately NOT a hard dependency: no depends_on on auth-service, and this service
+      # falls back to JWT_PUBLIC_KEY above whenever the JWK Set is unreachable.
+      JWT_JWKS_URI: http://auth-service:8081/.well-known/jwks.json
       # gRPC server hosting the internal UserProfileService (called by dashboard-service).
       GRPC_SERVER_PORT: "9092"
     ports:
@@ -180,6 +191,10 @@ services:
       DB_USERNAME: transaction_user
       DB_PASSWORD: ${TRANSACTION_DB_PASSWORD:?set TRANSACTION_DB_PASSWORD in .env}
       JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?set JWT_PUBLIC_KEY in .env}
+      # Discover signing keys from auth-service, so a key rotation needs no restart here.
+      # Deliberately NOT a hard dependency: no depends_on on auth-service, and this service
+      # falls back to JWT_PUBLIC_KEY above whenever the JWK Set is unreachable.
+      JWT_JWKS_URI: http://auth-service:8081/.well-known/jwks.json
       # Async event backbone: where TransactionCreated is published (Phase 2.1).
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       # Native Spring Boot 4 structured logging: emit ECS-formatted JSON to stdout for
@@ -215,6 +230,10 @@ services:
       DB_USERNAME: budget_user
       DB_PASSWORD: ${BUDGET_DB_PASSWORD:?set BUDGET_DB_PASSWORD in .env}
       JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?set JWT_PUBLIC_KEY in .env}
+      # Discover signing keys from auth-service, so a key rotation needs no restart here.
+      # Deliberately NOT a hard dependency: no depends_on on auth-service, and this service
+      # falls back to JWT_PUBLIC_KEY above whenever the JWK Set is unreachable.
+      JWT_JWKS_URI: http://auth-service:8081/.well-known/jwks.json
       # Async event backbone: consumes TransactionCreated to materialize budget
       # utilization (spent_amount). See docs/ADR-0004.
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
@@ -288,6 +307,10 @@ services:
       DB_USERNAME: notification_user
       DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD:?set NOTIFICATION_DB_PASSWORD in .env}
       JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?set JWT_PUBLIC_KEY in .env}
+      # Discover signing keys from auth-service, so a key rotation needs no restart here.
+      # Deliberately NOT a hard dependency: no depends_on on auth-service, and this service
+      # falls back to JWT_PUBLIC_KEY above whenever the JWK Set is unreachable.
+      JWT_JWKS_URI: http://auth-service:8081/.well-known/jwks.json
       # Async event backbone: consumes RiskDetected to create in-app notifications.
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       # Optional LLM-backed alert narrator on any OpenAI-compatible API (default: Groq free
@@ -331,6 +354,10 @@ services:
       DB_USERNAME: analytics_user
       DB_PASSWORD: ${ANALYTICS_DB_PASSWORD:?set ANALYTICS_DB_PASSWORD in .env}
       JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?set JWT_PUBLIC_KEY in .env}
+      # Discover signing keys from auth-service, so a key rotation needs no restart here.
+      # Deliberately NOT a hard dependency: no depends_on on auth-service, and this service
+      # falls back to JWT_PUBLIC_KEY above whenever the JWK Set is unreachable.
+      JWT_JWKS_URI: http://auth-service:8081/.well-known/jwks.json
       # Async event backbone: consumes TransactionCreated to build the rollup read model.
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       # Optional LLM-backed monthly summary on any OpenAI-compatible API (default: Groq free
@@ -376,6 +403,10 @@ services:
       TRANSACTION_SERVICE_URI: http://transaction-service:8083
       BUDGET_SERVICE_URI: http://budget-service:8084
       JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?set JWT_PUBLIC_KEY in .env}
+      # Discover signing keys from auth-service, so a key rotation needs no restart here.
+      # Deliberately NOT a hard dependency: no depends_on on auth-service, and this service
+      # falls back to JWT_PUBLIC_KEY above whenever the JWK Set is unreachable.
+      JWT_JWKS_URI: http://auth-service:8081/.well-known/jwks.json
       # Native Spring Boot 4 structured logging: emit ECS-formatted JSON to stdout for
       # log aggregation (ELK/OpenSearch/Loki-ready). Bound to logging.structured.format.console
       # via relaxed binding; service.name comes from spring.application.name and MDC
@@ -393,7 +424,7 @@ services:
 
   # API Gateway — V1 Phase 2 (routing + edge JWT authentication).
   # Forwards by path prefix to the four services over the compose network, and now
-  # validates the access token at the edge (signature/HS512/issuer/audience) on every
+  # validates the access token at the edge (signature/RS256/issuer/audience) on every
   # non-public route, forwarding the bearer token downstream. The backend services
   # still publish their host ports and still validate tokens themselves; the perimeter
   # cutover (un-publishing them) is a later phase, keeping the gateway removable.
@@ -430,10 +461,14 @@ services:
       DASHBOARD_SERVICE_URI: http://dashboard-service:8085
       NOTIFICATION_SERVICE_URI: http://notification-service:8087
       ANALYTICS_SERVICE_URI: http://analytics-service:8088
-      # Phase 2: the gateway validates the access token at the edge with the same
-      # shared HMAC secret auth-service signs with (issuer/audience default to the
+      # Phase 2: the gateway validates the access token at the edge with the public key
+      # matching the private key auth-service signs with (issuer/audience default to the
       # minted values). See docs/ADR-0002.
       JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?set JWT_PUBLIC_KEY in .env}
+      # Discover signing keys from auth-service, so a key rotation needs no restart here.
+      # Deliberately NOT a hard dependency: no depends_on on auth-service, and this service
+      # falls back to JWT_PUBLIC_KEY above whenever the JWK Set is unreachable.
+      JWT_JWKS_URI: http://auth-service:8081/.well-known/jwks.json
       # Read-only access to the access-token revocation denylist auth-service writes, so
       # logout / ban / role change take effect at the edge immediately instead of waiting out
       # the token TTL. The check fails open, so this is NOT a hard dependency: no depends_on

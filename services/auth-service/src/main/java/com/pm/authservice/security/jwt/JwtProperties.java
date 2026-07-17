@@ -5,6 +5,9 @@ import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.List;
+
 @Component
 @ConfigurationProperties(prefix = "jwt")
 @Getter
@@ -19,6 +22,15 @@ public class JwtProperties {
      */
     private String privateKey;
     private String publicKey;
+
+    /**
+     * Public keys that are no longer signing but must still verify — the rotation overlap
+     * window (see {@link JwtKeyRegistry}). Published in the JWKS alongside the active key,
+     * so validators keep honouring tokens minted just before a rotation. Normally empty;
+     * populated only while a rotation is in flight, then cleared.
+     * <p>Comma-separated in the environment, which is unambiguous: base64 has no comma.
+     */
+    private List<String> previousPublicKeys = new ArrayList<>();
 
     private long accessTokenExpiration;
     private long refreshTokenExpiration;

@@ -34,6 +34,56 @@ gateway remains removable without service changes.
   shorter secret silently downgrades the issuer to HS256 and would break gateway
   validation.
 
+## 1a. Key identification (`kid`) and rotation — **JWK Set discovery**
+
+Where §1 concerns *how* a token is signed, this pins *which key* signed it — the thing that
+makes a key replaceable at all.
+
+> ⚠️ **§1 above is stale and contradicts this section.** It describes the pre-migration
+> HS512 shared secret and states that asymmetric `alg`s are rejected; the platform has signed
+> **RS256** with an asymmetric keypair since the RS256 migration, which is what the gateway
+> and all seven validators actually pin, and what this section builds on. Correcting §1
+> requires a **new ADR** by this document's own rule (a locked value cannot be edited here) —
+> that ADR was never written when the migration landed. Tracked as a documentation gap, not a
+> behavioural one.
+
+- Every issued token carries a **`kid` header**. It is the key's **RFC 7638 JWK thumbprint** —
+  a hash of the key material — **not** an assigned name. Issuer and validator therefore derive
+  the same id for the same key independently, with no shared configuration and nothing to bump
+  or mistype.
+- auth-service publishes the accepted public keys as a **JWK Set (RFC 7517)** at
+  **`/.well-known/jwks.json`**, unauthenticated. Requiring a token there would be circular: its
+  callers are the components deciding whether a token is good. It carries public keys only.
+- Validators resolve the key by `kid` from that document, caching it (5-minute TTL, refreshed
+  early on an unseen `kid`). This is **not** a per-request call to auth-service — the standing
+  rule that no service calls auth-service to validate a token is unchanged.
+
+**Locked:** `kid` is present on every issued token; validators MUST select the key by it and
+MUST reject a token whose `kid` is not in the set. This is **additive** to §1–§3 — `alg`, `iss`
+and `aud` are untouched, and a validator pinned to a single key still verifies these tokens,
+because an unknown header member is ignored. That is what allowed the rollout to be safe.
+
+**Why per-key discovery rather than a static key list:** a static list makes rotation a
+lockstep restart of all eight components — the same coordinated-cutover problem RS256 was
+supposed to end. With discovery, only auth-service restarts.
+
+**Rotation contract:** during a rotation the set advertises **two** keys — the incoming one
+(signs and verifies) and the outgoing one (verifies only) — for one access-token lifetime, so
+tokens minted seconds before the switch are not mass-invalidated. `JWT_PREVIOUS_PUBLIC_KEYS`
+holds the outgoing key for that window and is empty at steady state. Procedure:
+[docs/security/jwt-key-rotation.md](../../../docs/security/jwt-key-rotation.md).
+
+**Failure posture:** a validator that cannot reach the JWK Set keeps its last known good keys
+(falling back to the configured `JWT_PUBLIC_KEY` if it never fetched one), rather than
+rejecting everything. auth-service being down must not make every other service unauthenticable.
+The cost — a rotation cannot propagate during that outage — is visible on
+`finsight.jwks.refresh.failed`.
+
+**Scope note:** the JWK Set is served on auth-service's own port for the platform's internal
+validators. It is deliberately **not** routed through the gateway (§4 is unchanged), because
+nothing outside the platform consumes FinSight tokens today. Exposing it publicly would be a
+routing addition, not a contract change.
+
 ## 2. JWT Issuer (`iss`) — **`finsight-auth`**
 
 - Source: `jwt.issuer` (env `JWT_ISSUER`, default `finsight-auth`). Emitted today,
@@ -154,6 +204,7 @@ Untrusted inbound client-supplied correlation hints are handled per **ADR-0001 �
 | Contract | Frozen (this ADR) | Enforced/active |
 |----------|-------------------|-----------------|
 | §1 alg pin, §2 iss, §3 aud | now | Phase 2 |
+| §1a `kid` + JWK Set discovery / key rotation | — | **live** |
 | §4 public routes | now | Phase 2 (deny-by-default auth) |
 | §5 auth error codes (`UNAUTHENTICATED`, `TOKEN_INVALID`, `TOKEN_EXPIRED`) | now | Phase 2 |
 | §5 routing error codes (`ROUTE_NOT_FOUND`, `SERVICE_UNAVAILABLE`, `SERVICE_TIMEOUT`) | — | **live (Phase 1)** |

@@ -35,7 +35,7 @@ class JwtServiceTest {
         props.setPublicKey(Base64.getEncoder().encodeToString(KEYS.getPublic().getEncoded()));
         props.setIssuer(ISSUER);
         props.setAudience(AUDIENCE);
-        jwtService = new JwtService(props);
+        jwtService = new JwtService(new JwtKeyRegistry(props), props);
     }
 
     @Test

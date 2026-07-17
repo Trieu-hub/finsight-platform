@@ -15,7 +15,7 @@ explicitly under [Not yet built](#not-yet-built).
 
 | Service | Port | Owns DB | Inbound | Responsibility |
 |---|---|---|---|---|
-| `api-gateway` | 8080 | – | HTTP (edge) | Path-prefix routing + edge JWT validation (HS512/issuer/audience); forwards the bearer token downstream |
+| `api-gateway` | 8080 | – | HTTP (edge) | Path-prefix routing + edge JWT validation (RS256/issuer/audience); forwards the bearer token downstream |
 | `auth-service` | 8081 | `auth_db` | HTTP | Register, login, refresh, account lockout; Redis-backed refresh tokens + lockout counters |
 | `user-service` | 8082 | `user_db` | HTTP | User profile data |
 | `transaction-service` | 8083 | `transaction_db` | HTTP | Transactions (INCOME/EXPENSE), categories, summaries; **produces** `TransactionCreated` |

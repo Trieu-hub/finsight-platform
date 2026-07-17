@@ -33,7 +33,8 @@ coupling is asynchronous over Kafka.
 - **Redis** — used by auth-service (refresh tokens + brute-force lockout)
 - **Kafka** (single-node KRaft broker) — asynchronous event backbone
 - **Flyway** — schema ownership (`ddl-auto: validate`)
-- **JWT** (HS512, shared HMAC secret) — issued by auth-service, validated by every service
+- **JWT** (RS256) — signed by auth-service, the only holder of the private key; every service
+  verifies with the public key alone, discovered by `kid` from a published JWK Set
 - **springdoc / OpenAPI** — API docs on the user-facing REST services
 - **Micrometer + Prometheus + Grafana** — metrics and dashboards
 - **Docker / Docker Compose**, **GitHub Actions** (CI), **Testcontainers** (integration tests)
@@ -91,7 +92,7 @@ gateway).
 
 | Service | Port | Database | Inbound | Responsibility |
 |---|---|---|---|---|
-| `api-gateway` | 8080 | – | HTTP | Edge routing + JWT validation (HS512/issuer/audience) |
+| `api-gateway` | 8080 | – | HTTP | Edge routing + JWT validation (RS256/issuer/audience) |
 | `auth-service` | 8081 | `auth_db` | HTTP | Register, login, refresh, account lockout; Redis-backed tokens |
 | `user-service` | 8082 | `user_db` | HTTP | User profile data |
 | `transaction-service` | 8083 | `transaction_db` | HTTP | Transactions (INCOME/EXPENSE/TRANSFER), categories, wallets (accounts + balances), summaries; **produces** `TransactionCreated` |
@@ -227,7 +228,7 @@ npm run build --prefix web      # type-check + production build to web/dist
 ## Local startup (Docker Compose)
 
 The root `docker-compose.yml` builds all eight services and starts MySQL, Redis, Kafka,
-Prometheus, and Grafana. All services share one `JWT_SECRET`.
+Prometheus, and Grafana. auth-service holds the JWT signing key; the rest get the public key.
 
 **1. Secrets (`.env`) — required first.** No secrets live in compose; they are interpolated
 from a gitignored `.env`. Compose refuses to start (clear `set X in .env` message) if any are
@@ -235,8 +236,9 @@ missing.
 
 ```bash
 cp .env.example .env
-# Fill in: JWT_SECRET (>= 64 bytes for HS512), MYSQL_ROOT_PASSWORD, and the five
-# *_DB_PASSWORD values (AUTH/USER/TRANSACTION/BUDGET/RISK). Generation commands are in the file.
+./scripts/gen-jwt-keys.sh          # prints an RS256 keypair; paste into JWT_PRIVATE_KEY / JWT_PUBLIC_KEY
+# Then fill in: MYSQL_ROOT_PASSWORD and the five *_DB_PASSWORD values
+# (AUTH/USER/TRANSACTION/BUDGET/RISK). Generation commands are in the file.
 ```
 
 **2. Start the stack:**
@@ -270,7 +272,7 @@ and troubleshooting.
 
 ```bash
 cd services/<service>
-./mvnw spring-boot:run     # mvnw.cmd on Windows; needs a DB and (for JWT services) JWT_SECRET
+./mvnw spring-boot:run     # mvnw.cmd on Windows; needs a DB and (for JWT services) JWT_PUBLIC_KEY
 ./mvnw verify              # unit + Testcontainers integration tests (Docker required)
 ```
 
@@ -315,8 +317,10 @@ These are **absent from the codebase** — do not assume they exist:
   narrator** — OpenAI-compatible, default Groq free tier, off by default with a rule-based
   fallback — *is* built; see [Web frontend](#web-frontend) / `services/notification-service`.)
 - **ML-based intelligence** — current rules are deterministic and threshold-based.
-- **Asymmetric JWT signing** (RS256/JWKS), **edge rate limiting**, **transactional outbox**,
-  **distributed tracing**, **Prometheus alerting**, and a **production deployment target**
-  (Kubernetes/TLS/managed secrets).
+- **A managed secrets store and an orchestrated deployment target** (Kubernetes/ECS, Vault).
+  The live demo runs Docker Compose on a single VPS behind Caddy with TLS, and secrets in a
+  `chmod 600` `.env` — fine at hobby scale, not a secrets manager.
+- **Load/performance testing, whole-stack E2E in CI, and security scanning** (SAST/dependency/
+  secret).
 
 See [`project-status.md`](project-status.md) §5 for the prioritized roadmap.
