@@ -29,6 +29,14 @@ spring:
     baseline-on-migrate: true
 
 management:
+  # Metrics are exported by Prometheus scrape (/actuator/prometheus). Turn OFF the OTLP
+  # metrics push registry: nothing consumes OTLP metrics (Tempo receives traces only), so it
+  # only logged "Connection refused localhost:4318" every step. Tracing OTLP is separate
+  # (management.opentelemetry.tracing, still gated by TRACING_SAMPLING_PROBABILITY).
+  otlp:
+    metrics:
+      export:
+        enabled: false
   # Distributed tracing → OTLP → Tempo. Off by default (sampling 0); enable with
   # TRACING_SAMPLING_PROBABILITY=1.0 and the monitoring profile. The endpoint is the full
   # OTLP traces signal URL (…/v1/traces), overridden to the Tempo container in docker-compose.
