@@ -97,6 +97,21 @@ services:
   alertmanager:
     ports: !override []
     mem_limit: 128m
+    # Render the Telegram secrets into a tmpfs (RAM) copy at start, then run against it, so the
+    # bot token never lands on disk or in git. $$ escapes compose interpolation — these expand in
+    # the container shell from the env vars below (which SOPS injects via scripts/prod-compose.sh).
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        printf '%s' "$${ALERTMANAGER_TELEGRAM_BOT_TOKEN}" > /tmp/telegram_bot_token
+        sed "s/__CHAT_ID__/$${ALERTMANAGER_TELEGRAM_CHAT_ID}/" /etc/alertmanager/alertmanager.yml > /tmp/alertmanager.yml
+        exec /bin/alertmanager --config.file=/tmp/alertmanager.yml --storage.path=/alertmanager --cluster.listen-address=
+    tmpfs:
+      - /tmp
+    environment:
+      ALERTMANAGER_TELEGRAM_BOT_TOKEN: ${ALERTMANAGER_TELEGRAM_BOT_TOKEN:?set ALERTMANAGER_TELEGRAM_BOT_TOKEN in secrets.env}
+      ALERTMANAGER_TELEGRAM_CHAT_ID: ${ALERTMANAGER_TELEGRAM_CHAT_ID:?set ALERTMANAGER_TELEGRAM_CHAT_ID in secrets.env}
 
   # Grafana: disable the dev anonymous-admin, require a real login + strong password.
   # Not published — reach it in prod over an SSH tunnel to 127.0.0.1:3000 if needed.
