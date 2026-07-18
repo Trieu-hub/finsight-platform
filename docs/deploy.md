@@ -212,9 +212,61 @@ GF_SECURITY_ADMIN_PASSWORD=<strong-password>
 > **Never commit `.env`.** It is gitignored. Optionally enable the AI features
 > (`FINSIGHT_NARRATOR_AI_ENABLED` / `FINSIGHT_SUMMARIZER_AI_ENABLED` + `LLM_API_KEY`).
 
+## 3.1 Encrypt the secrets at rest with SOPS + age (recommended)
+
+`.env` at `chmod 600` keeps the secrets off the network but still leaves them in **plaintext
+on disk**. The live deploy encrypts them at rest with [SOPS](https://github.com/getsops/sops)
++ [age](https://github.com/FiloSottile/age), so the only plaintext secret on the box is a
+single age key. Because the base compose interpolates every secret as `${VAR}` (there is no
+`env_file:`), SOPS injects them straight into the process environment for the life of one
+command — **zero application change**.
+
+```bash
+# one-time: install the tools + generate an age keypair
+apt-get install -y age
+curl -sSL -o /usr/local/bin/sops \
+  https://github.com/getsops/sops/releases/download/v3.9.4/sops-v3.9.4.linux.amd64
+chmod +x /usr/local/bin/sops
+mkdir -p /root/.config/sops/age
+age-keygen -o /root/.config/sops/age/keys.txt      # prints the age1… public recipient
+chmod 600 /root/.config/sops/age/keys.txt
+```
+
+Put that recipient in `.sops.yaml` (already committed — swap in your own key), then encrypt
+the filled-in `.env` into `secrets.env` and remove the plaintext:
+
+```bash
+cp .env secrets.env
+sops -e -i secrets.env                 # values become ENC[…]; the KEY names stay readable
+sops -d secrets.env | diff - .env      # sanity round-trip (SOPS drops blank/comment lines)
+rm .env                                # ONLY after you have an off-box backup (see below)
+```
+
+> **Trailing-whitespace gotcha (this bit us).** Compose **trims** trailing whitespace from
+> `.env`-*file* values but **not** from shell-env values — which is exactly how SOPS feeds
+> them in. A stray trailing space then makes the SOPS path and the old `.env` path disagree,
+> and DB auth breaks on the next deploy. Strip it before encrypting
+> (`sed -E 's/[[:space:]]+$//' .env > .env.clean`) and prove the rendered config is identical:
+> `diff <(scripts/prod-compose.sh config) <(docker compose -f docker-compose.yml -f docker-compose.prod.yml config)`.
+
+From here on, run every compose command through the wrapper — it decrypts `secrets.env` into
+the environment only for that command:
+
+```bash
+scripts/prod-compose.sh up -d --build          # replaces the raw `docker compose … up` below
+scripts/prod-compose.sh ps
+```
+
+**Back up two things off-box** (e.g. next to the DB dumps in §7.2): `secrets.env` **and**
+`/root/.config/sops/age/keys.txt`. Lose the age key and the encrypted secrets are gone for
+good. Per repo policy `secrets.env` and the age key are **gitignored** (kept off GitHub);
+only `.sops.yaml` and `scripts/prod-compose.sh` are committed, so the tooling is reproducible
+while the secret payload never leaves the box.
+
 ## 4. Launch
 
 ```bash
+# with SOPS (§3.1): scripts/prod-compose.sh up -d --build
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
 
@@ -361,10 +413,12 @@ accounts here.
 
 ```bash
 git pull
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+scripts/prod-compose.sh up -d --build      # or, without SOPS: docker compose -f … -f … up -d --build
 ```
 
-Flyway applies any new migrations on service startup; the named volumes persist data.
+Flyway applies any new migrations on service startup; the named volumes persist data. On an
+8 GB box, prefix the build with `COMPOSE_PARALLEL_LIMIT=1` (and split `build` from `up -d`) so
+the 9 JVM image builds don't oversubscribe RAM while the old containers keep serving.
 
 ---
 
@@ -376,9 +430,11 @@ tracing** (OTLP → Tempo, via `--profile monitoring`), **SSH key-only**, **ufw 
 **fail2ban**, **edge rate limiting** (Caddy `caddy-ratelimit` + Cloudflare Bot Fight Mode),
 one-command update.
 
-**Deliberately out of scope** (see `project-status.md` §6 / §10 — future work / interview talking
-points): a managed secrets store (`.env` at `chmod 600` is the hobby-scale stand-in),
-managed/replicated MySQL, and any multi-host / HA topology. For "production-grade", that is Path B.
+**Secrets at rest** are encrypted with SOPS + age (§3.1) — the plaintext `.env` is gone; only a
+single age key stays in the clear. A **managed secrets store** with runtime injection (Vault /
+Infisical) is still **deliberately out of scope** (that is Path B), as are managed/replicated
+MySQL and any multi-host / HA topology (see `project-status.md` §6 / §10 — future work /
+interview talking points).
 
 ## Optional: publish images to a registry (GHCR)
 

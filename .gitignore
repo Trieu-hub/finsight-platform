@@ -17,6 +17,13 @@ Thumbs.db
 # Env
 .env
 
+# SOPS-encrypted prod secrets. The tooling (.sops.yaml, scripts/prod-compose.sh) is committed,
+# but the encrypted payload and the age private key are kept OUT of git (Option A): they live
+# only on the prod box + an off-box backup. Lose the age key and secrets.env is unrecoverable.
+secrets.env
+*.agekey
+keys.txt
+
 # Cloudflare Origin certificate + private key (mounted into Caddy in prod). NEVER commit.
 docker/caddy/certs/
 

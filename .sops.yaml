@@ -1,0 +1,9 @@
+# SOPS encryption rules. `secrets.env` is an encrypted dotenv file holding the prod secrets.
+# The matching age PRIVATE key lives only at /root/.config/sops/age/keys.txt (chmod 600) on the
+# prod box, plus an off-box backup — it is NEVER committed. Per project policy the encrypted
+# secrets.env itself is also kept OUT of git (see .gitignore, "Option A": tooling is committed,
+# the secret payload is not). This file records only the age recipient so `sops secrets.env`
+# and `scripts/prod-compose.sh` resolve the right key on the box.
+creation_rules:
+  - path_regex: (^|/)secrets\.env$
+    age: age1v35waac0p6t5dsdvfq2kj4fpgpcy7sf8fzk9lx83lzhrjz5thatq89ds46
