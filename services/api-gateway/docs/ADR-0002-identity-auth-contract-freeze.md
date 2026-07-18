@@ -8,6 +8,8 @@
 - Supersedes: **ADR-0001 §4, §5, §6 (in part)** — see §9 "Relationship to ADR-0001".
   All other ADR-0001 sections (rate limiting, correlation client-hint handling,
   implementation tech decision, the V1 removability invariant) remain in force.
+- Superseded by: **[ADR-0005](ADR-0005-rs256-asymmetric-jwt-signing.md) — §1 (JWT Algorithm)
+  only** (HS512 → RS256, 2026-07-18). §1a–§9 remain in force.
 
 This ADR **locks** the values below. Each was verified against the running
 `auth-service` source (`JwtService`, `JwtProperties`, `application.yml`, `SecurityConfig`,
@@ -22,6 +24,10 @@ gateway remains removable without service changes.
 ---
 
 ## 1. JWT Algorithm — **HS512 (HMAC-SHA-512)**
+
+> **Superseded by [ADR-0005](ADR-0005-rs256-asymmetric-jwt-signing.md) (2026-07-18).** The
+> platform signs **RS256** with an asymmetric keypair; this section and its `JWT_SECRET ≥ 512
+> bits` constraint are **historical**. Read §1a and ADR-0005 for the live contract.
 
 - `auth-service` signs with `Keys.hmacShaKeyFor(secret)` + `signWith(key)` (jjwt 0.12.6),
   which auto-selects the HMAC variant from the key length. The shared `JWT_SECRET` is
@@ -43,9 +49,9 @@ makes a key replaceable at all.
 > HS512 shared secret and states that asymmetric `alg`s are rejected; the platform has signed
 > **RS256** with an asymmetric keypair since the RS256 migration, which is what the gateway
 > and all seven validators actually pin, and what this section builds on. Correcting §1
-> requires a **new ADR** by this document's own rule (a locked value cannot be edited here) —
-> that ADR was never written when the migration landed. Tracked as a documentation gap, not a
-> behavioural one.
+> requires a **new ADR** by this document's own rule (a locked value cannot be edited here).
+> That ADR is now **[ADR-0005](ADR-0005-rs256-asymmetric-jwt-signing.md)**, which supersedes §1
+> (HS512 → RS256) and closes what was previously an open documentation gap.
 
 - Every issued token carries a **`kid` header**. It is the key's **RFC 7638 JWK thumbprint** —
   a hash of the key material — **not** an assigned name. Issuer and validator therefore derive

@@ -116,7 +116,7 @@ public class JwtKeyRegistry {
     private static RsaPublicJwk toJwk(PublicKey key) {
         if (!(key instanceof RSAPublicKey rsaKey)) {
             throw new IllegalStateException(
-                    "JWT keys must be RSA (RS256 is pinned by docs/ADR-0002 §1); got "
+                    "JWT keys must be RSA (RS256 is pinned by docs/ADR-0005); got "
                             + key.getAlgorithm());
         }
         return Jwks.builder().key(rsaKey).idFromThumbprint().build();
