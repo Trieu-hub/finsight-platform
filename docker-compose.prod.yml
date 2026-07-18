@@ -1,6 +1,7 @@
 # Production overlay for Path A (single VPS + Caddy TLS). Use TOGETHER with the base file:
 #
-#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#   scripts/prod-compose.sh up -d --build           (SOPS-injected secrets; see docs/deploy.md §3.1)
+#   # or, without SOPS: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 #
 # What it changes vs. the dev stack:
 #   * A Caddy reverse proxy is the ONLY thing published to the host (80/443). It terminates
@@ -10,9 +11,15 @@
 #     "Docker publishes past ufw" exposure — do not rely on the host firewall alone.
 #   * The React SPA is built and served by an nginx `web` container (dev uses the Vite server).
 #   * Grafana's anonymous-admin dev convenience is turned OFF (real login + strong password).
+#   * Every service gets a `mem_limit`. On an 8 GB box running 9 JVMs + Kafka/MySQL, an
+#     unbounded container that leaks memory would let the kernel OOM-killer pick a victim
+#     host-wide. With per-container caps, a runaway hits its OWN cap (swaps, then is killed
+#     in isolation) instead of taking neighbours down. The JVM heap is already fixed at
+#     -Xmx384m in the base file, so 768m leaves generous room for non-heap (metaspace,
+#     thread stacks, direct buffers) without ever starving a healthy service.
 #
 # Requires Docker Compose v2.24+ (for the `!override` YAML tag). Set the extra prod vars
-# in `.env`: FINSIGHT_DOMAIN, FINSIGHT_ACME_EMAIL, GF_SECURITY_ADMIN_PASSWORD.
+# in secrets.env / .env: FINSIGHT_DOMAIN, FINSIGHT_ACME_EMAIL, GF_SECURITY_ADMIN_PASSWORD.
 services:
   caddy:
     build: ./docker/caddy
@@ -32,42 +39,85 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    mem_limit: 128m
     restart: unless-stopped
 
   # The SPA, built and served by nginx. Reached only by Caddy over the internal network.
   web:
     build: ./web
     container_name: finsight-web
+    mem_limit: 128m
     restart: unless-stopped
 
-  # ── Un-publish every host port: only Caddy faces the internet ────────────────
+  # ── Un-publish every host port (only Caddy faces the internet) + cap memory ──────────
   auth-service:
     ports: !override []
+    mem_limit: 768m
   user-service:
     ports: !override []
+    mem_limit: 768m
   transaction-service:
     ports: !override []
+    mem_limit: 768m
   budget-service:
     ports: !override []
+    mem_limit: 768m
   notification-service:
     ports: !override []
+    mem_limit: 768m
   analytics-service:
     ports: !override []
+    mem_limit: 768m
   dashboard-service:
     ports: !override []
+    mem_limit: 768m
   api-gateway:
     ports: !override []
+    mem_limit: 768m
+
+  # risk-service is internal (no published port in the base file), so it only needs the cap.
+  risk-service:
+    mem_limit: 768m
+
+  # ── Infrastructure caps ──────────────────────────────────────────────────────────────
+  mysql:
+    mem_limit: 1g
+  kafka:
+    mem_limit: 1g
+  redis:
+    mem_limit: 256m
+
+  # ── Monitoring stack (only runs under `--profile monitoring`); caps apply when it does ──
   prometheus:
     ports: !override []
+    mem_limit: 512m
   tempo:
     ports: !override []
+    mem_limit: 512m
   alertmanager:
     ports: !override []
+    mem_limit: 128m
+    # Render the Telegram secrets into a tmpfs (RAM) copy at start, then run against it, so the
+    # bot token never lands on disk or in git. $$ escapes compose interpolation — these expand in
+    # the container shell from the env vars below (which SOPS injects via scripts/prod-compose.sh).
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        printf '%s' "$${ALERTMANAGER_TELEGRAM_BOT_TOKEN}" > /tmp/telegram_bot_token
+        sed "s/__CHAT_ID__/$${ALERTMANAGER_TELEGRAM_CHAT_ID}/" /etc/alertmanager/alertmanager.yml > /tmp/alertmanager.yml
+        exec /bin/alertmanager --config.file=/tmp/alertmanager.yml --storage.path=/alertmanager --cluster.listen-address=
+    tmpfs:
+      - /tmp
+    environment:
+      ALERTMANAGER_TELEGRAM_BOT_TOKEN: ${ALERTMANAGER_TELEGRAM_BOT_TOKEN:?set ALERTMANAGER_TELEGRAM_BOT_TOKEN in secrets.env}
+      ALERTMANAGER_TELEGRAM_CHAT_ID: ${ALERTMANAGER_TELEGRAM_CHAT_ID:?set ALERTMANAGER_TELEGRAM_CHAT_ID in secrets.env}
 
   # Grafana: disable the dev anonymous-admin, require a real login + strong password.
   # Not published — reach it in prod over an SSH tunnel to 127.0.0.1:3000 if needed.
   grafana:
     ports: !override []
+    mem_limit: 384m
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_AUTH_DISABLE_LOGIN_FORM: "false"

@@ -1,11 +1,14 @@
-# Alertmanager routing for the FinSight stack (opt-in `monitoring` profile).
+# Alertmanager routing → Telegram (opt-in `monitoring` profile).
 #
-# By default there is NO delivery channel wired: firing alerts are grouped and visible in the
-# Alertmanager UI (http://localhost:9093), which is enough to demonstrate the full pipeline
-# Prometheus rule -> Alertmanager -> route. Add a real receiver (Slack / email / generic
-# webhook) under `receivers` when you want notifications delivered — see the commented example.
+# Secrets are NOT baked in here. At container start the prod overlay's entrypoint:
+#   1. writes $ALERTMANAGER_TELEGRAM_BOT_TOKEN (SOPS-injected) to /tmp/telegram_bot_token (tmpfs),
+#   2. seds the real chat id in for __CHAT_ID__ into /tmp/alertmanager.yml (tmpfs),
+#   3. runs alertmanager against that rendered copy.
+# So the bot token never touches disk or git, and the chat id stays out of git too.
+# `amtool check-config` validates the RENDERED file (real integer chat id) — __CHAT_ID__ is a
+# placeholder, not a valid chat id on its own.
 route:
-  receiver: default
+  receiver: telegram
   # Collapse alerts that share these labels into one notification.
   group_by: ['alertname', 'job']
   group_wait: 30s
@@ -13,23 +16,24 @@ route:
   repeat_interval: 3h
 
 receivers:
-  - name: default
-    # No integration on purpose — alerts still show in the Alertmanager UI. To deliver them,
-    # wire a channel here, e.g. a Slack incoming webhook:
-    #
-    # slack_configs:
-    #   - api_url: https://hooks.slack.com/services/XXXX/YYYY/ZZZZ
-    #     channel: '#finsight-alerts'
-    #     send_resolved: true
-    #
-    # or a generic webhook:
-    #
-    # webhook_configs:
-    #   - url: https://example.com/alerts
+  - name: telegram
+    telegram_configs:
+      - send_resolved: true
+        bot_token_file: /tmp/telegram_bot_token
+        chat_id: __CHAT_ID__
+        api_url: https://api.telegram.org
+        parse_mode: HTML
+        message: |
+          {{ if eq .Status "firing" }}🔴 <b>FIRING</b>{{ else }}✅ <b>RESOLVED</b>{{ end }} — {{ .Alerts | len }} alert(s) · FinSight
+          {{ range .Alerts }}
+          <b>{{ .Labels.alertname }}</b>{{ if .Labels.severity }} · {{ .Labels.severity }}{{ end }}{{ if .Labels.job }} · {{ .Labels.job }}{{ end }}
+          {{ if .Annotations.summary }}{{ .Annotations.summary }}{{ end }}{{ if .Annotations.description }}
+          {{ .Annotations.description }}{{ end }}
+          {{ end }}
 
 # Silence a critical alert if it implies a warning is redundant (e.g. a down service will also
 # trip its error-rate rule). Optional; kept minimal for the demo.
 inhibit_rules:
-  - source_matchers: [severity = "critical"]
-    target_matchers: [severity = "warning"]
+  - source_matchers: ['severity = "critical"']
+    target_matchers: ['severity = "warning"']
     equal: ['job']
