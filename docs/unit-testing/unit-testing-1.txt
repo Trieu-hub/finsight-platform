@@ -1,0 +1,654 @@
+================================================================================
+FINSIGHT — TEST SUITE CATALOG (unit-testing-1)
+================================================================================
+Tài liệu liệt kê chi tiết toàn bộ test tự động của nền tảng FinSight: mỗi lớp
+test, loại (unit / integration), số lượng test và những gì nó kiểm chứng.
+
+Phạm vi tính đến: 9 microservice (api-gateway, auth, user, transaction, budget,
+dashboard, risk, notification, analytics).
+
+TỔNG QUAN CON SỐ
+--------------------------------------------------------------------------------
+- Tổng số test method (@Test / @ParameterizedTest):  434
+- Tổng số lớp test:                                   93 (+ vài lớp base/support)
+- Trong đó:
+    * Unit / component test (chạy KHÔNG cần Docker):  ~253
+    * Integration test (cần Docker – Testcontainers): ~181
+- Framework: JUnit 5 (Jupiter) + Mockito + AssertJ.
+- Integration test dùng Testcontainers (MySQL 8, Kafka KRaft, Redis) và WireMock
+  (giả lập HTTP upstream), Awaitility (chờ bất đồng bộ).
+
+PHÂN BIỆT UNIT vs INTEGRATION
+--------------------------------------------------------------------------------
+- UNIT test: kiểm thử một lớp logic ở trạng thái CÔ LẬP, phụ thuộc được mock bằng
+  Mockito. Không khởi động Spring context, không cần Docker. Rất nhanh.
+- COMPONENT/SLICE test: khởi động một phần Spring (ví dụ @WebMvcTest cho controller,
+  hoặc gateway + WireMock), không dùng Testcontainers.
+- INTEGRATION test: khởi động Spring đầy đủ + hạ tầng thật qua Testcontainers
+  (MySQL/Kafka/Redis). Tên lớp kết thúc bằng "IntegrationTest".
+
+CÁCH CHẠY
+--------------------------------------------------------------------------------
+- Mỗi service là 1 project Maven độc lập (không có aggregator pom).
+- Chạy toàn bộ (unit + integration) cho 1 service:
+      cd services/<service> && mvnw.cmd test            (Windows)
+      cd services/<service> && ./mvnw verify            (Bash/Linux)
+  ("verify" chạy cả unit lẫn integration vì integration test chạy qua Surefire.)
+- Chạy 1 lớp:    mvnw.cmd test -Dtest=CurrencyValidatorTest
+- Chạy 1 method: mvnw.cmd test -Dtest=CurrencyValidatorTest#rejectsUnknownCodes
+- CI: GitHub Actions (.github/workflows/ci.yml) chạy `mvn verify` cho cả 9 service
+  trên ma trận (JDK 21), Docker sẵn có nên Testcontainers hoạt động.
+
+Quy ước chung của test:
+- userId luôn lấy từ JWT (claim), không bao giờ từ request body → nhiều test kiểm
+  chứng "tenant isolation" (user A không thấy dữ liệu user B).
+- Soft delete: test kiểm chứng bản ghi đã xóa mềm bị ẩn khỏi truy vấn.
+- Idempotency inbox (processed_events): test kiểm chứng sự kiện trùng chỉ xử lý 1 lần.
+- Envelope API chuẩn { success, data, meta } / { success, error{code,message} }.
+
+
+================================================================================
+1) API-GATEWAY  (cổng vào, xác thực JWT ở biên, định tuyến)
+================================================================================
+
+[UNIT] JwtKeyResolverTest — 9 test
+  Giải mã/khám phá khóa RS256 qua JWK Set (JWKS) + xoay khóa. Dùng 1 HTTP server
+  JWKS cục bộ để mô phỏng auth-service.
+   - withoutAJwksUri_theConfiguredKeyIsUsedAndNothingIsFetched
+   - aKeyKnownOnlyToTheJwksVerifies_provingTheDocumentIsUnderstood
+   - theFetchedSetReplacesTheBootstrapKeyRatherThanAddingToIt
+   - duringTheOverlapWindow_bothTheOutgoingAndIncomingKeyVerify
+   - whenTheJwksIsUnreachable_theBootstrapKeyStillVerifies
+   - aFailedRefreshKeepsTheKeysAlreadyLearned_andIsCounted
+   - unknownKidsCannotStampedeAuthService (chống DoS khuếch đại)
+   - aTokenWithNoKidUsesTheBootstrapKey
+   - anUnknownKeyIsRejectedRatherThanFallingBack
+
+[UNIT] TokenRevocationCheckerTest — 6 test
+  Danh sách thu hồi token qua Redis (logout/ban/đổi role vô hiệu token ngay).
+   - noCutoffForUser_isNotRevoked
+   - tokenIssuedBeforeCutoff_isRevoked
+   - tokenIssuedAtOrAfterCutoff_survives
+   - redisDown_failsOpenAndCounts (Redis lỗi → fail-open, có đếm metric)
+   - malformedCutoff_failsOpenAndCounts
+   - claimsWithoutUserIdOrIssuedAt_areNotRevoked_andNeverHitRedis
+
+[COMPONENT] GatewayAuthTest — 11 test  (Spring context + WireMock, không Testcontainers)
+  Thực thi xác thực ở gateway trên mọi tình huống token.
+   - protectedRoute_noToken_returnsUnauthenticated
+   - protectedRoute_malformedAuthHeader_returnsUnauthenticated
+   - protectedRoute_expiredToken_returnsTokenExpired
+   - protectedRoute_badSignature_returnsTokenInvalid
+   - protectedRoute_wrongAlgorithm_returnsTokenInvalid
+   - protectedRoute_wrongIssuer_returnsTokenInvalid
+   - protectedRoute_wrongAudience_returnsTokenInvalid
+   - revokedTokenIsRejected
+   - protectedRoute_validToken_passesAuthAndForwards
+   - publicRoute_noToken_bypassesAuthAndForwards
+   - authMe_isProtected_noToken_returnsUnauthenticated
+
+[COMPONENT] GatewayRoutingTest — 3 test
+   - unknownPrefixReturnsRouteNotFound
+   - knownPrefixWithValidTokenAndDeadBackendReturnsServiceUnavailable
+   - oversizedBodyReturnsPayloadTooLarge (chặn body > 2 MiB → 413)
+
+[COMPONENT] PrometheusEndpointTest — 1 test
+   - prometheusEndpointIsReachableAndCarriesJvmMetrics
+
+[INTEGRATION] RevocationDenylistIntegrationTest — 3 test  (Redis Testcontainer)
+   - tokenIsAcceptedWhileNoCutoffExists
+   - sameTokenIsRejectedOnceTheUserIsRevoked
+   - aTokenMintedAfterTheRevocationWorksAgain
+
+
+================================================================================
+2) AUTH-SERVICE  (đăng ký/đăng nhập, JWT RS256, refresh, khóa tài khoản)
+================================================================================
+
+[UNIT] JwtServiceTest — 5 test
+  Xác thực token cục bộ bằng public key (pin thuật toán + iss/aud).
+   - validTokenAccepted
+   - wrongIssuerRejected
+   - wrongAudienceRejected
+   - wrongAlgorithmRejected
+   - expiredTokenRejected
+
+[UNIT] JwtKeyRotationTest — 5 test
+  Xoay khóa RS256 không downtime; kid = RFC 7638 thumbprint.
+   - theKidIsDerivedFromTheKeyItself_soIssuerAndValidatorAgreeWithoutConfig
+   - midRotation_theOutgoingKeyStillVerifiesButNoLongerSigns
+   - afterTheWindowCloses_theRetiredKeyIsRejected
+   - theJwksAdvertisesEveryKeyThatVerifies
+   - blankAndDuplicatePreviousKeysAreTolerated
+
+[INTEGRATION] AuthApiIntegrationTest — 8 test  (MySQL Testcontainer)
+   - registerThenLoginReturnsTokens
+   - registerDuplicateEmailIsConflict
+   - registerDuplicateUsernameIsConflict
+   - registerInvalidEmailIsValidationError
+   - registerShortPasswordIsValidationError
+   - loginWrongPasswordIsUnauthorized
+   - loginUnknownEmailIsUnauthorized
+   - malformedJsonIsBadRequest
+
+[INTEGRATION] RefreshTokenIntegrationTest — 4 test
+   - refreshReturnsNewTokens
+   - rotationInvalidatesPreviousRefreshToken
+   - logoutRevokesRefreshToken
+   - refreshWithUnknownTokenIsUnauthorized
+
+[INTEGRATION] LoginLockoutIntegrationTest — 2 test
+   - lockoutAfterMaxFailedAttemptsBlocksEvenCorrectPassword
+   - successfulLoginResetsTheFailureCounter
+
+[INTEGRATION] DisabledAccountIntegrationTest — 1 test
+   - disabledUserCannotLogin
+
+[INTEGRATION] PasswordEncodingIntegrationTest — 2 test
+   - newRegistrationsAreStoredWithBcryptPrefix
+   - legacyBareBcryptHashStillAuthenticates
+
+[INTEGRATION] JwtClaimsIntegrationTest — 2 test
+   - issuedTokenCarriesIssuerAndAudience
+   - tokenWithoutIssuerOrAudienceIsRejected
+
+[INTEGRATION] JwtSecurityIntegrationTest — 4 test
+   - meWithoutTokenIsUnauthorized
+   - meWithValidTokenReturnsEmail
+   - meWithForgedSignatureIsUnauthorized
+   - meWithExpiredTokenIsUnauthorized
+
+[INTEGRATION] JwksEndpointIntegrationTest — 4 test
+   - jwksIsPublic_andServesTheSigningKey
+   - issuedTokensCarryAKidThatResolvesInTheJwks
+   - aTokenVerifiesWithTheKeyTakenFromTheJwks
+   - theJwksNeverLeaksPrivateKeyMaterial (bảo vệ tuyệt đối private key)
+
+[INTEGRATION] TokenRevocationIntegrationTest — 3 test  (Redis)
+   - loginAloneRevokesNothing
+   - logoutWritesACutoffThatCoversTheAccessTokenJustIssued
+   - cutoffExpiresWithTheAccessTokenLifetime
+
+[INTEGRATION] OpenApiDocsIntegrationTest — 1 test   (apiDocsArePubliclyReachable)
+[INTEGRATION] PrometheusEndpointIntegrationTest — 1 test
+[CONTEXT]     AuthServiceApplicationTests — 1 test  (context load)
+
+
+================================================================================
+3) USER-SERVICE  (hồ sơ người dùng; có endpoint gRPC nội bộ)
+================================================================================
+
+[UNIT] UserProfileServiceTest — 7 test
+   - createProfile_success_returnsResponse
+   - createProfile_duplicateProfile_throwsConflict
+   - getMyProfile_success_returnsProfile
+   - getMyProfile_notFound_throwsException
+   - updateProfile_partialFields_onlyUpdatesNonNull
+   - updateProfile_allFields_updatesAll
+   - updateProfile_notFound_throwsException
+
+[COMPONENT] UserProfileControllerTest — 15 test  (@WebMvcTest slice — controller + validation)
+   - createProfile_success_returns201
+   - createProfile_allFields_mapsCorrectly
+   - getMyProfile_success_returns200
+   - getMyProfile_notFound_returns404
+   - updateProfile_success_returns200
+   - updateProfile_notFound_returns404
+   - createProfile_missingFullName_returns400
+   - createProfile_blankFullName_returns400
+   - createProfile_invalidPhone_returns400
+   - createProfile_futureDateOfBirth_returns400
+   - updateProfile_invalidPhone_returns400
+   - request_withoutToken_returns401
+   - postRequest_withoutToken_returns401
+   - request_withInvalidToken_returns401
+   - request_withValidAuth_passesThrough
+
+[UNIT] JwtServiceTest — 5 test  (validTokenAccepted / wrongIssuer / wrongAudience /
+        wrongAlgorithm / expiredToken — cùng bộ như các service khác)
+
+[INTEGRATION] UserProfileApiIntegrationTest — 5 test  (MySQL)
+   - createThenGetProfile_persistsToMySql
+   - updateProfile_partialUpdate_keepsOtherFields
+   - createDuplicateProfile_returns409
+   - getMissingProfile_returns404
+   - request_withoutToken_returns401
+
+[INTEGRATION] UserProfileApiSecurityIntegrationTest — 5 test
+   - rejectsRequestWithoutJwt
+   - rejectsJwtWithInvalidSignature
+   - rejectsExpiredJwt
+   - allowsValidJwtAndScopesProfileToTokenUserId
+   - userCannotSeeAnotherUsersProfile (cô lập tenant)
+
+[INTEGRATION] UserProfileGrpcIntegrationTest — 5 test  (gRPC server + MySQL)
+   - getMyProfile_returnsPersistedProfile_forValidToken
+   - getMyProfile_returnsNotFound_whenNoProfileYet
+   - getMyProfile_rejectsMissingToken_withUnauthenticated
+   - getMyProfile_rejectsForgedToken_withUnauthenticated
+   - getMyProfile_rejectsExpiredToken_withUnauthenticated
+
+[INTEGRATION] OpenApiDocsIntegrationTest — 1 test
+[INTEGRATION] PrometheusEndpointIntegrationTest — 1 test
+[CONTEXT]     UserServiceApplicationTests — 1 test
+
+
+================================================================================
+4) TRANSACTION-SERVICE  (giao dịch, danh mục, ví, tổng hợp, game, outbox)
+================================================================================
+
+[UNIT] CurrencyValidatorTest — 3 test
+   - acceptsValidIso4217Codes
+   - rejectsUnknownCodes
+   - treatsNullAsValidSoNotNullOwnsPresence
+
+[UNIT] RouletteTest — 7 test  (toán học game American Roulette, server-authoritative)
+   - wheelComposition            (đúng thành phần bánh xe)
+   - coloursAlternate            (màu xen kẽ)
+   - payoutsEncodeTheHouseEdge   (payout phản ánh lợi thế nhà cái)
+   - legalPositionCount          (161 vị trí cược hợp lệ)
+   - illegalPositionsRejected
+   - payoutArithmetic            (mọi payout không phải basket = (36−n)/n)
+   - spinStaysOnTheWheel
+
+[UNIT] OutboxRelayTest — 4 test  (transactional outbox → Kafka đáng tin cậy)
+   - publishesEveryRowThenDeletesThemInOneBatch
+   - stopsAtFirstFailure_deletesOnlyRowsPublishedBefore_andNeverReordersAhead
+   - disabled_doesNotTouchTheDatabaseOrBroker
+   - emptyBatch_sendsNothingAndDeletesNothing
+
+[UNIT] JwtServiceTest — 5 test  (bộ chuẩn validTokenAccepted/wrongIssuer/...)
+
+[INTEGRATION] TransactionApiCrudIntegrationTest — 12 test  (MySQL)
+   - createReturnsCreatedTransaction
+   - getByIdReturnsTransaction
+   - updateAppliesPartialChanges
+   - softDeleteHidesTransactionFromSubsequentReads
+   - createsTransferAndMovesTheBalanceBetweenWallets
+   - rejectsTransferMissingDestinationWallet
+   - rejectsTransferToSameWallet
+   - rejectsTransactionReferencingAnotherUsersWallet
+   - rejectsNonPositiveAmountWithStructuredError
+   - rejectsInvalidCurrencyWithStructuredError
+   - rejectsMissingTransactionDateWithStructuredError
+   - rejectsUnknownCategoryWithStructuredError
+
+[INTEGRATION] TransactionApiFilterIntegrationTest — 7 test
+   - defaultSortingIsTransactionDateDesc
+   - filterByTypeReturnsOnlyMatchingType
+   - filterByDateRangeIsInclusive
+   - combinedFiltersAreAnded
+   - paginationIsDeterministicAcrossPagesEvenWithTiedDates
+   - limitAboveMaximumReturnsStructuredValidationError
+   - pageBelowOneReturnsStructuredValidationError
+
+[INTEGRATION] TransactionApiSecurityIntegrationTest — 5 test
+   - rejectsRequestWithoutJwt / rejectsJwtWithInvalidSignature / rejectsExpiredJwt
+   - allowsValidJwtAndScopesDataToTokenUserId
+   - userCannotAccessAnotherUsersTransaction
+
+[INTEGRATION] TransactionPersistenceIntegrationTest — 3 test
+   - flywaySeedsTheDefaultCategories
+   - savesAndFetchesTransactionWithJsonMetadata (cột JSON MySQL)
+   - softDeletedTransactionIsHiddenFromTheOwnerQuery
+
+[INTEGRATION] TransactionSummaryIntegrationTest — 5 test
+   - monthlySummaryReturnsIncomeExpenseAndBalance
+   - monthlySummaryIsZeroedWhenNoTransactions
+   - categoryBreakdownIsGroupedAndOrderedByTotalDesc
+   - dailyTrendAggregatesPerDayAscending
+   - summariesAreScopedToTheAuthenticatedUser
+
+[INTEGRATION] CategoryApiIntegrationTest — 8 test
+   - listIncludesSeededSystemCategories
+   - createReturnsNonSystemCategoryWithGeneratedId
+   - updateAppliesPartialChangesAndKeepsTypeWhenAbsent
+   - deleteUserCreatedCategorySucceeds
+   - cannotDeleteSystemCategory
+   - cannotDeleteCategoryReferencedByTransactions
+   - updateMissingCategoryReturns404
+   - createWithBlankNameReturnsValidationError
+
+[INTEGRATION] WalletApiIntegrationTest — 5 test
+   - listReturnsOnlyTheUsersWallets
+   - incomeCreditsAndExpenseDebitsTheWallet (số dư cập nhật nguyên tử)
+   - rejectsTransactionWhoseCurrencyDiffersFromTheWallet
+   - deletingTransactionRestoresTheWalletBalance
+   - emptyWalletCanBeDeletedButANonEmptyOneCannot
+
+[INTEGRATION] SchemaIndexIntegrationTest — 3 test
+   - flywayMigrationsAppliedSuccessfully
+   - mandatoryIndexesExistOnTransactions
+   - userScopedFilteredQueryExecutesAgainstMigratedSchema
+
+[INTEGRATION] TransactionEventPublishingIntegrationTest — 1 test  (Kafka)
+   - publishesTransactionCreatedEventAfterCommit
+
+[INTEGRATION] PrometheusEndpointIntegrationTest — 1 test
+
+
+================================================================================
+5) BUDGET-SERVICE  (định nghĩa ngân sách + tiêu thụ từ sự kiện Kafka)
+================================================================================
+
+[UNIT] BudgetServiceImplTest — 15 test
+   - createPersistsBudgetScopedToTokenUserId
+   - createRejectsNonPositiveLimit
+   - createRejectsEndBeforeStart
+   - createRejectsDuplicateActiveBudget
+   - getByIdThrowsWhenNotOwned
+   - updateAppliesOnlyNonNullFieldsAndKeepsSlotCheckOff
+   - updateChecksDuplicateWhenSlotChanges
+   - applyExpenseRecordsInboxRowAndIncrementsBudgets
+   - applyExpenseSkipsDuplicateEventWithoutTouchingBudgets
+   - applyDeleteReversesTheExpenseWithANegatedAmount
+   - applyDeleteSkipsDuplicateEventWithoutTouchingBudgets
+   - applyUpdateReversesOldSlotAndAppliesNewSlotUnderOneInboxRow
+   - applyUpdateWithNullApplyOnlyReversesTheOldSlot
+   - applyUpdateSkipsDuplicateEventWithoutTouchingBudgets
+   - deleteSoftDeletesOwnedBudget
+
+[UNIT] TransactionEventConsumerTest — 13 test  (idempotency + khớp sự kiện)
+   - appliedExpenseCountsAsProcessed
+   - duplicateExpenseCountsAsDuplicate
+   - nonExpenseIsIgnoredWithoutReachingTheService
+   - missingEventIdIsIgnoredWithoutReachingTheService
+   - missingDateIsIgnoredWithoutReachingTheService
+   - unparseableDateIsIgnoredWithoutReachingTheService
+   - updatedBetweenTwoExpensesReversesOldSlotAndAppliesNewSlot
+   - updatedFromExpenseToIncomeReversesOnlyTheOldSlot
+   - updatedBetweenTwoNonExpensesIsIgnoredWithoutReachingTheService
+   - updatedMissingEventIdIsIgnoredWithoutReachingTheService
+   - deletedExpenseIsReversedAndCountsAsProcessed
+   - deletedNonExpenseIsIgnoredWithoutReachingTheService
+   - deletedMissingEventIdIsIgnoredWithoutReachingTheService
+
+[UNIT] CurrencyValidatorTest — 3 test  (acceptsValidIso4217Codes / rejectsUnknownCodes /
+        treatsNullAsValidSoNotNullOwnsPresence)
+
+[UNIT] BudgetEventListenerTest — 2 test
+   - publishesWhenKafkaEnabled
+   - skipsPublishWhenKafkaDisabled
+
+[UNIT] KafkaConsumerConfigTest — 2 test  (metric thất bại consumer)
+   - counterRegisteredAtZeroBeforeAnyFailure
+   - eachRecoveredRecordIncrementsFailedOnce
+
+[UNIT] JwtServiceTest — 5 test  (bộ chuẩn)
+
+[INTEGRATION] BudgetApiCrudIntegrationTest — 10 test  (MySQL)
+   - createReturnsCreatedBudget / getByIdReturnsBudget / updateAppliesPartialChanges
+   - softDeleteHidesBudgetFromSubsequentReads
+   - duplicateActiveBudgetReturnsConflict
+   - recreatingAfterSoftDeleteIsAllowed
+   - rejectsNonPositiveLimitWithStructuredError
+   - rejectsInvalidCurrencyWithStructuredError
+   - rejectsMissingStartDateWithStructuredError
+   - rejectsEndDateBeforeStartDateWithStructuredError
+
+[INTEGRATION] BudgetApiFilterIntegrationTest — 8 test
+   - defaultSortingIsStartDateDesc / filterByCategory / filterByPeriodType
+   - filterByActiveOnReturnsBudgetsCoveringTheDate
+   - combinedFiltersAreAnded
+   - paginationIsDeterministicAcrossPagesEvenWithTiedDates
+   - limitAboveMaximumReturnsStructuredValidationError
+   - pageBelowOneReturnsStructuredValidationError
+
+[INTEGRATION] BudgetApiSecurityIntegrationTest — 5 test
+   - rejectsRequestWithoutJwt / rejectsJwtWithInvalidSignature / rejectsExpiredJwt
+   - allowsValidJwtAndScopesDataToTokenUserId
+   - userCannotAccessAnotherUsersBudget
+
+[INTEGRATION] BudgetPersistenceIntegrationTest — 3 test
+   - savesAndFetchesBudget
+   - softDeletedBudgetIsHiddenFromTheOwnerQuery
+   - duplicateGuardIgnoresSoftDeletedRows
+
+[INTEGRATION] BudgetUtilizationConsumerIntegrationTest — 5 test  (Kafka + MySQL)
+   - expenseEventIncrementsMatchingBudget
+   - expenseEventIncrementsAllOverlappingBudgets
+   - nonMatchingEventsContributeNothing
+   - duplicateEventIdIsCountedExactlyOnce
+   - consumerLagMetricIsExposedForPrometheus
+
+[INTEGRATION] BudgetReversalConsumerIntegrationTest — 4 test  (Kafka + MySQL)
+   - deleteEventReversesSpentAmount
+   - updateEventReappliesWithTheNewAmount
+   - updateEventMovesSpendBetweenCategoryBudgets
+   - duplicateDeleteIsAppliedExactlyOnce
+
+[INTEGRATION] SchemaIndexIntegrationTest — 3 test
+   - flywayMigrationsAppliedSuccessfully
+   - mandatoryIndexesExistOnBudgets
+   - userScopedFilteredQueryExecutesAgainstMigratedSchema
+
+[INTEGRATION] OpenApiDocsIntegrationTest — 1 test
+[INTEGRATION] PrometheusEndpointIntegrationTest — 1 test
+
+
+================================================================================
+6) DASHBOARD-SERVICE  (BFF tổng hợp; không có DB riêng)
+================================================================================
+
+[UNIT] DashboardServiceTest — 30 test  (lớp test lớn nhất — logic tổng hợp BFF)
+  Ngân sách/tiến độ:
+   - budgetProgress_joinsLimitWithExpenseSpend
+   - budgetProgress_ignoresIncomeRows_andZeroesUnspentBudgets
+   - budgetProgress_defaultsWindowToCurrentMonth_whenDatesNull
+   - budgetProgress_roundsPercentToTwoDecimals
+  Giao dịch gần đây:
+   - recentTransactions_defaultLimit_callsClientWithFive_andMapsFields
+   - recentTransactions_customLimit_passedThrough
+   - recentTransactions_limitOver100_clampedTo100
+   - recentTransactions_limitZeroOrNegative_clampedToOne
+   - recentTransactions_emptyResponse_returnsEmptyList
+  Top danh mục:
+   - topCategories_filtersExpense_sortsDesc_andLimits
+   - topCategories_limitLargerThanCount_returnsAllSorted
+   - topCategories_noExpense_returnsEmptyList
+   - topCategories_zeroOrNegativeLimit_returnsEmptyList_withoutError
+  Tổng hợp KPI:
+   - summary_computesIncomeExpenseBalanceAndUtilization
+   - summary_noBudgets_utilizationIsZero_butKpisStillComputed
+   - summary_defaultsWindowToCurrentMonth_whenDatesNull
+  Xu hướng (trend):
+   - trend_bucketsDailyPointsIntoMonths_sumsAndComputesBalance
+   - trend_emptyUpstream_returnsEmptyList
+   - trend_defaultsWindowToCurrentMonth_whenDatesNull
+   - trend_monthBoundary_splitsAdjacentDaysAndOutputsChronologically_evenIfUpstreamUnordered
+   - trend_dayGranularity_passesThroughPerDayWithIsoDatePeriod
+   - trend_unknownGranularity_fallsBackToMonth
+   - trend_nullMoneyFields_treatedAsZero
+   - trend_aggregationPrecision_isExact
+  Composite / overview:
+   - composite_assemblesAllBlocks_andFetchesEachUpstreamExactlyOnce
+   - composite_defaultsWindowToCurrentMonth_whenDatesNull
+   - composite_emptyData_returnsEmptyBlocks_andZeroSummary
+   - composite_nullProfile_tolerated_otherBlocksStillBuilt
+   - overview_composesProfileSummaryAndBudgets
+   - overview_toleratesMissingProfile
+
+[UNIT] UpstreamCallsTest — 3 test  (Resilience4j: circuit breaker + retry)
+   - retriesTransientFailureThenSucceeds
+   - doesNotRetryClientError_andWrapsAsUpstreamException
+   - opensBreakerAfterRepeatedFailures_thenShortCircuits
+
+[UNIT] BudgetClientTest — 2 test  (listBudgets_unwrapsEnvelope_andRelaysJwt /
+        listBudgets_wrapsUpstreamErrorAsUpstreamException)
+
+[UNIT] TransactionClientTest — 3 test
+   - trend_unwrapsEnvelope_relaysJwt_andSendsDateRange
+   - trend_nullData_returnsEmptyList
+   - trend_wrapsUpstreamErrorAsUpstreamException
+
+[UNIT] UserClientTest — 3 test  (gRPC client)
+   - me_returnsProfile_andRelaysBearerTokenAsMetadata
+   - me_returnsNull_whenProfileNotFound
+   - me_wrapsServerErrorAsUpstreamException
+
+[UNIT] JwtServiceTest — 5 test  (bộ chuẩn)
+[COMPONENT] OpenApiDocsTest — 2 test / PrometheusEndpointTest — 2 test
+[CONTEXT]   DashboardApplicationTests — 2 test
+
+[INTEGRATION] DashboardApiSecurityIntegrationTest — 5 test
+   - rejectsRequestWithoutJwt / rejectsJwtWithInvalidSignature / rejectsExpiredJwt
+   - validJwtPassesSecurityAndReachesUpstreamFanOut
+
+
+================================================================================
+7) RISK-SERVICE  (rule rủi ro + insight hành vi + phát hiện bất thường)
+================================================================================
+
+[UNIT] RiskRuleEngineTest — 15 test  (rule engine phát hiện rủi ro chi/thu)
+   - highAmountExpenseFires
+   - belowAllThresholdsFiresNothing
+   - rapidSpendingFiresOnTheFifthInWindow
+   - rapidSpendingDoesNotRefireAfterTheFifth
+   - largeDailySpendFiresOnTheCrossingEvent
+   - largeDailySpendDoesNotRefireOncePastThreshold
+   - multipleRulesCanFireForOneEvent
+   - highAmountIncomeFires
+   - ordinaryIncomeFiresNothing
+   - rapidIncomeFiresOnTheFifthInWindow
+   - largeDailyIncomeFiresOnTheCrossingEvent
+   - incomeSpikeFiresAtThreeTimesTheUsersOwnMean
+   - incomeSpikeNeedsEnoughHistoryToHaveAMean
+   - transferIsNotEvaluatedOrRecorded (TRANSFER không tính là thu/chi)
+   - duplicateEventIsSkipped
+
+[UNIT] InsightServiceTest — 13 test  (insight hành vi, ngưỡng chính xác)
+   - spendingIncreaseFiresAtExactly30Percent
+   - spendingIncreaseDoesNotFireBelow30Percent
+   - spendingIncreaseNeedsAPreviousBaseline
+   - categorySurgeFiresAtOrAbove50Percent
+   - categorySurgeDoesNotFireBelow50Percent
+   - budgetRiskFiresWhenUtilizationExceeds80Percent
+   - budgetRiskDoesNotFireAtExactly80Percent
+   - lowSavingsRateFiresWhenExpensesReach80PercentOfIncome
+   - lowSavingsRateDoesNotFireBelowThreshold
+   - lowSavingsRateNeedsPositiveIncome
+   - incomeEventIsRecordedButProducesNoInsight
+   - ignoresNonExpenseEvents
+   - multipleInsightsCanFireForOneEvent
+
+[UNIT] AnomalyServiceTest — 4 test  (phát hiện giao dịch bất thường)
+   - firesWhenAmountIsAtLeastThreeTimesAverageWithEnoughHistory
+   - doesNotFireWhenHistoryIsInsufficient
+   - doesNotFireBelowThreeTimesAverage
+   - ignoresNonExpenseEvents
+
+[UNIT] RiskEventConsumerTest — 4 test / BudgetEventConsumerTest — 3 test
+[UNIT] KafkaConsumerConfigTest — 2 test  (metric thất bại consumer)
+
+[INTEGRATION] RiskDetectionIntegrationTest — 4 test  (Kafka + MySQL)
+   - highAmountExpensePublishesRiskDetected
+   - normalExpenseProducesNoRiskEvent
+   - rapidSpendingFiresOnFifthExpenseWithinWindow
+   - largeDailySpendFiresWhenDailyTotalExceedsThreshold
+
+[INTEGRATION] InsightApiIntegrationTest — 7 test
+   - spendingIncreaseIsGeneratedAndListed
+   - categorySurgeFiresWhileUserTotalDoesNot
+   - budgetRiskFiresWhenUtilizationExceeds80Percent
+   - lowSavingsRateIsGeneratedAndListed
+   - lowSavingsRateDoesNotFireBelowThreshold
+   - listIsEmptyWhenNoInsights
+   - generatedMetricIsExposedPerType
+
+[INTEGRATION] AnomalyApiIntegrationTest — 4 test
+   - unusualAmountIsDetectedAndListed
+   - doesNotDetectWhenHistoryIsInsufficient
+   - listIsEmptyWhenNoAnomalies
+   - detectedMetricIsExposed
+
+[INTEGRATION] RiskAlertApiIntegrationTest — 4 test  (read API cảnh báo rủi ro)
+[INTEGRATION] InsightAnomalyKafkaE2EIntegrationTest — 2 test
+   - transactionCreatedFlowGeneratesInsightAndAnomaly (E2E: sự kiện → insight + anomaly)
+   - consumerLagMetricIsExposedForPrometheus
+
+
+================================================================================
+8) NOTIFICATION-SERVICE  (thông báo trong app từ RiskDetected + narrator LLM tùy chọn)
+================================================================================
+
+[UNIT] NotificationServiceImplTest — 4 test
+   - createFromEventPersistsNotificationAndInboxRowForNewEvent
+   - createFromEventSkipsWhenAlreadyProcessed
+   - markReadThrowsWhenNotFoundForUser
+   - markReadSetsReadFlagWhenFound
+
+[UNIT] RiskDetectedConsumerTest — 4 test
+   - createsNotificationAndCountsCreated
+   - countsDuplicateWhenInboxHit
+   - ignoresEventWithoutEventId
+   - ignoresEventWithoutUserId
+
+[UNIT] TemplateNarratorTest — 3 test  (diễn đạt cảnh báo bằng template)
+   - mapsKnownRiskTypeToSpecificWording
+   - fallsBackForUnknownRiskType
+   - handlesNullRiskTypeWithoutThrowing
+
+[UNIT] LlmAlertNarratorTest — 4 test  (diễn đạt bằng LLM, có fallback template)
+   - usesLlmTitleAndMessageOnSuccess
+   - fallsBackToTemplateOnHttpError
+   - fallsBackToTemplateWhenApiUnreachable
+   - fallsBackToTemplateOnEmptyLlmFields
+
+[UNIT] KafkaConsumerConfigTest — 2 test / JwtServiceTest — 5 test
+
+[INTEGRATION] NotificationApiCrudIntegrationTest — 4 test  (MySQL)
+   - listsNotificationsNewestFirstAndReportsUnreadCount
+   - markReadFlipsOneAndDecrementsUnreadCount
+   - markAllReadClearsUnread
+   - unreadOnlyFilterExcludesReadNotifications
+
+[INTEGRATION] NotificationApiSecurityIntegrationTest — 3 test
+   - rejectsRequestWithoutToken
+   - rejectsExpiredToken
+   - cannotMarkAnotherUsersNotificationRead
+
+[INTEGRATION] OpenApiDocsIntegrationTest — 1 test
+[INTEGRATION] PrometheusEndpointIntegrationTest — 1 test
+
+
+================================================================================
+9) ANALYTICS-SERVICE  (mô hình đọc CQRS + tóm tắt AI tùy chọn) — TOÀN UNIT TEST
+================================================================================
+
+[UNIT] AnalyticsServiceImplTest — 4 test
+   - overviewComputesTotalsSavingsRateAndExpenseChange
+   - forecastForPastMonthProjectsToActual
+   - categoriesComputeShareWithinType
+   - summaryUsesTemplateAndIsNotAiGenerated
+
+[UNIT] RollupServiceTest — 4 test  (dựng read-model từ TransactionCreated)
+   - createsNewRollupForFirstEventInSlot
+   - addsToExistingRollupInSlot
+   - skipsDuplicateEvent (idempotent)
+   - usesUncategorizedSentinelWhenCategoryMissing
+
+[UNIT] LlmSummarizerTest — 4 test  (tóm tắt tháng bằng LLM, fallback template)
+   - usesLlmSummaryOnSuccess
+   - fallsBackToTemplateOnHttpError
+   - fallsBackToTemplateWhenApiUnreachable
+   - fallsBackToTemplateOnEmptySummary
+
+[UNIT] TemplateSummarizerTest — 2 test
+   - describesSavingsRateTrendAndTopCategory
+   - reportsNoActivityWhenEmpty
+
+
+================================================================================
+GHI CHÚ CUỐI
+================================================================================
+- Một số lớp base/support không phải test (không tính vào 434): AbstractMySql/
+  MockMvc/IntegrationTest, JwtTestTokens, TestUpstreamCalls...
+- Bộ "JwtServiceTest" (5 test) lặp lại giống nhau ở 5 service (auth, user,
+  transaction, budget, dashboard, notification) vì mỗi service tự xác thực token
+  cục bộ bằng public key — đây là chủ đích thiết kế (gateway có thể gỡ bỏ, service
+  vẫn tự bảo vệ).
+- Endpoint /actuator/prometheus và /v3/api-docs được kiểm chứng ở hầu hết service
+  để đảm bảo observability + tài liệu API luôn truy cập được.
+- Chi tiết điều kiện kích hoạt của rule/insight/anomaly (ngưỡng) xem thêm:
+  docs/intelligence.md.
+================================================================================
