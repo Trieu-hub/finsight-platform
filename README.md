@@ -25,6 +25,7 @@ coupling is asynchronous over Kafka.
 | [`docs/runbook.md`](docs/runbook.md) | Startup, compose workflow, Kafka/Prometheus/Grafana verification, troubleshooting |
 | [`project-status.md`](project-status.md) | Phase-by-phase completion and roadmap |
 | [`docs/ADR-0004-budget-utilization-via-events.md`](docs/ADR-0004-budget-utilization-via-events.md) | Why budget utilization is event-driven (and its accepted drift) |
+| [`docs/unit-testing/unit-testing-1.txt`](docs/unit-testing/unit-testing-1.txt) | Full test-suite catalog — every test class (unit vs integration), count, and what it verifies (434 tests across 9 services) |
 
 ## Tech stack
 
