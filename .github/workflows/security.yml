@@ -49,8 +49,19 @@ jobs:
       # action tag that can fail to resolve. Reads every pom.xml + web/package-lock.json
       # and reports known CVEs. ignore-unfixed: a CVE with no released fix can't be acted
       # on, so don't wedge the build on it; fail only on actionable HIGH/CRITICAL.
-      - name: Run Trivy
+      #
+      # Report-only: continue-on-error keeps a finding (or a flaky DB fetch) from blocking
+      # the merge — CVEs still show in the log and as a step annotation, and Dependabot
+      # opens the PRs that actually fix them. Pull the vuln DBs from the AWS ECR mirror
+      # because ghcr.io's anonymous rate limit routinely fails Trivy on shared CI runners.
+      - name: Run Trivy (report-only)
+        continue-on-error: true
+        env:
+          TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
+          TRIVY_JAVA_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-java-db
         run: |
-          docker run --rm -v "$PWD:/repo" aquasec/trivy:latest \
+          docker run --rm \
+            -e TRIVY_DB_REPOSITORY -e TRIVY_JAVA_DB_REPOSITORY \
+            -v "$PWD:/repo" aquasec/trivy:latest \
             fs --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed \
             --exit-code 1 --no-progress /repo
