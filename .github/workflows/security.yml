@@ -1,0 +1,58 @@
+name: Security
+
+# Security gates that the build+test CI (ci.yml) does not cover:
+#   * secret-scan     — no credential is ever committed (scans the FULL git history)
+#   * dependency-scan — no known-vulnerable dependency ships (Maven + npm)
+# Runs on every PR and push to main, plus weekly so a newly-disclosed CVE turns the
+# build red even when no code changed.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+
+# Cancel a superseded run when new commits land on the same ref.
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  secret-scan:
+    name: secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # gitleaks scans every commit, not just the tip
+
+      # Run the pinned gitleaks image directly — no marketplace action, so no org
+      # license key is needed. --redact keeps any finding out of the public log;
+      # --exit-code 1 fails the job so a leaked credential blocks the merge.
+      - name: Run gitleaks
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.21.2 \
+            detect --source=/repo --redact --verbose --exit-code=1
+
+  dependency-scan:
+    name: dependency scan (trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Filesystem scan reads every pom.xml and web/package-lock.json and reports
+      # known CVEs. ignore-unfixed: a CVE with no released fix can't be acted on, so
+      # don't wedge the build on it; fail only on actionable HIGH/CRITICAL findings.
+      - name: Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scanners: vuln
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"

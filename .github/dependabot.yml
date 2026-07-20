@@ -1,0 +1,84 @@
+# Automated dependency-update PRs. The repo has no aggregator pom — each service is a
+# standalone Maven project — so every service directory needs its own maven entry.
+# Updates are grouped per project so a week's bumps arrive as ONE PR, not dozens.
+version: 2
+updates:
+  # ── Java services (one Maven project each) ──────────────────────────────────
+  - package-ecosystem: maven
+    directory: /services/analytics-service
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    groups:
+      analytics-service: { patterns: ["*"] }
+
+  - package-ecosystem: maven
+    directory: /services/api-gateway
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    groups:
+      api-gateway: { patterns: ["*"] }
+
+  - package-ecosystem: maven
+    directory: /services/auth-service
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    groups:
+      auth-service: { patterns: ["*"] }
+
+  - package-ecosystem: maven
+    directory: /services/budget-service
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    groups:
+      budget-service: { patterns: ["*"] }
+
+  - package-ecosystem: maven
+    directory: /services/dashboard-service
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    groups:
+      dashboard-service: { patterns: ["*"] }
+
+  - package-ecosystem: maven
+    directory: /services/notification-service
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    groups:
+      notification-service: { patterns: ["*"] }
+
+  - package-ecosystem: maven
+    directory: /services/risk-service
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    groups:
+      risk-service: { patterns: ["*"] }
+
+  - package-ecosystem: maven
+    directory: /services/transaction-service
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    groups:
+      transaction-service: { patterns: ["*"] }
+
+  - package-ecosystem: maven
+    directory: /services/user-service
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    groups:
+      user-service: { patterns: ["*"] }
+
+  # ── Web client ──────────────────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: /web
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    groups:
+      web: { patterns: ["*"] }
+
+  # ── GitHub Actions workflows ─────────────────────────────────────────────────
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    groups:
+      actions: { patterns: ["*"] }
