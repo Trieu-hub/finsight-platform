@@ -5,7 +5,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.0.6</version>
+        <version>4.1.0</version>
         <relativePath/>
     </parent>
     <groupId>com.pm</groupId>
@@ -16,11 +16,11 @@
 
     <properties>
         <java.version>21</java.version>
-        <testcontainers.version>1.20.6</testcontainers.version>
+        <testcontainers.version>2.0.5</testcontainers.version>
         <!-- Kept in sync with the versions the spring-grpc BOM manages (see below), so the
              protobuf-maven-plugin downloads matching protoc / protoc-gen-grpc-java binaries. -->
-        <spring-grpc.version>1.0.3</spring-grpc.version>
-        <grpc.version>1.77.1</grpc.version>
+        <spring-grpc.version>1.1.0</spring-grpc.version>
+        <grpc.version>1.82.2</grpc.version>
         <protobuf-java.version>4.33.4</protobuf-java.version>
     </properties>
 
@@ -144,18 +144,18 @@
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
             <artifactId>jjwt-api</artifactId>
-            <version>0.12.6</version>
+            <version>0.13.0</version>
         </dependency>
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
             <artifactId>jjwt-impl</artifactId>
-            <version>0.12.6</version>
+            <version>0.13.0</version>
             <scope>runtime</scope>
         </dependency>
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
             <artifactId>jjwt-jackson</artifactId>
-            <version>0.12.6</version>
+            <version>0.13.0</version>
             <scope>runtime</scope>
         </dependency>
 
