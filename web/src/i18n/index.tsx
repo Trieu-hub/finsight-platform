@@ -18,6 +18,9 @@ const en: Dict = {
   'lang.label': 'Language',
   'lang.en': 'EN',
   'lang.vi': 'VI',
+  'theme.label': 'Colour theme',
+  'theme.toLight': 'Switch to light',
+  'theme.toDark': 'Switch to dark',
 
   'nav.dashboard': 'Dashboard',
   'nav.transactions': 'Transactions',
@@ -302,6 +305,9 @@ const vi: Dict = {
   'lang.label': 'Ngôn ngữ',
   'lang.en': 'EN',
   'lang.vi': 'VI',
+  'theme.label': 'Giao diện màu',
+  'theme.toLight': 'Chuyển sang nền sáng',
+  'theme.toDark': 'Chuyển sang nền tối',
 
   'nav.dashboard': 'Tổng quan',
   'nav.transactions': 'Giao dịch',
