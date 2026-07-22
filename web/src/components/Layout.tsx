@@ -5,6 +5,7 @@ import { useI18n } from '../i18n'
 import NotificationBell from './NotificationBell'
 import OnboardingTour from './OnboardingTour'
 import LanguageToggle from './LanguageToggle'
+import ThemeToggle from './ThemeToggle'
 import { markTourSeen, shouldAutoOpenTour } from '../lib/onboarding'
 
 // Inline icons keep the nav lightweight (no icon library). 18px, stroked.
@@ -204,6 +205,7 @@ export default function Layout() {
             </span>
           </div>
           <div className="flex items-center gap-2">
+            <ThemeToggle />
             <LanguageToggle />
             <button
               onClick={() => setTourOpen(true)}
