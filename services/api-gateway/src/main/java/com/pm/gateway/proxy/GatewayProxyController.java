@@ -2,6 +2,8 @@ package com.pm.gateway.proxy;
 
 import com.pm.gateway.config.GatewayProperties;
 import com.pm.gateway.logging.CorrelationIdFilter;
+import com.pm.gateway.ratelimit.ClientIpResolver;
+import com.pm.gateway.ratelimit.RateLimiter;
 import com.pm.gateway.security.JwtAuthenticator;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -31,12 +33,12 @@ import java.util.Set;
  * Phase 1 routing-only reverse proxy.
  *
  * <p>Catch-all controller: matches every request, resolves the target service by
- * path prefix, enforces edge authentication on non-public routes (Phase 2), then
- * forwards method + headers + body unchanged and relays the downstream status/headers/
- * body back to the caller. The bearer token is forwarded downstream (services still
- * validate it themselves). No header injection, no rate limiting — those are added in
- * later phases. Actuator endpoints are served by their own higher-precedence handler
- * mapping and never reach here.
+ * path prefix, enforces edge authentication on non-public routes (Phase 2) and the edge
+ * rate limit, then forwards method + headers + body unchanged and relays the downstream
+ * status/headers/body back to the caller. The bearer token is forwarded downstream
+ * (services still validate it themselves). No header injection. Actuator endpoints are
+ * served by their own higher-precedence handler mapping and never reach here — so they
+ * are neither authenticated nor rate-limited by this controller.
  */
 @RestController
 public class GatewayProxyController {
@@ -59,14 +61,17 @@ public class GatewayProxyController {
     private final RestClient client;
     private final java.net.http.HttpClient streamingClient;
     private final JwtAuthenticator authenticator;
+    private final RateLimiter rateLimiter;
 
     public GatewayProxyController(GatewayProperties properties, RestClient client,
                                   java.net.http.HttpClient streamingClient,
-                                  JwtAuthenticator authenticator) {
+                                  JwtAuthenticator authenticator,
+                                  RateLimiter rateLimiter) {
         this.properties = properties;
         this.client = client;
         this.streamingClient = streamingClient;
         this.authenticator = authenticator;
+        this.rateLimiter = rateLimiter;
     }
 
     @RequestMapping("/**")
@@ -79,13 +84,11 @@ public class GatewayProxyController {
                     "No route matches " + path);
         }
 
-        // Phase 2: enforce edge authentication on every non-public route. The token is
-        // still forwarded downstream below (services keep validating it themselves).
-        if (!isPublic(request.getMethod(), path)) {
-            ResponseEntity<byte[]> authError = authenticate(request);
-            if (authError != null) {
-                return authError;
-            }
+        // Phase 2: enforce edge authentication on every non-public route, then rate-limit. The
+        // token is still forwarded downstream below (services keep validating it themselves).
+        ResponseEntity<byte[]> rejection = admit(request, path);
+        if (rejection != null) {
+            return rejection;
         }
 
         URI target = buildTargetUri(route, path, request.getQueryString());
@@ -172,12 +175,10 @@ public class GatewayProxyController {
                     "No route matches " + path));
             return;
         }
-        if (!isPublic(request.getMethod(), path)) {
-            ResponseEntity<byte[]> authError = authenticate(request);
-            if (authError != null) {
-                writeError(response, authError);
-                return;
-            }
+        ResponseEntity<byte[]> rejection = admit(request, path);
+        if (rejection != null) {
+            writeError(response, rejection);
+            return;
         }
 
         URI target = buildTargetUri(route, path, request.getQueryString());
@@ -241,12 +242,43 @@ public class GatewayProxyController {
     }
 
     /**
-     * Validates the bearer token and maps a failure to the frozen auth error contract
-     * (docs/ADR-0002 §5). Returns {@code null} when the request is authenticated and may
-     * proceed.
+     * Authenticates (when the route is not public) and then rate-limits, in that order so a
+     * verified request can be counted against its own userId instead of a shared IP.
+     *
+     * @return an error response to return immediately, or {@code null} when the request may proceed
      */
-    private ResponseEntity<byte[]> authenticate(HttpServletRequest request) {
-        JwtAuthenticator.Outcome outcome = authenticator.authenticate(request.getHeader(AUTHORIZATION));
+    private ResponseEntity<byte[]> admit(HttpServletRequest request, String path) {
+        String userId = null;
+        if (!isPublic(request.getMethod(), path)) {
+            JwtAuthenticator.Result result = authenticator.authenticate(request.getHeader(AUTHORIZATION));
+            ResponseEntity<byte[]> authError = toAuthError(result.outcome());
+            if (authError != null) {
+                return authError;
+            }
+            userId = result.userId();
+        }
+
+        // A verified userId keys the generous per-user bucket; anything else (public route, or a
+        // token without the claim) falls back to the tighter per-IP one.
+        RateLimiter.Decision decision = userId != null
+                ? rateLimiter.check(RateLimiter.Scope.AUTHENTICATED, userId)
+                : rateLimiter.check(RateLimiter.Scope.ANONYMOUS, ClientIpResolver.resolve(request));
+        if (!decision.allowed()) {
+            log.warn("Rate limit exceeded: {} {}", request.getMethod(), path);
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .header(HttpHeaders.RETRY_AFTER, String.valueOf(decision.retryAfterSeconds()))
+                    .body(errorBody("RATE_LIMITED",
+                            "Too many requests; retry in " + decision.retryAfterSeconds() + "s"));
+        }
+        return null;
+    }
+
+    /**
+     * Maps a validation failure to the frozen auth error contract (docs/ADR-0002 §5).
+     * Returns {@code null} when the request is authenticated and may proceed.
+     */
+    private ResponseEntity<byte[]> toAuthError(JwtAuthenticator.Outcome outcome) {
         return switch (outcome) {
             case AUTHENTICATED -> null;
             case MISSING -> error(HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED",
@@ -362,11 +394,16 @@ public class GatewayProxyController {
      * (with conservative escaping) is sufficient and dependency-free.
      */
     private ResponseEntity<byte[]> error(HttpStatus status, String code, String message) {
-        String json = "{\"success\":false,\"error\":{\"code\":\"" + escape(code)
-                + "\",\"message\":\"" + escape(message) + "\"}}";
         return ResponseEntity.status(status)
                 .contentType(MediaType.APPLICATION_JSON)
-                .body(json.getBytes(StandardCharsets.UTF_8));
+                .body(errorBody(code, message));
+    }
+
+    /** The envelope bytes on their own, for the one error that also needs a header (429). */
+    private static byte[] errorBody(String code, String message) {
+        String json = "{\"success\":false,\"error\":{\"code\":\"" + escape(code)
+                + "\",\"message\":\"" + escape(message) + "\"}}";
+        return json.getBytes(StandardCharsets.UTF_8);
     }
 
     private static String escape(String s) {
