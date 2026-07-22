@@ -1,4 +1,7 @@
-# Vernfy
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/vernfy-logo-dark.svg">
+  <img src="docs/images/vernfy-logo-light.svg" alt="Vernfy" height="56">
+</picture>
 
 [![CI](https://github.com/Trieu-hub/finsight-platform/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Trieu-hub/finsight-platform/actions/workflows/ci.yml)
 
@@ -27,6 +30,7 @@ coupling is asynchronous over Kafka.
 | [`docs/security/jwt-key-rotation.md`](docs/security/jwt-key-rotation.md) | Zero-downtime RS256 signing-key rotation |
 | [`docs/ADR-0004-budget-utilization-via-events.md`](docs/ADR-0004-budget-utilization-via-events.md) | Why budget utilization is event-driven (and its accepted drift) |
 | [`services/api-gateway/docs/`](services/api-gateway/docs/) | ADR-0001/0002/0003/0005 — gateway contract, identity freeze, BFF token relay, RS256 |
+| [`docs/brand.md`](docs/brand.md) | Logo files, palette, and the reasoning behind the mark |
 | [`docs/unit-testing/unit-testing-1.txt`](docs/unit-testing/unit-testing-1.txt) | Full test-suite catalog — every test class (unit vs integration), count, and what it verifies (434 tests across 9 services) |
 
 ## Tech stack
