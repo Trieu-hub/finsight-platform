@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { createBudget, listBudgets, listCategories, listWallets } from '../api/endpoints'
 import { errorMessage } from '../api/client'
 import type { Budget, BudgetPeriod, Category, Wallet } from '../api/types'
-import { categoryName, groupThousands, money, sanitizeMoneyInput } from '../lib/format'
+import { catLabel, categoryName, groupThousands, money, sanitizeMoneyInput } from '../lib/format'
 import { useI18n } from '../i18n'
 
 // Local (not UTC) yyyy-mm-dd so week/month edges don't slip a day in +07:00.
@@ -182,7 +182,7 @@ export default function Budgets() {
                 .filter((c) => c.type === 'EXPENSE')
                 .map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.name}
+                    {catLabel(c.id, c.name, t)}
                   </option>
                 ))}
             </select>
@@ -285,7 +285,7 @@ export default function Budgets() {
                 <div key={b.id} className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4 transition hover:border-neutral-700">
                   <div className="mb-2 flex items-center justify-between">
                     <span className="font-medium text-neutral-200">
-                      {b.name || categoryName(categories, b.categoryId)}
+                      {b.name || categoryName(categories, b.categoryId, t)}
                     </span>
                     <span className="text-sm text-neutral-400">
                       {money(b.spentAmount, b.currency)} / {money(b.limitAmount, b.currency)}

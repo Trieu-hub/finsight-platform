@@ -183,6 +183,13 @@ const en: Dict = {
   'budget.title': 'Budgets',
   'budget.over': 'Over budget',
   'budget.errLimit': 'Enter a limit greater than 0.',
+  'budget.exceededTitle': 'Budget exceeded',
+  'budget.exceededBody': '‘{name}’ — spent {spent} of {limit}',
+
+  // Categories 14/15 need EN overrides: analytics-service predates them and returns
+  // 'Category 14'/'Category 15'. The others resolve from the backend name.
+  'cat.14': 'Shopping',
+  'cat.15': 'Snacks',
   'period.MONTHLY': 'Monthly',
   'period.WEEKLY': 'Weekly',
   'period.YEARLY': 'Yearly',
@@ -469,6 +476,26 @@ const vi: Dict = {
   'budget.title': 'Ngân sách',
   'budget.over': 'Vượt hạn mức',
   'budget.errLimit': 'Nhập hạn mức lớn hơn 0.',
+  'budget.exceededTitle': 'Vượt ngân sách',
+  'budget.exceededBody': '‘{name}’ — đã chi {spent} / {limit}',
+
+  // Category display names (VI). Keyed by the seeded category id; EN falls back to the
+  // backend name, so only VI needs overriding. Keep in sync with the seeded categories.
+  'cat.1': 'Lương',
+  'cat.2': 'Đầu tư',
+  'cat.3': 'Hoàn tiền',
+  'cat.4': 'Ăn uống',
+  'cat.5': 'Đi lại',
+  'cat.6': 'Nhà ở',
+  'cat.7': 'Tiện ích',
+  'cat.8': 'Giải trí',
+  'cat.9': 'Sức khỏe',
+  'cat.10': 'Khác',
+  'cat.11': 'Chuyển khoản',
+  'cat.12': 'Trò chơi',
+  'cat.13': 'Tiền thắng',
+  'cat.14': 'Mua sắm',
+  'cat.15': 'Ăn vặt',
   'period.MONTHLY': 'Hàng tháng',
   'period.WEEKLY': 'Hàng tuần',
   'period.YEARLY': 'Hàng năm',
