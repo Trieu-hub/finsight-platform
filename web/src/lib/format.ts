@@ -8,8 +8,22 @@ export function money(amount: number, currency = 'USD') {
   }
 }
 
-export function categoryName(categories: Category[], id: number) {
-  return categories.find((c) => c.id === id)?.name ?? `#${id}`
+// Localize a category by id, falling back to the given (backend/English) name when there is
+// no translation for the current language. `t` is the i18n translator; EN has no `cat.*` keys
+// so it always returns the fallback, VI overrides with `cat.<id>`.
+export function catLabel(id: number, fallback: string, t: (key: string) => string): string {
+  const key = `cat.${id}`
+  const s = t(key)
+  return s === key ? fallback : s
+}
+
+export function categoryName(
+  categories: Category[],
+  id: number,
+  t?: (key: string) => string,
+) {
+  const name = categories.find((c) => c.id === id)?.name ?? `#${id}`
+  return t ? catLabel(id, name, t) : name
 }
 
 // Group a raw digit string into dot-separated thousands for display while typing,

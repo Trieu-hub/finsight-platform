@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import {
   createTransaction,
+  listBudgets,
   listCategories,
   listTransactions,
   listWallets,
 } from '../api/endpoints'
 import { errorMessage } from '../api/client'
-import type { Category, Transaction, TransactionType, Wallet } from '../api/types'
-import { categoryName, groupThousands, money, sanitizeMoneyInput } from '../lib/format'
+import type { Budget, Category, Transaction, TransactionType, Wallet } from '../api/types'
+import { catLabel, categoryName, groupThousands, money, sanitizeMoneyInput } from '../lib/format'
 import { useI18n } from '../i18n'
 
 const today = () => new Date().toISOString().slice(0, 10)
@@ -27,10 +28,34 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
+// History is shown newest first: sort by transaction date, tie-broken by creation time.
+const byNewest = (a: Transaction, b: Transaction) =>
+  b.transactionDate.localeCompare(a.transactionDate) ||
+  (b.createdAt ?? '').localeCompare(a.createdAt ?? '')
+
+// A transaction counts against a budget when its category, currency and date all fall in scope.
+// Mirrors budget-service's matching so the over-budget popup agrees with the server's tally.
+function budgetMatchesTx(
+  b: Budget,
+  tx: { categoryId: number; currency: string; transactionDate: string },
+): boolean {
+  return (
+    b.categoryId === tx.categoryId &&
+    b.currency === tx.currency &&
+    tx.transactionDate >= b.startDate &&
+    tx.transactionDate <= b.endDate
+  )
+}
+
 export default function Transactions() {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [wallets, setWallets] = useState<Wallet[]>([])
+  const [budgets, setBudgets] = useState<Budget[]>([])
+  // Set when a just-added expense pushes a matching budget over its limit — drives the popup.
+  const [overBudget, setOverBudget] = useState<
+    { name: string; spent: number; limit: number; currency: string } | null
+  >(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
 
@@ -58,10 +83,16 @@ export default function Transactions() {
 
   async function load() {
     try {
-      const [tx, cats, ws] = await Promise.all([listTransactions(), listCategories(), listWallets()])
+      const [tx, cats, ws, bs] = await Promise.all([
+        listTransactions(),
+        listCategories(),
+        listWallets(),
+        listBudgets(),
+      ])
       setTransactions(tx)
       setCategories(cats)
       setWallets(ws)
+      setBudgets(bs)
       // Default to the first category that MATCHES the current type (avoids the
       // contradictory "EXPENSE + Salary" default).
       const firstOfType = cats.find((c) => c.type === type)
@@ -77,6 +108,13 @@ export default function Transactions() {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Auto-dismiss the over-budget popup after a few seconds.
+  useEffect(() => {
+    if (!overBudget) return
+    const id = setTimeout(() => setOverBudget(null), 7000)
+    return () => clearTimeout(id)
+  }, [overBudget])
 
   function onTypeChange(next: TransactionType) {
     setType(next)
@@ -126,7 +164,7 @@ export default function Transactions() {
         })
       } else {
         setSubmitting(true)
-        await createTransaction({
+        const created = await createTransaction({
           type,
           amount: value,
           currency: effectiveCurrency,
@@ -135,6 +173,27 @@ export default function Transactions() {
           transactionDate: date,
           walletId: sourceWallet ? sourceWallet.id : undefined,
         })
+        // Warn immediately if this expense pushes a matching budget over its limit. Computed
+        // client-side (existing matching spend + this amount) so the popup is instant, ahead of
+        // the asynchronous budget tally that arrives over Kafka.
+        if (type === 'EXPENSE') {
+          for (const b of budgets) {
+            if (!budgetMatchesTx(b, created)) continue
+            const prior = transactions
+              .filter((tx) => tx.type === 'EXPENSE' && budgetMatchesTx(b, tx))
+              .reduce((s, tx) => s + Number(tx.amount), 0)
+            const spent = prior + Number(created.amount)
+            if (spent > b.limitAmount) {
+              setOverBudget({
+                name: b.name || categoryName(categories, b.categoryId, t),
+                spent,
+                limit: b.limitAmount,
+                currency: b.currency,
+              })
+              break
+            }
+          }
+        }
       }
       setAmount('')
       setDescription('')
@@ -152,7 +211,11 @@ export default function Transactions() {
   )
 
   return (
-    <div className="grid gap-6 md:grid-cols-3">
+    <>
+      {overBudget && (
+        <OverBudgetToast data={overBudget} onClose={() => setOverBudget(null)} t={t} />
+      )}
+      <div className="grid gap-6 md:grid-cols-3">
       {/* Create form */}
       <section data-tour="tx-form" className="md:col-span-1">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-400">
@@ -253,7 +316,7 @@ export default function Transactions() {
                     .filter((c) => c.type === type)
                     .map((c) => (
                       <option key={c.id} value={c.id}>
-                        {c.name}
+                        {catLabel(c.id, c.name, t)}
                       </option>
                     ))}
                 </select>
@@ -328,22 +391,22 @@ export default function Transactions() {
                 </tr>
               </thead>
               <tbody>
-                {transactions.map((t) => {
-                  const xfer = t.type === 'TRANSFER'
+                {[...transactions].sort(byNewest).map((tx) => {
+                  const xfer = tx.type === 'TRANSFER'
                   const color = xfer
                     ? 'text-sky-400'
-                    : t.type === 'INCOME'
+                    : tx.type === 'INCOME'
                       ? 'text-emerald-400'
                       : 'text-rose-400'
-                  const prefix = xfer ? '⇄ ' : t.type === 'INCOME' ? '+' : '-'
+                  const prefix = xfer ? '⇄ ' : tx.type === 'INCOME' ? '+' : '-'
                   return (
-                    <tr key={t.id} className="border-t border-neutral-800 transition hover:bg-neutral-800/40">
-                      <td className="px-4 py-2.5 text-neutral-500">{t.transactionDate}</td>
-                      <td className="px-4 py-2.5 text-neutral-200">{categoryName(categories, t.categoryId)}</td>
-                      <td className="px-4 py-2.5 text-neutral-500">{t.description ?? '—'}</td>
+                    <tr key={tx.id} className="border-t border-neutral-800 transition hover:bg-neutral-800/40">
+                      <td className="px-4 py-2.5 text-neutral-500">{tx.transactionDate}</td>
+                      <td className="px-4 py-2.5 text-neutral-200">{categoryName(categories, tx.categoryId, t)}</td>
+                      <td className="px-4 py-2.5 text-neutral-500">{tx.description ?? '—'}</td>
                       <td className={`px-4 py-2.5 text-right font-semibold ${color}`}>
                         {prefix}
-                        {money(t.amount, t.currency)}
+                        {money(tx.amount, tx.currency)}
                       </td>
                     </tr>
                   )
@@ -353,6 +416,46 @@ export default function Transactions() {
           </div>
         )}
       </section>
+      </div>
+    </>
+  )
+}
+
+// Popup shown the moment a new expense pushes a matching budget over its limit.
+function OverBudgetToast({
+  data,
+  onClose,
+  t,
+}: {
+  data: { name: string; spent: number; limit: number; currency: string }
+  onClose: () => void
+  t: (key: string, vars?: Record<string, string | number>) => string
+}) {
+  return (
+    <div className="fixed inset-x-0 top-4 z-50 flex justify-center px-4">
+      <div
+        role="alert"
+        className="flex w-full max-w-md items-start gap-3 rounded-2xl border border-rose-500/40 bg-rose-950/90 px-4 py-3 shadow-2xl shadow-black/50 backdrop-blur"
+      >
+        <span className="mt-0.5 text-lg">⚠️</span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-rose-200">{t('budget.exceededTitle')}</p>
+          <p className="mt-0.5 text-sm text-rose-100/90">
+            {t('budget.exceededBody', {
+              name: data.name,
+              spent: money(data.spent, data.currency),
+              limit: money(data.limit, data.currency),
+            })}
+          </p>
+        </div>
+        <button
+          onClick={onClose}
+          aria-label="Close"
+          className="shrink-0 rounded-md px-1.5 text-rose-300 transition hover:bg-rose-900/60 hover:text-rose-100"
+        >
+          ✕
+        </button>
+      </div>
     </div>
   )
 }

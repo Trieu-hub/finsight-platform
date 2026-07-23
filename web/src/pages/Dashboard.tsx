@@ -117,24 +117,24 @@ export default function Dashboard() {
             <EmptyCard>{t('dashboard.noTx')}</EmptyCard>
           ) : (
             <div className="overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900">
-              {recent.map((t) => (
+              {recent.map((tx) => (
                 <div
-                  key={t.id}
+                  key={tx.id}
                   className="flex items-center justify-between border-b border-neutral-800 px-4 py-3 last:border-0"
                 >
                   <div>
                     <div className="text-sm font-medium text-neutral-200">
-                      {categoryName(categories, t.categoryId)}
+                      {categoryName(categories, tx.categoryId, t)}
                     </div>
-                    <div className="text-xs text-neutral-500">{t.transactionDate}</div>
+                    <div className="text-xs text-neutral-500">{tx.transactionDate}</div>
                   </div>
                   <span
                     className={`text-sm font-semibold ${
-                      t.type === 'INCOME' ? 'text-emerald-400' : 'text-rose-400'
+                      tx.type === 'INCOME' ? 'text-emerald-400' : 'text-rose-400'
                     }`}
                   >
-                    {t.type === 'INCOME' ? '+' : '-'}
-                    {money(t.amount, t.currency)}
+                    {tx.type === 'INCOME' ? '+' : '-'}
+                    {money(tx.amount, tx.currency)}
                   </span>
                 </div>
               ))}
@@ -393,7 +393,7 @@ function CategoryColumns({
                 <div
                   key={c.categoryId}
                   className="flex h-full flex-1 items-end justify-center"
-                  title={`${categoryName(categories, c.categoryId)}: ${money(c.total, currency)}`}
+                  title={`${categoryName(categories, c.categoryId, t)}: ${money(c.total, currency)}`}
                 >
                   <div
                     className="w-full max-w-[44px] rounded-t-md transition-all hover:brightness-110"
@@ -415,7 +415,7 @@ function CategoryColumns({
               key={c.categoryId}
               className="min-w-0 flex-1 truncate text-center text-[11px] text-neutral-500"
             >
-              {categoryName(categories, c.categoryId)}
+              {categoryName(categories, c.categoryId, t)}
             </div>
           ))}
         </div>
