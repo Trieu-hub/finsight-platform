@@ -34,6 +34,8 @@ export interface Transaction {
   transactionDate: string
   walletId?: number
   toWalletId?: number
+  // The budget this EXPENSE was charged against (set at record time); absent otherwise.
+  budgetId?: string
   createdAt: string
 }
 

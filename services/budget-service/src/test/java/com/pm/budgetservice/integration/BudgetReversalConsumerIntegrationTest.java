@@ -93,10 +93,10 @@ class BudgetReversalConsumerIntegrationTest extends AbstractMySqlIntegrationTest
         UUID budgetId = createBudget(userId, 4L, BudgetPeriod.MONTHLY,
                 LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30), "USD");
 
-        sendCreatedExpense(userId, 4L, "100.00", "USD", "2026-06-15");
+        sendCreatedExpense(userId, budgetId, "100.00", "2026-06-15");
         awaitSpentAmount(budgetId, "100.00");
 
-        sendDeleted(UUID.randomUUID(), userId, "EXPENSE", "100.00", "USD", 4L, "2026-06-15");
+        sendDeleted(UUID.randomUUID(), userId, "EXPENSE", "100.00", budgetId);
         awaitSpentAmount(budgetId, "0.00");
     }
 
@@ -106,31 +106,31 @@ class BudgetReversalConsumerIntegrationTest extends AbstractMySqlIntegrationTest
         UUID budgetId = createBudget(userId, 4L, BudgetPeriod.MONTHLY,
                 LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30), "USD");
 
-        sendCreatedExpense(userId, 4L, "100.00", "USD", "2026-06-15");
+        sendCreatedExpense(userId, budgetId, "100.00", "2026-06-15");
         awaitSpentAmount(budgetId, "100.00");
 
-        // Edit the amount 100 -> 60: reverse the old 100, apply the new 60.
+        // Edit the amount 100 -> 60 on the same budget: reverse the old 100, apply the new 60.
         sendUpdated(userId,
-                "EXPENSE", "100.00", "USD", 4L, "2026-06-15",
-                "EXPENSE", "60.00", "USD", 4L, "2026-06-15");
+                "EXPENSE", "100.00", budgetId,
+                "EXPENSE", "60.00", budgetId);
         awaitSpentAmount(budgetId, "60.00");
     }
 
     @Test
-    void updateEventMovesSpendBetweenCategoryBudgets() {
+    void updateEventMovesSpendBetweenBudgets() {
         long userId = uniqueUserId();
         UUID source = createBudget(userId, 4L, BudgetPeriod.MONTHLY,
                 LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30), "USD");
         UUID destination = createBudget(userId, 5L, BudgetPeriod.MONTHLY,
                 LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30), "USD");
 
-        sendCreatedExpense(userId, 4L, "100.00", "USD", "2026-06-15");
+        sendCreatedExpense(userId, source, "100.00", "2026-06-15");
         awaitSpentAmount(source, "100.00");
 
-        // Re-categorise 4 -> 5: reverse from the category-4 budget, apply to the category-5 one.
+        // Re-assign to a different budget: reverse from the source budget, apply to the destination.
         sendUpdated(userId,
-                "EXPENSE", "100.00", "USD", 4L, "2026-06-15",
-                "EXPENSE", "100.00", "USD", 5L, "2026-06-15");
+                "EXPENSE", "100.00", source,
+                "EXPENSE", "100.00", destination);
         awaitSpentAmount(source, "0.00");
         awaitSpentAmount(destination, "100.00");
     }
@@ -141,16 +141,16 @@ class BudgetReversalConsumerIntegrationTest extends AbstractMySqlIntegrationTest
         UUID budgetId = createBudget(userId, 4L, BudgetPeriod.MONTHLY,
                 LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30), "USD");
 
-        sendCreatedExpense(userId, 4L, "100.00", "USD", "2026-06-15");
+        sendCreatedExpense(userId, budgetId, "100.00", "2026-06-15");
         awaitSpentAmount(budgetId, "100.00");
 
         // The same delete delivered twice (Kafka is at-least-once): only one reversal must
         // land. A distinct +7 create sentinel makes the await target prove single reversal —
         // a double reversal would leave -93, never 7.
         UUID deleteEventId = UUID.randomUUID();
-        sendDeleted(deleteEventId, userId, "EXPENSE", "100.00", "USD", 4L, "2026-06-15");
-        sendDeleted(deleteEventId, userId, "EXPENSE", "100.00", "USD", 4L, "2026-06-15");
-        sendCreatedExpense(userId, 4L, "7.00", "USD", "2026-06-16");
+        sendDeleted(deleteEventId, userId, "EXPENSE", "100.00", budgetId);
+        sendDeleted(deleteEventId, userId, "EXPENSE", "100.00", budgetId);
+        sendCreatedExpense(userId, budgetId, "7.00", "2026-06-16");
 
         awaitSpentAmount(budgetId, "7.00");
     }
@@ -171,42 +171,38 @@ class BudgetReversalConsumerIntegrationTest extends AbstractMySqlIntegrationTest
         return budget.getId();
     }
 
-    private void sendCreatedExpense(long userId, long categoryId, String amount,
-                                    String currency, String transactionDate) {
+    private void sendCreatedExpense(long userId, UUID budgetId, String amount,
+                                    String transactionDate) {
         String json = """
                 {"eventId":"%s","eventType":"TransactionCreated",
                  "occurredAt":"2026-06-12T10:00:00Z","transactionId":"%s",
-                 "userId":%d,"type":"EXPENSE","amount":%s,"currency":"%s",
-                 "categoryId":%d,"transactionDate":"%s","walletId":7}
+                 "userId":%d,"type":"EXPENSE","amount":%s,"currency":"USD",
+                 "categoryId":4,"transactionDate":"%s","walletId":7,"budgetId":"%s"}
                 """.formatted(UUID.randomUUID(), UUID.randomUUID(), userId, amount,
-                currency, categoryId, transactionDate);
+                transactionDate, budgetId);
         send(CREATED_TOPIC, userId, json);
     }
 
     private void sendUpdated(long userId,
-                             String oldType, String oldAmount, String oldCurrency,
-                             long oldCategoryId, String oldDate,
-                             String newType, String newAmount, String newCurrency,
-                             long newCategoryId, String newDate) {
+                             String oldType, String oldAmount, UUID oldBudgetId,
+                             String newType, String newAmount, UUID newBudgetId) {
         String json = """
                 {"eventId":"%s","eventType":"TransactionUpdated",
                  "occurredAt":"2026-06-12T10:00:00Z","transactionId":"%s","userId":%d,
-                 "oldType":"%s","oldAmount":%s,"oldCurrency":"%s","oldCategoryId":%d,"oldTransactionDate":"%s",
-                 "newType":"%s","newAmount":%s,"newCurrency":"%s","newCategoryId":%d,"newTransactionDate":"%s"}
+                 "oldType":"%s","oldAmount":%s,"oldCurrency":"USD","oldCategoryId":4,"oldTransactionDate":"2026-06-15","oldBudgetId":"%s",
+                 "newType":"%s","newAmount":%s,"newCurrency":"USD","newCategoryId":4,"newTransactionDate":"2026-06-15","newBudgetId":"%s"}
                 """.formatted(UUID.randomUUID(), UUID.randomUUID(), userId,
-                oldType, oldAmount, oldCurrency, oldCategoryId, oldDate,
-                newType, newAmount, newCurrency, newCategoryId, newDate);
+                oldType, oldAmount, oldBudgetId,
+                newType, newAmount, newBudgetId);
         send(UPDATED_TOPIC, userId, json);
     }
 
-    private void sendDeleted(UUID eventId, long userId, String type, String amount,
-                             String currency, long categoryId, String transactionDate) {
+    private void sendDeleted(UUID eventId, long userId, String type, String amount, UUID budgetId) {
         String json = """
                 {"eventId":"%s","eventType":"TransactionDeleted",
                  "occurredAt":"2026-06-12T10:00:00Z","transactionId":"%s","userId":%d,
-                 "type":"%s","amount":%s,"currency":"%s","categoryId":%d,"transactionDate":"%s"}
-                """.formatted(eventId, UUID.randomUUID(), userId, type, amount,
-                currency, categoryId, transactionDate);
+                 "type":"%s","amount":%s,"currency":"USD","categoryId":4,"transactionDate":"2026-06-15","budgetId":"%s"}
+                """.formatted(eventId, UUID.randomUUID(), userId, type, amount, budgetId);
         send(DELETED_TOPIC, userId, json);
     }
 

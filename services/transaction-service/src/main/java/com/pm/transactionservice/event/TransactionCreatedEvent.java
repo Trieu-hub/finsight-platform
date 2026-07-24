@@ -35,7 +35,11 @@ public record TransactionCreatedEvent(
         String currency,
         Long categoryId,
         String transactionDate,
-        Long walletId
+        Long walletId,
+        // The specific budget the user chose to charge this EXPENSE against (budget-service's
+        // UUID key, opaque here). Null for INCOME/TRANSFER and for expenses recorded without a
+        // budget (e.g. the LuckyMe game). budget-service deducts from exactly this budget.
+        UUID budgetId
 ) {
 
     /** Stable discriminator carried in {@link #eventType()}. */
@@ -52,7 +56,8 @@ public record TransactionCreatedEvent(
                                              String currency,
                                              Long categoryId,
                                              LocalDate transactionDate,
-                                             Long walletId) {
+                                             Long walletId,
+                                             UUID budgetId) {
         return new TransactionCreatedEvent(
                 UUID.randomUUID(),
                 EVENT_TYPE,
@@ -64,6 +69,7 @@ public record TransactionCreatedEvent(
                 currency,
                 categoryId,
                 transactionDate == null ? null : transactionDate.toString(),
-                walletId);
+                walletId,
+                budgetId);
     }
 }

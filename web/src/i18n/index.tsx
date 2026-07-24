@@ -145,6 +145,7 @@ const en: Dict = {
   'tx.type': 'Type',
   'tx.amount': 'Amount',
   'tx.category': 'Category',
+  'tx.budget': 'Budget',
   'tx.wallet': 'Wallet',
   'tx.fromWallet': 'From wallet',
   'tx.toWallet': 'To wallet',
@@ -165,6 +166,8 @@ const en: Dict = {
   'tx.errWallets': 'Choose both a source and a destination wallet.',
   'tx.errSameWallet': 'Source and destination wallets must be different.',
   'tx.errTransferCat': 'Transfer category is unavailable.',
+  'tx.errNoBudget': 'This category has no budget for this period — create one first.',
+  'tx.errBudgetRequired': 'Choose a budget for this expense.',
 
   'budget.new': 'New budget',
   'budget.name': 'Name',
@@ -438,6 +441,7 @@ const vi: Dict = {
   'tx.type': 'Loại',
   'tx.amount': 'Số tiền',
   'tx.category': 'Danh mục',
+  'tx.budget': 'Ngân sách',
   'tx.wallet': 'Ví',
   'tx.fromWallet': 'Từ ví',
   'tx.toWallet': 'Đến ví',
@@ -458,6 +462,8 @@ const vi: Dict = {
   'tx.errWallets': 'Chọn cả ví nguồn và ví đích.',
   'tx.errSameWallet': 'Ví nguồn và ví đích phải khác nhau.',
   'tx.errTransferCat': 'Không có danh mục chuyển khoản.',
+  'tx.errNoBudget': 'Danh mục này chưa có ngân sách trong kỳ — hãy tạo ngân sách trước.',
+  'tx.errBudgetRequired': 'Hãy chọn ngân sách cho khoản chi này.',
 
   'budget.new': 'Ngân sách mới',
   'budget.name': 'Tên',

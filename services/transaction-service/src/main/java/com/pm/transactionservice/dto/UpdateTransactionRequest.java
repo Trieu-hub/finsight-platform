@@ -11,6 +11,7 @@ import lombok.Setter;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Partial update. All fields are optional; only non-null fields are applied.
@@ -39,6 +40,9 @@ public class UpdateTransactionRequest {
     private Long walletId;
 
     private Long toWalletId;
+
+    /** The budget this EXPENSE is charged against; cleared automatically if the type isn't EXPENSE. */
+    private UUID budgetId;
 
     private Map<String, Object> metadata;
 }

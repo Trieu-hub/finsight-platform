@@ -69,6 +69,7 @@ export async function createTransaction(body: {
   transactionDate: string
   walletId?: number
   toWalletId?: number
+  budgetId?: string
 }): Promise<Transaction> {
   const { data } = await api.post<ApiResponse<Transaction>>('/transactions', body)
   return data.data
