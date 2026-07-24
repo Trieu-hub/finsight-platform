@@ -29,7 +29,8 @@ Every implemented Kafka event is listed here. Conventions shared by all three:
   `TransactionServiceImpl.create()`).
 - **Consumers:**
   - budget-service (`TransactionEventConsumer`, group `budget-service`) — materializes
-    `spent_amount` for matching budgets (EXPENSE only).
+    `spent_amount` for the single budget named by `budgetId` (EXPENSE only; a null/unknown
+    `budgetId` charges nothing).
   - risk-service (`RiskEventConsumer`, group `risk-service`) — records `observed_expenses`
     and evaluates risk rules, insights, and the anomaly rule.
 - **Purpose:** the platform's primary fact — a transaction was persisted. The backbone the
@@ -50,6 +51,7 @@ Every implemented Kafka event is listed here. Conventions shared by all three:
 | `categoryId` | number (Long) | |
 | `transactionDate` | string | ISO date (`YYYY-MM-DD`); may be null |
 | `walletId` | number (Long) | scaffolded; no TRANSFER semantics yet |
+| `budgetId` | UUID | the budget the user charged this EXPENSE to; null for INCOME/TRANSFER and budget-less expenses. `TransactionUpdated`/`TransactionDeleted` carry it too (`oldBudgetId`/`newBudgetId` on the update) |
 
 ```json
 {
@@ -63,7 +65,8 @@ Every implemented Kafka event is listed here. Conventions shared by all three:
   "currency": "USD",
   "categoryId": 7,
   "transactionDate": "2026-06-14",
-  "walletId": 1
+  "walletId": 1,
+  "budgetId": "99999999-8888-7777-6666-555555555555"
 }
 ```
 

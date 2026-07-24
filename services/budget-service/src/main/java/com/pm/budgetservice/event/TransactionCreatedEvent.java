@@ -26,6 +26,10 @@ public record TransactionCreatedEvent(
         String currency,
         Long categoryId,
         String transactionDate,
-        Long walletId
+        Long walletId,
+        // The budget the user chose to charge this EXPENSE against — the single budget this
+        // consumer deducts from (replacing the old match-every-budget-in-the-category rule).
+        // Null for non-EXPENSE and budget-less expenses; a null budgetId matches no budget.
+        UUID budgetId
 ) {
 }

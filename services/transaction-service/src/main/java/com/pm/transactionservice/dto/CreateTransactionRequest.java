@@ -12,6 +12,7 @@ import lombok.Setter;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * NOTE: userId is intentionally absent. It is resolved from the JWT, never the body.
@@ -45,6 +46,13 @@ public class CreateTransactionRequest {
 
     /** Destination wallet for a TRANSFER (required, and must differ from walletId). */
     private Long toWalletId;
+
+    /**
+     * The budget this EXPENSE is charged against. Optional here (the frontend makes it required
+     * when the category has a budget; the game omits it). Ignored for INCOME/TRANSFER. Opaque —
+     * validated only for ownership downstream in budget-service, never cross-service here.
+     */
+    private UUID budgetId;
 
     private Map<String, Object> metadata;
 }

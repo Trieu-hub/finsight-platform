@@ -153,22 +153,20 @@ public class BudgetServiceImpl implements BudgetService {
 
     @Override
     @Transactional
-    public boolean applyExpense(UUID eventId, Long userId, Long categoryId, String currency,
-                                BigDecimal amount, LocalDate transactionDate) {
+    public boolean applyExpense(UUID eventId, Long userId, UUID budgetId, BigDecimal amount) {
         if (isDuplicate(eventId)) {
             return false;
         }
         recordProcessed(eventId);
 
         // Same DB transaction as the inbox row: both commit or neither does.
-        budgetRepository.applyExpense(userId, categoryId, currency, amount, transactionDate);
+        budgetRepository.applyExpense(userId, budgetId, amount);
         return true;
     }
 
     @Override
     @Transactional
-    public boolean applyDelete(UUID eventId, Long userId, Long categoryId, String currency,
-                               BigDecimal amount, LocalDate transactionDate) {
+    public boolean applyDelete(UUID eventId, Long userId, UUID budgetId, BigDecimal amount) {
         if (isDuplicate(eventId)) {
             return false;
         }
@@ -178,7 +176,7 @@ public class BudgetServiceImpl implements BudgetService {
         // SQL increment, so spent_amount can transiently go negative if a delete is applied
         // before its create (events for one transaction now span three topics) — accepted:
         // the increment is additive, so the final value is correct regardless of order.
-        budgetRepository.applyExpense(userId, categoryId, currency, amount.negate(), transactionDate);
+        budgetRepository.applyExpense(userId, budgetId, amount.negate());
         return true;
     }
 
@@ -192,12 +190,10 @@ public class BudgetServiceImpl implements BudgetService {
 
         // One inbox row guards both increments: reverse the old slot, apply the new one.
         if (reverse != null) {
-            budgetRepository.applyExpense(userId, reverse.categoryId(), reverse.currency(),
-                    reverse.amount().negate(), reverse.date());
+            budgetRepository.applyExpense(userId, reverse.budgetId(), reverse.amount().negate());
         }
         if (apply != null) {
-            budgetRepository.applyExpense(userId, apply.categoryId(), apply.currency(),
-                    apply.amount(), apply.date());
+            budgetRepository.applyExpense(userId, apply.budgetId(), apply.amount());
         }
         return true;
     }

@@ -32,12 +32,16 @@ public record TransactionUpdatedEvent(
         String oldCurrency,
         Long oldCategoryId,
         String oldTransactionDate,
+        // The budget the old slot was charged against (reverse from this exact budget).
+        UUID oldBudgetId,
         // Post-edit snapshot — what a consumer must apply.
         TransactionType newType,
         BigDecimal newAmount,
         String newCurrency,
         Long newCategoryId,
-        String newTransactionDate
+        String newTransactionDate,
+        // The budget the new slot is charged against (apply to this exact budget).
+        UUID newBudgetId
 ) {
 
     /** Stable discriminator carried in {@link #eventType()}. */
@@ -51,11 +55,13 @@ public record TransactionUpdatedEvent(
                                              String oldCurrency,
                                              Long oldCategoryId,
                                              LocalDate oldTransactionDate,
+                                             UUID oldBudgetId,
                                              TransactionType newType,
                                              BigDecimal newAmount,
                                              String newCurrency,
                                              Long newCategoryId,
-                                             LocalDate newTransactionDate) {
+                                             LocalDate newTransactionDate,
+                                             UUID newBudgetId) {
         return new TransactionUpdatedEvent(
                 UUID.randomUUID(),
                 EVENT_TYPE,
@@ -67,10 +73,12 @@ public record TransactionUpdatedEvent(
                 oldCurrency,
                 oldCategoryId,
                 oldTransactionDate == null ? null : oldTransactionDate.toString(),
+                oldBudgetId,
                 newType,
                 newAmount,
                 newCurrency,
                 newCategoryId,
-                newTransactionDate == null ? null : newTransactionDate.toString());
+                newTransactionDate == null ? null : newTransactionDate.toString(),
+                newBudgetId);
     }
 }

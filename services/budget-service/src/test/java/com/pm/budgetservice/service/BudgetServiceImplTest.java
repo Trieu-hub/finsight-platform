@@ -185,17 +185,17 @@ class BudgetServiceImplTest {
     }
 
     @Test
-    void applyExpenseRecordsInboxRowAndIncrementsBudgets() {
+    void applyExpenseRecordsInboxRowAndIncrementsTheChosenBudget() {
         UUID eventId = UUID.randomUUID();
+        UUID budgetId = UUID.randomUUID();
         when(processedEventRepository.existsById(eventId)).thenReturn(false);
 
-        boolean applied = budgetService.applyExpense(eventId, USER_ID, 4L, "USD",
-                new BigDecimal("42.50"), LocalDate.of(2026, 6, 15));
+        boolean applied = budgetService.applyExpense(eventId, USER_ID, budgetId,
+                new BigDecimal("42.50"));
 
         assertThat(applied).isTrue();
         verify(processedEventRepository).save(any(ProcessedEvent.class));
-        verify(budgetRepository).applyExpense(USER_ID, 4L, "USD",
-                new BigDecimal("42.50"), LocalDate.of(2026, 6, 15));
+        verify(budgetRepository).applyExpense(USER_ID, budgetId, new BigDecimal("42.50"));
     }
 
     @Test
@@ -203,27 +203,27 @@ class BudgetServiceImplTest {
         UUID eventId = UUID.randomUUID();
         when(processedEventRepository.existsById(eventId)).thenReturn(true);
 
-        boolean applied = budgetService.applyExpense(eventId, USER_ID, 4L, "USD",
-                new BigDecimal("42.50"), LocalDate.of(2026, 6, 15));
+        boolean applied = budgetService.applyExpense(eventId, USER_ID, UUID.randomUUID(),
+                new BigDecimal("42.50"));
 
         assertThat(applied).isFalse();
         verify(processedEventRepository, never()).save(any());
-        verify(budgetRepository, never()).applyExpense(anyLong(), anyLong(), any(), any(), any());
+        verify(budgetRepository, never()).applyExpense(anyLong(), any(), any());
     }
 
     @Test
     void applyDeleteReversesTheExpenseWithANegatedAmount() {
         UUID eventId = UUID.randomUUID();
+        UUID budgetId = UUID.randomUUID();
         when(processedEventRepository.existsById(eventId)).thenReturn(false);
 
-        boolean applied = budgetService.applyDelete(eventId, USER_ID, 4L, "USD",
-                new BigDecimal("42.50"), LocalDate.of(2026, 6, 15));
+        boolean applied = budgetService.applyDelete(eventId, USER_ID, budgetId,
+                new BigDecimal("42.50"));
 
         assertThat(applied).isTrue();
         verify(processedEventRepository).save(any(ProcessedEvent.class));
         // Reversal is the inverse increment: spent_amount += -42.50.
-        verify(budgetRepository).applyExpense(USER_ID, 4L, "USD",
-                new BigDecimal("-42.50"), LocalDate.of(2026, 6, 15));
+        verify(budgetRepository).applyExpense(USER_ID, budgetId, new BigDecimal("-42.50"));
     }
 
     @Test
@@ -231,62 +231,58 @@ class BudgetServiceImplTest {
         UUID eventId = UUID.randomUUID();
         when(processedEventRepository.existsById(eventId)).thenReturn(true);
 
-        boolean applied = budgetService.applyDelete(eventId, USER_ID, 4L, "USD",
-                new BigDecimal("42.50"), LocalDate.of(2026, 6, 15));
+        boolean applied = budgetService.applyDelete(eventId, USER_ID, UUID.randomUUID(),
+                new BigDecimal("42.50"));
 
         assertThat(applied).isFalse();
         verify(processedEventRepository, never()).save(any());
-        verify(budgetRepository, never()).applyExpense(anyLong(), anyLong(), any(), any(), any());
+        verify(budgetRepository, never()).applyExpense(anyLong(), any(), any());
     }
 
     @Test
-    void applyUpdateReversesOldSlotAndAppliesNewSlotUnderOneInboxRow() {
+    void applyUpdateReversesOldBudgetAndAppliesNewBudgetUnderOneInboxRow() {
         UUID eventId = UUID.randomUUID();
+        UUID oldBudget = UUID.randomUUID();
+        UUID newBudget = UUID.randomUUID();
         when(processedEventRepository.existsById(eventId)).thenReturn(false);
-        ExpenseLine reverse = new ExpenseLine(4L, "USD",
-                new BigDecimal("30.00"), LocalDate.of(2026, 6, 10));
-        ExpenseLine apply = new ExpenseLine(5L, "EUR",
-                new BigDecimal("50.00"), LocalDate.of(2026, 6, 20));
+        ExpenseLine reverse = new ExpenseLine(oldBudget, new BigDecimal("30.00"));
+        ExpenseLine apply = new ExpenseLine(newBudget, new BigDecimal("50.00"));
 
         boolean applied = budgetService.applyUpdate(eventId, USER_ID, reverse, apply);
 
         assertThat(applied).isTrue();
         verify(processedEventRepository).save(any(ProcessedEvent.class));
-        verify(budgetRepository).applyExpense(USER_ID, 4L, "USD",
-                new BigDecimal("-30.00"), LocalDate.of(2026, 6, 10));
-        verify(budgetRepository).applyExpense(USER_ID, 5L, "EUR",
-                new BigDecimal("50.00"), LocalDate.of(2026, 6, 20));
+        verify(budgetRepository).applyExpense(USER_ID, oldBudget, new BigDecimal("-30.00"));
+        verify(budgetRepository).applyExpense(USER_ID, newBudget, new BigDecimal("50.00"));
     }
 
     @Test
-    void applyUpdateWithNullApplyOnlyReversesTheOldSlot() {
+    void applyUpdateWithNullApplyOnlyReversesTheOldBudget() {
         UUID eventId = UUID.randomUUID();
+        UUID oldBudget = UUID.randomUUID();
         when(processedEventRepository.existsById(eventId)).thenReturn(false);
-        ExpenseLine reverse = new ExpenseLine(4L, "USD",
-                new BigDecimal("30.00"), LocalDate.of(2026, 6, 10));
+        ExpenseLine reverse = new ExpenseLine(oldBudget, new BigDecimal("30.00"));
 
         // EXPENSE -> INCOME edit: reverse the old contribution, apply nothing.
         boolean applied = budgetService.applyUpdate(eventId, USER_ID, reverse, null);
 
         assertThat(applied).isTrue();
-        verify(budgetRepository).applyExpense(USER_ID, 4L, "USD",
-                new BigDecimal("-30.00"), LocalDate.of(2026, 6, 10));
-        verify(budgetRepository, never()).applyExpense(eq(USER_ID), eq(4L), eq("USD"),
-                eq(new BigDecimal("30.00")), any());
+        verify(budgetRepository).applyExpense(USER_ID, oldBudget, new BigDecimal("-30.00"));
+        verify(budgetRepository, never()).applyExpense(eq(USER_ID), eq(oldBudget),
+                eq(new BigDecimal("30.00")));
     }
 
     @Test
     void applyUpdateSkipsDuplicateEventWithoutTouchingBudgets() {
         UUID eventId = UUID.randomUUID();
         when(processedEventRepository.existsById(eventId)).thenReturn(true);
-        ExpenseLine line = new ExpenseLine(4L, "USD",
-                new BigDecimal("30.00"), LocalDate.of(2026, 6, 10));
+        ExpenseLine line = new ExpenseLine(UUID.randomUUID(), new BigDecimal("30.00"));
 
         boolean applied = budgetService.applyUpdate(eventId, USER_ID, line, line);
 
         assertThat(applied).isFalse();
         verify(processedEventRepository, never()).save(any());
-        verify(budgetRepository, never()).applyExpense(anyLong(), anyLong(), any(), any(), any());
+        verify(budgetRepository, never()).applyExpense(anyLong(), any(), any());
     }
 
     @Test

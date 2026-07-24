@@ -26,10 +26,14 @@ public record TransactionUpdatedEvent(
         String oldCurrency,
         Long oldCategoryId,
         String oldTransactionDate,
+        // The budget the old slot was charged against (reverse from this exact budget).
+        UUID oldBudgetId,
         String newType,
         BigDecimal newAmount,
         String newCurrency,
         Long newCategoryId,
-        String newTransactionDate
+        String newTransactionDate,
+        // The budget the new slot is charged against (apply to this exact budget).
+        UUID newBudgetId
 ) {
 }

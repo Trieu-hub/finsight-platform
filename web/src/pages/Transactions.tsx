@@ -33,9 +33,9 @@ const byNewest = (a: Transaction, b: Transaction) =>
   b.transactionDate.localeCompare(a.transactionDate) ||
   (b.createdAt ?? '').localeCompare(a.createdAt ?? '')
 
-// A transaction counts against a budget when its category, currency and date all fall in scope.
-// Mirrors budget-service's matching so the over-budget popup agrees with the server's tally.
-function budgetMatchesTx(
+// A budget is eligible for an expense when it is on the chosen category, in the same currency,
+// and its window contains the transaction date — the only budgets the user may charge it to.
+function budgetEligible(
   b: Budget,
   tx: { categoryId: number; currency: string; transactionDate: string },
 ): boolean {
@@ -64,6 +64,7 @@ export default function Transactions() {
   const [amount, setAmount] = useState('')
   const [currency, setCurrency] = useState<string>('VND')
   const [categoryId, setCategoryId] = useState('')
+  const [budgetId, setBudgetId] = useState('') // chosen budget for an EXPENSE; '' = none
   const [walletId, setWalletId] = useState('') // source (or single) wallet; '' = none
   const [toWalletId, setToWalletId] = useState('') // TRANSFER destination
   const [description, setDescription] = useState('')
@@ -80,6 +81,25 @@ export default function Transactions() {
   // A wallet fixes the transaction currency (no FX): lock it to the chosen wallet's currency.
   const lockedCurrency = sourceWallet?.currency
   const effectiveCurrency = lockedCurrency ?? currency
+
+  // Budgets the user may charge this expense to (same category + currency, covering the date).
+  const matchingBudgets = useMemo(() => {
+    if (type !== 'EXPENSE' || !categoryId) return []
+    const catId = Number(categoryId)
+    return budgets.filter((b) =>
+      budgetEligible(b, { categoryId: catId, currency: effectiveCurrency, transactionDate: date }),
+    )
+  }, [budgets, type, categoryId, effectiveCurrency, date])
+
+  // The budget this expense is charged to: the user's pick if still eligible, else the first
+  // eligible one (so an expense always carries a budget when one exists). Derived, not stored,
+  // so it self-corrects as category/currency/date change — no state to keep in sync.
+  const effectiveBudgetId =
+    type === 'EXPENSE'
+      ? matchingBudgets.some((b) => b.id === budgetId)
+        ? budgetId
+        : (matchingBudgets[0]?.id ?? '')
+      : ''
 
   async function load() {
     try {
@@ -115,6 +135,7 @@ export default function Transactions() {
     const id = setTimeout(() => setOverBudget(null), 7000)
     return () => clearTimeout(id)
   }, [overBudget])
+
 
   function onTypeChange(next: TransactionType) {
     setType(next)
@@ -163,6 +184,18 @@ export default function Transactions() {
           toWalletId: Number(toWalletId),
         })
       } else {
+        // An expense must be charged to a budget (the user picks which). Block if the category
+        // has no eligible budget in this period, or none is chosen.
+        if (type === 'EXPENSE') {
+          if (matchingBudgets.length === 0) {
+            setError(t('tx.errNoBudget'))
+            return
+          }
+          if (!effectiveBudgetId) {
+            setError(t('tx.errBudgetRequired'))
+            return
+          }
+        }
         setSubmitting(true)
         const created = await createTransaction({
           type,
@@ -172,15 +205,16 @@ export default function Transactions() {
           description: description || undefined,
           transactionDate: date,
           walletId: sourceWallet ? sourceWallet.id : undefined,
+          budgetId: type === 'EXPENSE' ? effectiveBudgetId : undefined,
         })
-        // Warn immediately if this expense pushes a matching budget over its limit. Computed
-        // client-side (existing matching spend + this amount) so the popup is instant, ahead of
+        // Warn immediately if this expense pushes the chosen budget over its limit. Computed
+        // client-side (this budget's prior spend + this amount) so the popup is instant, ahead of
         // the asynchronous budget tally that arrives over Kafka.
         if (type === 'EXPENSE') {
-          for (const b of budgets) {
-            if (!budgetMatchesTx(b, created)) continue
+          const b = budgets.find((x) => x.id === effectiveBudgetId)
+          if (b) {
             const prior = transactions
-              .filter((tx) => tx.type === 'EXPENSE' && budgetMatchesTx(b, tx))
+              .filter((tx) => tx.type === 'EXPENSE' && tx.budgetId === b.id)
               .reduce((s, tx) => s + Number(tx.amount), 0)
             const spent = prior + Number(created.amount)
             if (spent > b.limitAmount) {
@@ -190,7 +224,6 @@ export default function Transactions() {
                 limit: b.limitAmount,
                 currency: b.currency,
               })
-              break
             }
           }
         }
@@ -322,6 +355,31 @@ export default function Transactions() {
                 </select>
               </Field>
 
+              {type === 'EXPENSE' && (
+                <Field label={t('tx.budget')}>
+                  {matchingBudgets.length === 0 ? (
+                    <p className="rounded-lg border border-amber-500/30 bg-amber-950/30 px-3 py-2 text-sm text-amber-300">
+                      {t('tx.errNoBudget')}
+                    </p>
+                  ) : (
+                    <select
+                      value={effectiveBudgetId}
+                      onChange={(e) => setBudgetId(e.target.value)}
+                      className={inputClass}
+                    >
+                      {matchingBudgets.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {`${b.name || categoryName(categories, b.categoryId, t)} · ${money(
+                            b.spentAmount,
+                            b.currency,
+                          )} / ${money(b.limitAmount, b.currency)}`}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </Field>
+              )}
+
               <Field label={t('tx.wallet')}>
                 <select
                   value={walletId}
@@ -361,7 +419,7 @@ export default function Transactions() {
 
           <button
             type="submit"
-            disabled={submitting}
+            disabled={submitting || (type === 'EXPENSE' && matchingBudgets.length === 0)}
             className="w-full rounded-lg bg-emerald-600 py-2.5 font-semibold text-white shadow-lg shadow-emerald-900/40 transition hover:bg-emerald-500 disabled:opacity-60"
           >
             {submitting ? t('tx.saving') : t('tx.add')}
