@@ -58,6 +58,8 @@ export default function Transactions() {
   >(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+  // History period filter: 'YYYY-MM' shows just that month, '' shows all. Defaults to this month.
+  const [month, setMonth] = useState(today().slice(0, 7))
 
   // form state — `amount` holds raw digits; it is rendered grouped (10.000.000).
   const [type, setType] = useState<TransactionType>('EXPENSE')
@@ -100,6 +102,22 @@ export default function Transactions() {
         ? budgetId
         : (matchingBudgets[0]?.id ?? '')
       : ''
+
+  // Distinct months present in the loaded history (plus the current one), newest first —
+  // populates the period filter. '' means "all months".
+  const months = useMemo(() => {
+    const set = new Set(transactions.map((tx) => tx.transactionDate.slice(0, 7)))
+    set.add(today().slice(0, 7))
+    return [...set].sort((a, b) => b.localeCompare(a))
+  }, [transactions])
+
+  // Rows actually shown: filtered to the chosen month (if any), newest first.
+  const visibleTransactions = useMemo(() => {
+    const list = month
+      ? transactions.filter((tx) => tx.transactionDate.slice(0, 7) === month)
+      : transactions
+    return [...list].sort(byNewest)
+  }, [transactions, month])
 
   async function load() {
     try {
@@ -429,14 +447,31 @@ export default function Transactions() {
 
       {/* List */}
       <section data-tour="tx-list" className="md:col-span-2">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-400">
-          {t('tx.title')}
-        </h2>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-400">
+            {t('tx.title')}
+          </h2>
+          {!loading && (
+            <select
+              value={month}
+              onChange={(e) => setMonth(e.target.value)}
+              aria-label={t('tx.filterMonth')}
+              className="rounded-lg border border-neutral-700 bg-neutral-950/60 px-2 py-1 text-xs text-neutral-300 outline-none transition focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
+            >
+              <option value="">{t('tx.allMonths')}</option>
+              {months.map((m) => (
+                <option key={m} value={m}>
+                  {`${m.slice(5)}/${m.slice(0, 4)}`}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
         {error && <p className="mb-3 text-sm text-red-400">{error}</p>}
         {loading ? (
           <p className="text-neutral-500">{t('common.loading')}</p>
-        ) : transactions.length === 0 ? (
-          <p className="text-neutral-500">{t('dashboard.noTx')}</p>
+        ) : visibleTransactions.length === 0 ? (
+          <p className="text-neutral-500">{month ? t('tx.noTxMonth') : t('dashboard.noTx')}</p>
         ) : (
           <div className="overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900">
             <table className="w-full text-sm">
@@ -449,7 +484,7 @@ export default function Transactions() {
                 </tr>
               </thead>
               <tbody>
-                {[...transactions].sort(byNewest).map((tx) => {
+                {visibleTransactions.map((tx) => {
                   const xfer = tx.type === 'TRANSFER'
                   const color = xfer
                     ? 'text-sky-400'
