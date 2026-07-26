@@ -217,11 +217,16 @@ stay in the backend.
   every request by an Axios interceptor; a `401` clears it and redirects to `/login`. Protected
   routes are gated client-side for UX only — the backend remains the security boundary.
 - **Pages**: Login / Register, Dashboard (income / expense / balance + recent activity + budget
-  progress), Transactions (list + create, incl. wallet selection and wallet-to-wallet transfers),
-  Budgets (list + utilization bars), Wallets (accounts with live balances, create / delete),
-  Analytics (month-over-month overview, spend forecast, top movers, category breakdown, and an
-  AI/template monthly summary — served by analytics-service), Admin console (RBAC user management,
-  ROLE_ADMIN only).
+  progress), Transactions (history newest-first, filterable by month — current month by default —
+  + create, incl. wallet selection and wallet-to-wallet transfers), Budgets (utilization bars,
+  showing the current period's budgets by default with a toggle to reveal expired ones, and an
+  instant popup the moment a new expense pushes its budget over the limit), Wallets (accounts with
+  live balances, create / delete), Analytics (month-over-month overview, spend forecast, top movers,
+  category breakdown, and an AI/template monthly summary — served by analytics-service), Admin
+  console (RBAC user management, ROLE_ADMIN only).
+- **Bilingual & themed**: a header toggle switches between English and Vietnamese (all copy and
+  category names localized) and between light/dark colour themes; both choices persist in the
+  browser.
 - **Notification bell**: a header bell shows an unread badge and opens a dropdown of risk alerts
   (severity-coloured) with mark-read / mark-all-read — the in-app surface for what
   notification-service materializes from `RiskDetected`. Alerts arrive **live over SSE**: the Kafka
