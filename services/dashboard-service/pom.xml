@@ -5,7 +5,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.0.6</version>
+        <version>4.1.0</version>
         <relativePath/>
     </parent>
     <groupId>com.pm</groupId>
@@ -18,13 +18,13 @@
         <java.version>21</java.version>
         <!-- Kept in sync with the versions the spring-grpc BOM manages, so the
              protobuf-maven-plugin downloads matching protoc / protoc-gen-grpc-java binaries. -->
-        <spring-grpc.version>1.0.3</spring-grpc.version>
-        <grpc.version>1.77.1</grpc.version>
+        <spring-grpc.version>1.1.0</spring-grpc.version>
+        <grpc.version>1.83.0</grpc.version>
         <protobuf-java.version>4.33.4</protobuf-java.version>
         <!-- Resilience4j core modules (used programmatically, NOT the Spring Boot AOP starter —
              that starter's autoconfiguration is not verified on Boot 4, and the tracing work
              already showed Boot 4 moved autoconfig around; the core libs have no such coupling). -->
-        <resilience4j.version>2.3.0</resilience4j.version>
+        <resilience4j.version>2.4.0</resilience4j.version>
     </properties>
 
     <dependencyManagement>
@@ -138,18 +138,18 @@
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
             <artifactId>jjwt-api</artifactId>
-            <version>0.12.6</version>
+            <version>0.13.0</version>
         </dependency>
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
             <artifactId>jjwt-impl</artifactId>
-            <version>0.12.6</version>
+            <version>0.13.0</version>
             <scope>runtime</scope>
         </dependency>
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
             <artifactId>jjwt-jackson</artifactId>
-            <version>0.12.6</version>
+            <version>0.13.0</version>
             <scope>runtime</scope>
         </dependency>
 
