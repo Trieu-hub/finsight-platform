@@ -8,8 +8,8 @@ import org.springframework.grpc.client.GrpcChannelFactory;
 
 /**
  * Builds the blocking stub for user-service's gRPC {@code UserProfileService}. The channel
- * named "user-service" is configured under {@code spring.grpc.client.channels} (address +
- * plaintext negotiation). gRPC connects lazily on first call, so this bean — and the whole
+ * named "user-service" is configured under {@code spring.grpc.client.channel} (target,
+ * plaintext by default). gRPC connects lazily on first call, so this bean — and the whole
  * context — starts fine even when user-service is not yet up.
  */
 @Configuration
