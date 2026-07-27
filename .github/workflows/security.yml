@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout (full history)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0 # gitleaks scans every commit, not just the tip
 
@@ -34,7 +34,7 @@ jobs:
       # so we never chase a docker image tag). Free for personal/OSS repos. It fails the
       # job on any finding, so a leaked credential blocks the merge.
       - name: Run gitleaks
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -43,7 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Run Trivy from its official image (stable `fs` CLI) rather than a marketplace
       # action tag that can fail to resolve. Reads every pom.xml + web/package-lock.json
