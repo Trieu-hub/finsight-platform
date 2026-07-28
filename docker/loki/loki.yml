@@ -1,0 +1,43 @@
+# Grafana Loki — single-binary, local-filesystem log store for the dev/monitoring stack.
+# The counterpart to Tempo (traces) and Prometheus (metrics): Promtail ships every container's
+# stdout here, and Grafana queries it over 3100. Local storage is a demo choice — a real
+# deployment points object_store at S3/GCS. Kept intentionally minimal: single replica,
+# in-memory ring, no multitenancy (auth_enabled: false).
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+  log_level: warn
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2024-01-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+# Keep a week of logs on the box, then compact and delete — this is a debugging aid, not an
+# audit store (mirrors Tempo's 24h trace retention, just longer because logs are cheaper to keep).
+limits_config:
+  retention_period: 168h
+
+compactor:
+  working_directory: /loki/compactor
+  retention_enabled: true
+  delete_request_store: filesystem

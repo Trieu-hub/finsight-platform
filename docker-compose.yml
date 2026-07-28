@@ -558,9 +558,41 @@ services:
       - "4318:4318"    # OTLP/HTTP receiver (services export here)
     restart: unless-stopped
 
+  # Log-aggregation backend — the third pillar next to Prometheus (metrics) and Tempo (traces).
+  # Opt-in with the same `monitoring` profile, so prod (run without it) never starts it and pays
+  # no memory for it by default; turn it on locally, or on prod when a live incident needs logs
+  # searchable instead of `docker logs`-per-container. Grafana auto-provisions the datasource.
+  loki:
+    image: grafana/loki:3.4.2
+    container_name: finsight-loki
+    profiles: ["monitoring"]
+    command: ["-config.file=/etc/loki/loki.yml"]
+    volumes:
+      - ./docker/loki/loki.yml:/etc/loki/loki.yml:ro
+      - loki_data:/loki
+    ports:
+      - "3100:3100"    # Loki push/query API (Grafana datasource; Promtail pushes here)
+    restart: unless-stopped
+
+  # Ships container stdout to Loki. Discovers finsight-* containers via the Docker socket
+  # (mounted read-only), so no per-service wiring is needed. Best-effort parses the ECS JSON
+  # that services emit into level/service labels; plain-text containers still ship.
+  promtail:
+    image: grafana/promtail:3.4.2
+    container_name: finsight-promtail
+    profiles: ["monitoring"]
+    depends_on:
+      - loki
+    command: ["-config.file=/etc/promtail/promtail.yml"]
+    volumes:
+      - ./docker/promtail/promtail.yml:/etc/promtail/promtail.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
+
 volumes:
   mysql_data:
   prometheus_data:
   grafana_data:
   tempo_data:
   alertmanager_data:
+  loki_data:

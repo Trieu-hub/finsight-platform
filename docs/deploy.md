@@ -326,7 +326,29 @@ Install the cron entry (idempotent):
 The script is configurable by env (`BACKUP_DIR`, `RETAIN`, `MYSQL_CONTAINER`, and `BACKUP_REMOTE`
 for the off-box copy below); with none set it behaves exactly as the original local-only version.
 
-**Restore** a dump:
+**Restore drill (non-destructive — do this regularly).** A backup you have never restored is not
+a backup: the 2026-07-20 incident was a nightly dump that had been silently failing for days behind
+a healthy-looking container. `scripts/restore-finsight.sh` restores a dump into a **throwaway**
+MySQL container (never `finsight-mysql`), verifies all seven databases and their schema came back,
+then removes the scratch container. The live DB is never touched, so it is safe to run any time —
+including on the prod box:
+
+```bash
+install -m 700 scripts/restore-finsight.sh /root/restore-finsight.sh
+/root/restore-finsight.sh                         # drill the newest dump in /root/backups
+/root/restore-finsight.sh /root/backups/finsight-YYYY-MM-DD_HHMM.sql.gz   # or a specific one
+```
+
+Exit 0 with `DRILL PASSED` means the backup is good. Wire a periodic drill (weekly is plenty) so a
+broken backup surfaces on its own, not the day you need it:
+
+```bash
+( crontab -l 2>/dev/null | grep -v restore-finsight.sh; \
+  echo '30 4 * * 0 /root/restore-finsight.sh >> /root/backups/restore-drill.log 2>&1' ) | crontab -
+```
+
+**Actual recovery (DESTRUCTIVE — overwrites the live database).** Only in a real disaster, when you
+are deliberately replacing production data:
 
 ```bash
 gunzip -c /root/backups/finsight-YYYY-MM-DD_HHMM.sql.gz | \
@@ -425,10 +447,10 @@ the 9 JVM image builds don't oversubscribe RAM while the old containers keep ser
 ## What this Path A deploy does and does NOT cover
 
 **Covered:** public HTTPS URL, single-origin reverse proxy, only-Caddy-exposed network, Grafana
-hardened, automated nightly backup **with optional off-box copy** (§7.2), **opt-in distributed
-tracing** (OTLP → Tempo, via `--profile monitoring`), **SSH key-only**, **ufw firewall**,
-**fail2ban**, **edge rate limiting** (Caddy `caddy-ratelimit` + Cloudflare Bot Fight Mode),
-one-command update.
+hardened, automated nightly backup **with optional off-box copy** (§7.2) **and a non-destructive
+restore drill** (§7.1), **opt-in distributed tracing and log aggregation** (OTLP → Tempo, Promtail
+→ Loki, both via `--profile monitoring`), **SSH key-only**, **ufw firewall**, **fail2ban**, **edge
+rate limiting** (Caddy `caddy-ratelimit` + Cloudflare Bot Fight Mode), one-command update.
 
 **Secrets at rest** are encrypted with SOPS + age (§3.1) — the plaintext `.env` is gone; only a
 single age key stays in the clear. A **managed secrets store** with runtime injection (Vault /
