@@ -422,13 +422,45 @@ the 9 JVM image builds don't oversubscribe RAM while the old containers keep ser
 
 ---
 
+## 9. CI, ephemeral staging & gated deployment
+
+Three GitHub Actions workflows cover the path from a PR to a live deploy. None of them ever
+handle a production secret — the SOPS age key stays on the VPS (§3.1), so the box always
+decrypts its own `secrets.env`.
+
+- **`ci.yml`** — builds and tests every service (unit + Testcontainers) on each PR and on
+  `main`. The correctness gate.
+- **`staging.yml` (ephemeral staging)** — the single 8 GB VPS has no room for a parallel
+  stack, so "staging" is *ephemeral*, not a standing server: the workflow stands up the **whole
+  compose stack** on a throwaway runner, waits for the gateway to report healthy, runs the k6
+  **smoke** then **load** test (`load-test/`), and tears it down. Runs on PRs that touch
+  `services/`, `docker-compose.yml`, or `load-test/`, and nightly. A failed smoke or a missed
+  SLO fails the job. This is the load-test home — and it satisfies §7.4 ("never load-test prod")
+  by construction: the k6 scripts refuse an `https://`/`vernfy.com` target
+  (`load-test/README.md`).
+- **`deploy-prod.yml` (gated CD)** — a **manual**, environment-gated deploy (no auto-deploy on
+  merge). You click *Run workflow* and pick the ref; if the `production` Environment has
+  required reviewers, a second person approves. The runner then SSHes into the VPS and runs the
+  box's own deploy path — `git reset --hard <ref>` then
+  `COMPOSE_PARALLEL_LIMIT=1 scripts/prod-compose.sh up -d --build` (§8) — and gates on the
+  gateway's in-network `/actuator/health` before reporting success.
+
+  **One-time setup** — in *Settings → Environments → `production`*, add the required reviewers
+  (the approval gate) and these secrets: `DEPLOY_SSH_HOST`, `DEPLOY_SSH_USER`, `DEPLOY_SSH_KEY`
+  (private key with box access), `DEPLOY_APP_DIR` (repo path on the box); optional
+  `DEPLOY_SSH_PORT` (default 22) and `DEPLOY_SSH_KNOWN_HOSTS` (pin the host key instead of
+  trust-on-first-use). Because `secrets.env`, the age key, and `.env` are gitignored, the
+  `git reset --hard` only fast-forwards tracked code and never disturbs them.
+
+---
+
 ## What this Path A deploy does and does NOT cover
 
 **Covered:** public HTTPS URL, single-origin reverse proxy, only-Caddy-exposed network, Grafana
 hardened, automated nightly backup **with optional off-box copy** (§7.2), **opt-in distributed
 tracing** (OTLP → Tempo, via `--profile monitoring`), **SSH key-only**, **ufw firewall**,
 **fail2ban**, **edge rate limiting** (Caddy `caddy-ratelimit` + Cloudflare Bot Fight Mode),
-one-command update.
+one-command update, **CI + ephemeral k6 staging + manual gated CD** (§9).
 
 **Secrets at rest** are encrypted with SOPS + age (§3.1) — the plaintext `.env` is gone; only a
 single age key stays in the clear. A **managed secrets store** with runtime injection (Vault /
