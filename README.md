@@ -25,6 +25,8 @@ coupling is asynchronous over Kafka.
 | [`docs/runbook.md`](docs/runbook.md) | Startup, compose workflow, Kafka/Prometheus/Grafana verification, troubleshooting |
 | [`project-status.md`](project-status.md) | Phase-by-phase completion and roadmap |
 | [`docs/ADR-0004-budget-utilization-via-events.md`](docs/ADR-0004-budget-utilization-via-events.md) | Why budget utilization is event-driven (and its accepted drift) |
+| [`docs/deploy.md`](docs/deploy.md) | VPS deploy (Caddy/TLS, SOPS-encrypted secrets, nightly backups) + CI / ephemeral staging / gated CD (§9) |
+| [`load-test/`](load-test/) | k6 smoke + load scripts, run by the staging workflow (guarded so they never hit prod) |
 
 ## Tech stack
 
@@ -289,6 +291,23 @@ modules (`api-gateway`, `auth-service`, `user-service`, `transaction-service`, `
 - `fail-fast` is off, so one run reports every failing service; failing modules upload their
   Surefire reports as artifacts.
 
+**Ephemeral staging** (`.github/workflows/staging.yml`) — the single 8 GB prod VPS has no room for
+a parallel stack, so "staging" is *ephemeral*: on PRs that touch `services/`, `docker-compose.yml`,
+or `load-test/` (and nightly), it stands up the **whole compose stack** on a throwaway runner,
+waits for the gateway to report healthy, runs the k6 **smoke** then **load** test
+([`load-test/`](load-test/)), and tears it down. A failed smoke or a missed latency/error SLO fails
+the job — the first time a PR is exercised **whole-stack** (gateway → services → Kafka), not just
+per-service in isolation.
+
+**Gated production deploy** (`.github/workflows/deploy-prod.yml`) — a **manual**,
+environment-gated deploy (no auto-deploy on merge). You dispatch it and pick the ref; if the
+`production` Environment has required reviewers, a second person approves. The runner then SSHes
+into the VPS and runs the box's **own** deploy path (`git reset --hard <ref>` →
+`scripts/prod-compose.sh up -d --build`) and gates on the gateway's in-network
+`/actuator/health`. **CI never holds an application secret** — the SOPS age key lives only on the
+box, which decrypts its own `secrets.env`. Setup + required secrets:
+[`docs/deploy.md` §9](docs/deploy.md).
+
 > There is no aggregator pom; the matrix is what builds "all services" in CI.
 
 ## End-to-end validation
@@ -305,6 +324,7 @@ runtime is captured by the committed Grafana dashboard screenshots above.
 | Prometheus metrics updated | ✅ implemented | `/actuator/prometheus` · `finsight.risk.events.detected{type,severity}` |
 | Grafana dashboard updated | ✅ provisioned | `docker/grafana/provisioning/` (4 dashboards) |
 | CI pipeline passing | ✅ workflow + badge | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) |
+| Whole-stack E2E + load test on PR | ✅ workflow | [`.github/workflows/staging.yml`](.github/workflows/staging.yml) stands up the full stack + [`load-test/`](load-test/) k6 smoke/load |
 | Runtime screenshots committed | ✅ committed | `docs/images/` (4 Grafana dashboards, embedded above) |
 
 ## Roadmap / not yet built
@@ -320,7 +340,8 @@ These are **absent from the codebase** — do not assume they exist:
 - **A managed secrets store and an orchestrated deployment target** (Kubernetes/ECS, Vault).
   The live demo runs Docker Compose on a single VPS behind Caddy with TLS, and secrets in a
   `chmod 600` `.env` — fine at hobby scale, not a secrets manager.
-- **Load/performance testing, whole-stack E2E in CI, and security scanning** (SAST/dependency/
-  secret).
+- **Security scanning** (SAST + dependency + secret) — not wired on this branch. (Load/performance
+  testing and whole-stack E2E in CI, previously listed here, **are** now built — see
+  [Continuous Integration](#continuous-integration).)
 
 See [`project-status.md`](project-status.md) §5 for the prioritized roadmap.
