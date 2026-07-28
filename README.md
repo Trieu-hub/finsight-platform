@@ -35,13 +35,15 @@ coupling is asynchronous over Kafka.
 
 ## Tech stack
 
-- **Java 21**, **Spring Boot 4.0.6**, Spring Security, Spring Data JPA
+- **Java 21**, **Spring Boot 4.1.0**, Spring Security, Spring Data JPA
 - **MySQL 8** — one shared instance, one logical database per service
 - **Redis** — used by auth-service (refresh tokens + brute-force lockout)
 - **Kafka** (single-node KRaft broker) — asynchronous event backbone
 - **Flyway** — schema ownership (`ddl-auto: validate`)
 - **JWT** (RS256) — signed by auth-service, the only holder of the private key; every service
   verifies with the public key alone, discovered by `kid` from a published JWK Set
+- **gRPC** (Spring Boot 4.1 **native** gRPC — `spring-boot-starter-grpc-server`/`-client`) — the
+  platform's one internal synchronous call: the dashboard BFF → user-service `UserProfileService`
 - **springdoc / OpenAPI** — API docs on the user-facing REST services
 - **Micrometer + Prometheus + Grafana** — metrics and dashboards
 - **Docker / Docker Compose**, **GitHub Actions** (CI), **Testcontainers** (integration tests)
