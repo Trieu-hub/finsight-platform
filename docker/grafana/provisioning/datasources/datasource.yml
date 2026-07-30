@@ -18,3 +18,13 @@ datasources:
     access: proxy
     url: http://tempo:3200
     editable: false
+
+  # Container logs shipped by Promtail (see docker/promtail). Like Tempo, only live with the
+  # `monitoring` profile running; the datasource sits idle otherwise. Explore with e.g.
+  # {compose_service="transaction-service"} or {container="finsight-mysql"}.
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: false
