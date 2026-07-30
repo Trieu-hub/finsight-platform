@@ -322,8 +322,15 @@ newly-disclosed CVE turns the build red even when no code changed:
 
 > There is no aggregator pom; the matrix is what builds "all services" in CI. Adding a service means
 > adding it to the matrix.
->
-> The frontend is **not** covered by CI — see [Roadmap / not yet built](#roadmap--not-yet-built).
+
+**Frontend** (`.github/workflows/frontend.yml`) — on each `pull_request` and push to `main` that
+touches `web/`, the React/Vite SPA is installed (`npm ci`), linted (ESLint), unit-tested
+(**Vitest** — `npm test`), then type-checked and bundled (`tsc -b && vite build`). This closes the
+previous gap where frontend changes reached production checked only by hand. The Vitest suite covers
+the pure logic — money/number formatting, client-side JWT decode, and the roulette payout maths
+(the `(36 − n)/n` invariant, mirroring the backend `RouletteTest`). (New React-Compiler-era lint
+rules that fire on existing code are set to `warn` in `web/eslint.config.js`, so the job fails on
+genuine errors, not on those advisories.)
 
 ## End-to-end validation
 
@@ -361,8 +368,8 @@ These are **absent from the codebase** — do not assume they exist:
 - **Load/performance testing** — no k6/Gatling/JMeter suite and no published baseline.
 - **Whole-stack E2E in CI** — the matrix builds and tests each service in isolation; nothing
   exercises browser → gateway → Kafka → risk end to end on every PR.
-- **Frontend CI** — `web/` is not built, linted, or type-checked by any workflow, and has no
-  automated tests.
+- **Frontend component / E2E tests** — the frontend now has unit tests (Vitest, wired into CI) for
+  pure logic, but no component-render, hook, or browser E2E coverage yet.
 - **Log aggregation** — metrics (Prometheus) and traces (Tempo) are wired; there is no Loki/ELK,
   so log inspection is per-container.
 - **Continuous deployment** — deployment is a manual `ssh` + `scripts/prod-compose.sh up -d --build`;

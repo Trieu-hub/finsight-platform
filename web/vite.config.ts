@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
@@ -5,6 +6,12 @@ import tailwindcss from '@tailwindcss/vite'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // Vitest — unit tests for pure logic (formatters, JWT decode, roulette payout maths). These
+  // need no DOM, so the environment is 'node'; component/integration tests would switch to jsdom.
+  test: {
+    environment: 'node',
+    include: ['src/**/*.test.ts'],
+  },
   server: {
     // Dev proxy: the browser calls /api/... (same origin as the FE), Vite forwards
     // it to the api-gateway. This sidesteps CORS entirely during development — no
