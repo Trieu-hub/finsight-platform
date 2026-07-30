@@ -43,8 +43,9 @@ docker run --rm -i -e BASE_URL=http://host.docker.internal:8080 \
 | `CATEGORY_ID` | `1` | `load.js` | Seeded category for the write step (1 = Salary/INCOME). |
 | `VUS` | `20` | `load.js` | Peak concurrent virtual users. |
 | `DURATION` | `1m` | `load.js` | Hold time at peak (excludes the 20s ramp-up / 10s ramp-down). |
-| `P95_MS` | `800` | `load.js` | Fail the run if p95 request latency exceeds this. |
+| `P95_MS` | `800` | `load.js` | Fail the run if p95 request latency exceeds this. **`0` disables the latency gate** (CI staging uses this — a shared runner is not perf-representative; error rate + checks still gate). |
 | `ERROR_RATE` | `0.01` | `load.js` | Fail the run if the failed-request rate exceeds this (1%). |
+| `CHECK_RATE` | `0.99` | `load.js` | Fail the run if the check success rate drops below this. Loosened on CI (a shared runner has transient hiccups); a genuinely broken endpoint still fails ~100% of its checks. |
 | `ALLOW_PROD` | *(unset)* | both | Escape hatch for the production guard — do not set it for a real prod URL. |
 
 ## In CI

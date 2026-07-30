@@ -12,12 +12,15 @@ import { BASE_URL, guardNotProduction, register, login, authHeaders } from './li
 export const options = {
   vus: 1,
   iterations: 1,
-  // A smoke run is pass/fail: any failed request or check fails the whole run (exit != 0),
-  // which is exactly what a CI gate wants.
+  // A smoke run gates CORRECTNESS, not latency: every request must succeed and every check must
+  // pass (exit != 0 otherwise). The latency bound is deliberately loose — the CI stack is nine
+  // cold JVMs sharing a 2-core runner, so first-request times are seconds; a tight p95 here only
+  // produces flaky failures. It exists solely to catch a pathologically hung stack. The real
+  // latency SLO lives in load.js (P95_MS, default 800ms) for a warmed, perf-representative run.
   thresholds: {
     http_req_failed: ['rate==0'],
     checks: ['rate==1'],
-    http_req_duration: ['p(95)<2000'],
+    http_req_duration: ['p(95)<10000'],
   },
 };
 
@@ -29,18 +32,16 @@ export default function () {
   const health = http.get(`${BASE_URL}/actuator/health`, { tags: { name: 'GET /health' } });
   check(health, { 'gateway healthy': (r) => r.status === 200 });
 
-  const { token, email, password } = register();
-  check(null, { 'registration yielded a token': () => token !== null });
+  // Register creates the account (no token), then login yields the access token.
+  const { email, password } = register();
+  const token = login(email, password);
+  check(null, { 'obtained access token from login': () => token !== null });
   if (!token) return; // nothing more to assert without a token; thresholds already fail the run
 
-  // Exercise the login path too, with the credentials we just registered.
-  const loggedIn = login(email, password);
-  const sessionToken = loggedIn.status === 200 ? String(loggedIn.json('accessToken')) : token;
-
-  const me = http.get(`${BASE_URL}/api/v1/auth/me`, authHeaders(sessionToken));
+  const me = http.get(`${BASE_URL}/api/v1/auth/me`, authHeaders(token));
   check(me, { 'me 200 with bearer': (r) => r.status === 200 });
 
-  const dashboard = http.get(`${BASE_URL}/api/v1/dashboard`, authHeaders(sessionToken));
+  const dashboard = http.get(`${BASE_URL}/api/v1/dashboard`, authHeaders(token));
   check(dashboard, { 'dashboard 200': (r) => r.status === 200 });
 
   sleep(1);

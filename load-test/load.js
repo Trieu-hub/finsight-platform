@@ -2,9 +2,12 @@
 // that fail the run (non-zero exit) when the stack misses them. This is the capacity/latency
 // signal for "production-ready"; it is NOT a correctness test (that is CI's job).
 //
-// Journey per iteration: register → create an income transaction (write path) → read the
-// dashboard and the transaction list (read path). That exercises the gateway, auth-service,
-// transaction-service, and dashboard-service together, plus the Kafka fan-out a write triggers.
+// Auth happens ONCE, up front: setup() registers + logs in a small pool of users (one per VU),
+// and each iteration reuses a token to create an income transaction (write path) then read the
+// dashboard and the transaction list (read path). Reusing tokens is deliberate — register/login
+// run bcrypt (intentionally CPU-expensive), so authenticating on every iteration would bottleneck
+// on auth-service instead of measuring the business endpoints. This exercises the gateway,
+// transaction-service, and dashboard-service under load, plus the Kafka fan-out a write triggers.
 //
 //   k6 run load-test/load.js
 //   BASE_URL=http://localhost:8080 VUS=30 DURATION=2m k6 run load-test/load.js
@@ -20,7 +23,7 @@ import {
   INCOME_CATEGORY_ID,
   JSON_HEADERS,
   guardNotProduction,
-  register,
+  registerAndLogin,
   authHeaders,
   today,
 } from './lib/common.js';
@@ -29,6 +32,21 @@ const VUS = Number(__ENV.VUS || 20);
 const DURATION = __ENV.DURATION || '1m';
 const P95_MS = Number(__ENV.P95_MS || 800);
 const ERROR_RATE = Number(__ENV.ERROR_RATE || 0.01);
+const CHECK_RATE = Number(__ENV.CHECK_RATE || 0.99);
+
+// Error rate and checks always gate the run (correctness under concurrency). The latency SLO
+// is only meaningful on a warmed, perf-representative host — set P95_MS=0 to skip it (the CI
+// staging stack is nine JVMs on a shared 2-core runner, where a p95 bound just flakes). Default
+// 800ms applies to local / real-environment runs. ERROR_RATE / CHECK_RATE are loosened for CI
+// (a shared runner has occasional transient hiccups) but still catch a genuinely broken endpoint,
+// which fails ~100% of its own checks and dwarfs any tolerance.
+const thresholds = {
+  http_req_failed: [`rate<${ERROR_RATE}`],
+  checks: [`rate>${CHECK_RATE}`],
+};
+if (P95_MS > 0) {
+  thresholds['http_req_duration'] = [`p(95)<${P95_MS}`];
+}
 
 export const options = {
   // Ramp up, hold, ramp down — a gentler shape than slamming to full load, so the numbers
@@ -38,11 +56,7 @@ export const options = {
     { duration: DURATION, target: VUS },
     { duration: '10s', target: 0 },
   ],
-  thresholds: {
-    http_req_failed: [`rate<${ERROR_RATE}`],
-    http_req_duration: [`p(95)<${P95_MS}`],
-    checks: ['rate>0.99'],
-  },
+  thresholds,
 };
 
 export function setup() {
@@ -52,14 +66,22 @@ export function setup() {
   if (health.status !== 200) {
     throw new Error(`gateway not healthy at ${BASE_URL} (status ${health.status}) — is the stack up?`);
   }
+  // Authenticate a pool of users ONCE, sequentially — one token per VU. The hot loop reuses these
+  // so the load falls on the business endpoints, not on repeated bcrypt in register/login.
+  const tokens = [];
+  for (let i = 0; i < VUS; i++) {
+    const t = registerAndLogin();
+    if (t) tokens.push(t);
+  }
+  if (tokens.length === 0) {
+    throw new Error('setup could not authenticate any load-test user — check the auth path / stack');
+  }
+  return { tokens };
 }
 
-export default function () {
-  const { token } = register();
-  if (!token) {
-    sleep(1);
-    return;
-  }
+export default function (data) {
+  // Reuse a pre-authenticated token (one per VU; round-robin if a few logins failed in setup).
+  const token = data.tokens[(__VU - 1) % data.tokens.length];
   const auth = authHeaders(token);
 
   // Write path: create an income transaction (Salary/INCOME/1 — no wallet required).

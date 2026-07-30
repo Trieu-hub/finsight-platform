@@ -37,13 +37,23 @@ export function guardNotProduction() {
 
 // A unique registration each call — a reused email returns an error and would poison the run.
 // Returns { token, email, password } so callers can also exercise login with the same creds;
-// token is null if registration failed (the check below already flags that).
+// Registration creates the account only — auth-service's /register returns
+// {success, message} with NO tokens (see AuthServiceImpl.register). The access token comes
+// from a subsequent /login. Returns the credentials so the caller can log in with them.
 export function register() {
-  const stamp = `${Date.now()}-${__VU}-${__ITER}-${Math.floor(Math.random() * 1e6)}`;
+  // Both email AND username must be globally unique — auth-service rejects a duplicate of either
+  // (DuplicateResourceException). `__VU`/`__ITER` alone repeat across runs (and the smoke run
+  // collides with the load run in the same CI job), so derive both from the same timestamped
+  // stamp. Username is capped at 50 chars (the DTO's @Size max).
+  // __VU/__ITER only exist inside VU code — register() is also called from setup() (pooled auth),
+  // where referencing them throws. Guard them; uniqueness holds via Date.now() + a wide random.
+  const vu = typeof __VU !== 'undefined' ? __VU : 0;
+  const iter = typeof __ITER !== 'undefined' ? __ITER : 0;
+  const stamp = `${Date.now()}-${vu}-${iter}-${Math.floor(Math.random() * 1e9)}`;
   const email = `loadtest+${stamp}@loadtest.local`;
   const password = 'LoadTest123!';
   const body = JSON.stringify({
-    username: `lt_${__VU}_${__ITER}`.slice(0, 50),
+    username: `lt${stamp}`.replace(/-/g, '').slice(0, 50),
     email,
     password,
   });
@@ -53,20 +63,29 @@ export function register() {
   });
   check(res, {
     'register 200': (r) => r.status === 200,
-    'register returns accessToken': (r) => !!r.json('accessToken'),
+    'register success': (r) => r.json('success') === true,
   });
-  const token = res.status === 200 ? String(res.json('accessToken')) : null;
-  return { token, email, password };
+  return { email, password };
 }
 
+// Logs in and returns the access token (string), or null if login did not yield one.
 export function login(email, password) {
   const res = http.post(
     `${BASE_URL}/api/v1/auth/login`,
     JSON.stringify({ email, password }),
     { headers: JSON_HEADERS, tags: { name: 'POST /auth/login' } },
   );
-  check(res, { 'login 200': (r) => r.status === 200 });
-  return res;
+  check(res, {
+    'login 200': (r) => r.status === 200,
+    'login returns accessToken': (r) => !!r.json('accessToken'),
+  });
+  return res.status === 200 ? res.json('accessToken') : null;
+}
+
+// The full "get an authenticated session" path: register an account, then log in for a token.
+export function registerAndLogin() {
+  const { email, password } = register();
+  return login(email, password);
 }
 
 export function authHeaders(token) {
