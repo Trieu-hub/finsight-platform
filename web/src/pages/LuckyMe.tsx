@@ -29,18 +29,19 @@ const FACE = R * 2
 
 const CONFETTI_COLORS = ['#34d399', '#2dd4bf', '#fbbf24', '#f472b6', '#60a5fa', '#f87171']
 
+// Decorative confetti positions — computed once at module load, not per render. Rendering must be
+// pure (react-hooks/purity), so the Math.random() lives here at module scope rather than inside the
+// component. The burst is celebratory; a fixed layout for the session is imperceptible.
+const CONFETTI_PIECES = Array.from({ length: 90 }, (_, i) => ({
+  left: Math.random() * 100,
+  delay: Math.random() * 0.6,
+  duration: 2.4 + Math.random() * 1.6,
+  color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+  size: 6 + Math.random() * 6,
+}))
+
 function Confetti() {
-  const pieces = useMemo(
-    () =>
-      Array.from({ length: 90 }, (_, i) => ({
-        left: Math.random() * 100,
-        delay: Math.random() * 0.6,
-        duration: 2.4 + Math.random() * 1.6,
-        color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
-        size: 6 + Math.random() * 6,
-      })),
-    [],
-  )
+  const pieces = CONFETTI_PIECES
   return (
     <div className="pointer-events-none fixed inset-0 z-40 overflow-hidden" aria-hidden>
       {pieces.map((p, i) => (
