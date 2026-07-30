@@ -30,6 +30,7 @@ public class GatewayProperties {
 
     private Timeouts timeouts = new Timeouts();
     private Limits limits = new Limits();
+    private RateLimit rateLimit = new RateLimit();
 
     @Getter
     @Setter
@@ -67,5 +68,37 @@ public class GatewayProperties {
          * so 2 MiB is generous; it caps a trivial memory-exhaustion vector at the edge.
          */
         private long maxBodyBytes = 2 * 1024 * 1024;
+    }
+
+    /**
+     * Edge rate limiting. Complements — does not replace — the caddy-ratelimit rule in
+     * docker/caddy/Caddyfile, which covers only the three token-minting auth endpoints and only
+     * when traffic actually arrives through Caddy. This one applies to every proxied route and
+     * travels with the application, so it still holds locally and if the gateway is ever reached
+     * directly.
+     *
+     * <p>Two buckets, because they protect against different things:
+     * <ul>
+     *   <li><b>authenticated</b> — keyed on the userId from the verified token. Keying a logged-in
+     *       user by IP would make everyone behind one CGNAT/office address throttle each other,
+     *       which is a real risk for this user base.</li>
+     *   <li><b>anonymous</b> — keyed on client IP, for the public auth routes where there is no
+     *       identity yet. Tighter, since these are the endpoints worth brute-forcing.</li>
+     * </ul>
+     *
+     * <p>Defaults are deliberately generous: a human clicking through the SPA never approaches
+     * them, a script does immediately.
+     */
+    @Getter
+    @Setter
+    public static class RateLimit {
+        /** Master switch. Off disables the check entirely (no Redis calls). */
+        private boolean enabled = true;
+        /** Requests allowed per window for a verified user. */
+        private int authenticatedRequests = 300;
+        /** Requests allowed per window for an unauthenticated caller (keyed by IP). */
+        private int anonymousRequests = 30;
+        /** Length of the fixed window, in seconds. */
+        private int windowSeconds = 60;
     }
 }

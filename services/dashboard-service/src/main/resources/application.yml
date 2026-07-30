@@ -28,12 +28,12 @@ dashboard:
     retry-wait-duration: ${DASHBOARD_RETRY_WAIT:200ms}
 
 # gRPC client channel for user-service's internal UserProfileService. Plaintext on the
-# private network (no TLS between internal services); the deadline is applied per call
-# by UserClient (from dashboard.timeouts.read-ms). Connects lazily on first call.
-spring.grpc.client.channels:
+# private network (the channel defaults to plaintext; TLS would need spring...ssl.enabled);
+# the deadline is applied per call by UserClient (from dashboard.timeouts.read-ms).
+# Connects lazily on first call.
+spring.grpc.client.channel:
   user-service:
-    address: ${USER_SERVICE_GRPC_TARGET:static://localhost:9092}
-    negotiation-type: plaintext
+    target: ${USER_SERVICE_GRPC_TARGET:static://localhost:9092}
 
 management:
   # Metrics are exported by Prometheus scrape (/actuator/prometheus). Turn OFF the OTLP

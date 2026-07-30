@@ -7,7 +7,6 @@ import com.pm.budgetservice.dto.UpdateBudgetRequest;
 import org.springframework.data.domain.Page;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.util.UUID;
 
 public interface BudgetService {
@@ -23,25 +22,23 @@ public interface BudgetService {
     void delete(Long userId, UUID id);
 
     /**
-     * Applies an EXPENSE from a {@code TransactionCreated} event to every matching
-     * active budget (see {@code BudgetRepository#applyExpense} for the matching rules).
-     * Driven by the Kafka consumer, not by HTTP.
+     * Applies an EXPENSE from a {@code TransactionCreated} event to the single budget the user
+     * chose ({@code budgetId}), scoped to the owner (see {@code BudgetRepository#applyExpense}).
+     * A null/unknown budgetId is a no-op increment. Driven by the Kafka consumer, not by HTTP.
      *
      * @return true if the event was applied, false if it was a duplicate already
      *         recorded in the processed_events inbox
      */
-    boolean applyExpense(UUID eventId, Long userId, Long categoryId, String currency,
-                         BigDecimal amount, LocalDate transactionDate);
+    boolean applyExpense(UUID eventId, Long userId, UUID budgetId, BigDecimal amount);
 
     /**
-     * Reverses a soft-deleted EXPENSE from every matching active budget — the inverse of
+     * Reverses a soft-deleted EXPENSE from the budget it was charged against — the inverse of
      * {@link #applyExpense} (an atomic {@code spent_amount += -amount}). Driven by a
      * {@code TransactionDeleted} event.
      *
      * @return true if applied, false if the eventId was a duplicate already in the inbox
      */
-    boolean applyDelete(UUID eventId, Long userId, Long categoryId, String currency,
-                        BigDecimal amount, LocalDate transactionDate);
+    boolean applyDelete(UUID eventId, Long userId, UUID budgetId, BigDecimal amount);
 
     /**
      * Re-materializes an edited EXPENSE: reverses the {@code reverse} slot and applies the

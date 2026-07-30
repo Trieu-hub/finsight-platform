@@ -23,6 +23,8 @@ public record TransactionDeletedEvent(
         BigDecimal amount,
         String currency,
         Long categoryId,
-        String transactionDate
+        String transactionDate,
+        // The budget this EXPENSE was charged against, so the reversal hits that exact budget.
+        UUID budgetId
 ) {
 }

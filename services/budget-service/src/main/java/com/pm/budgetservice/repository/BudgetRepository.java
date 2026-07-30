@@ -32,14 +32,13 @@ public interface BudgetRepository
             Long userId, Long categoryId, BudgetPeriod periodType, LocalDate startDate);
 
     /**
-     * Atomically adds an expense to every active budget whose slot matches: same user,
-     * same category, same currency (no FX conversion), transaction date inside the
-     * budget window. One SQL increment — never read-modify-write — so concurrent events
-     * cannot lose updates. A transaction may legitimately match several overlapping
-     * budgets (e.g. a MONTHLY and a YEARLY budget for the same category); all of them
-     * are incremented.
+     * Atomically adds an expense to the single budget the user chose (its id), scoped to the
+     * owning user so a spoofed budgetId belonging to someone else can never be charged. One SQL
+     * increment — never read-modify-write — so concurrent events cannot lose updates. A null or
+     * unknown {@code budgetId} matches no row, leaving spent_amount untouched (a normal outcome
+     * for budget-less expenses such as the game).
      *
-     * @return number of budgets updated (0 when no budget matches — a normal outcome)
+     * @return number of budgets updated (0 when the budgetId matches no active owned budget)
      *
      * <p>{@code flushAutomatically} is load-bearing: the caller persists the
      * processed_events inbox row in the same transaction, and Hibernate's auto-flush
@@ -51,16 +50,11 @@ public interface BudgetRepository
     @Query("""
             UPDATE Budget b
                SET b.spentAmount = b.spentAmount + :amount
-             WHERE b.userId = :userId
-               AND b.categoryId = :categoryId
-               AND b.currency = :currency
+             WHERE b.id = :budgetId
+               AND b.userId = :userId
                AND b.isDeleted = false
-               AND b.startDate <= :date
-               AND b.endDate >= :date
             """)
     int applyExpense(@Param("userId") Long userId,
-                     @Param("categoryId") Long categoryId,
-                     @Param("currency") String currency,
-                     @Param("amount") BigDecimal amount,
-                     @Param("date") LocalDate date);
+                     @Param("budgetId") UUID budgetId,
+                     @Param("amount") BigDecimal amount);
 }

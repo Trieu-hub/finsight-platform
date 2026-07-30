@@ -12,7 +12,7 @@ import type {
   MonthlySummary,
   SpendForecast,
 } from '../api/types'
-import { money } from '../lib/format'
+import { catLabel, money } from '../lib/format'
 import { useI18n, type Lang } from '../i18n'
 
 const BAR_COLORS = ['#10b981', '#14b8a6', '#06b6d4', '#f59e0b', '#f43f5e', '#a78bfa', '#64748b']
@@ -176,7 +176,7 @@ export default function Analytics() {
                     key={m.categoryId}
                     className="flex items-center justify-between rounded-lg bg-neutral-950/50 px-3 py-2"
                   >
-                    <span className="text-sm text-neutral-200">{m.categoryName}</span>
+                    <span className="text-sm text-neutral-200">{catLabel(m.categoryId, m.categoryName, t)}</span>
                     <div className="flex items-center gap-3">
                       <span className="text-sm text-neutral-100">{money(m.amount, currency)}</span>
                       <DeltaChip value={m.changePct} goodWhenUp={false} />
@@ -199,7 +199,7 @@ export default function Analytics() {
             {expenseSlices.map((c, i) => (
               <li key={`${c.categoryId}-${c.type}`}>
                 <div className="mb-1 flex items-center justify-between text-sm">
-                  <span className="text-neutral-200">{c.categoryName}</span>
+                  <span className="text-neutral-200">{catLabel(c.categoryId, c.categoryName, t)}</span>
                   <span className="text-neutral-400">
                     {money(c.total, currency)} · {pct(c.share)}
                   </span>

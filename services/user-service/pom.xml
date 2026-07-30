@@ -5,7 +5,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.0.6</version>
+        <version>4.1.0</version>
         <relativePath/>
     </parent>
     <groupId>com.pm</groupId>
@@ -16,12 +16,11 @@
 
     <properties>
         <java.version>21</java.version>
-        <testcontainers.version>1.20.6</testcontainers.version>
-        <!-- Kept in sync with the versions the spring-grpc BOM manages (see below), so the
-             protobuf-maven-plugin downloads matching protoc / protoc-gen-grpc-java binaries. -->
-        <spring-grpc.version>1.0.3</spring-grpc.version>
-        <grpc.version>1.77.1</grpc.version>
-        <protobuf-java.version>4.33.4</protobuf-java.version>
+        <testcontainers.version>2.0.5</testcontainers.version>
+        <!-- Kept in sync with the versions the Spring Boot 4.1 BOM manages (grpc-bom / protobuf),
+             so the protobuf-maven-plugin downloads matching protoc / protoc-gen-grpc-java binaries. -->
+        <grpc.version>1.83.0</grpc.version>
+        <protobuf-java.version>4.34.2</protobuf-java.version>
     </properties>
 
     <dependencyManagement>
@@ -34,18 +33,12 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
-            <!-- Spring gRPC BOM: manages the spring-grpc starters plus grpc-bom and
-                 protobuf-bom (grpc 1.77.x, protobuf 4.33.x) so the gRPC/protobuf runtime
-                 and generated stubs line up on one version set. -->
-            <dependency>
-                <groupId>org.springframework.grpc</groupId>
-                <artifactId>spring-grpc-dependencies</artifactId>
-                <version>${spring-grpc.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
         </dependencies>
     </dependencyManagement>
+
+    <!-- Spring Boot 4.1's BOM manages spring-grpc-core, grpc-bom and protobuf-bom directly, so
+         the gRPC/protobuf runtime and generated stubs line up without importing a separate BOM
+         (the old org.springframework.grpc:spring-grpc-dependencies import is no longer needed). -->
 
     <dependencies>
         <!-- Web -->
@@ -116,12 +109,14 @@
             <artifactId>flyway-mysql</artifactId>
         </dependency>
 
-        <!-- gRPC server (Spring gRPC). user-service hosts the internal UserProfileService
-             called by the dashboard BFF. grpc-services adds the standard health/reflection
-             services; grpc-stub/grpc-protobuf back the generated stubs. -->
+        <!-- gRPC server. user-service hosts the internal UserProfileService called by the
+             dashboard BFF. Spring Boot 4.1 owns the server autoconfiguration (spring-grpc's
+             server starter was folded into Boot as spring-boot-starter-grpc-server);
+             grpc-services adds the standard health/reflection services; grpc-stub/grpc-protobuf
+             back the generated stubs. -->
         <dependency>
-            <groupId>org.springframework.grpc</groupId>
-            <artifactId>spring-grpc-server-spring-boot-starter</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-grpc-server</artifactId>
         </dependency>
         <dependency>
             <groupId>io.grpc</groupId>
@@ -144,18 +139,18 @@
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
             <artifactId>jjwt-api</artifactId>
-            <version>0.12.6</version>
+            <version>0.13.0</version>
         </dependency>
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
             <artifactId>jjwt-impl</artifactId>
-            <version>0.12.6</version>
+            <version>0.13.0</version>
             <scope>runtime</scope>
         </dependency>
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
             <artifactId>jjwt-jackson</artifactId>
-            <version>0.12.6</version>
+            <version>0.13.0</version>
             <scope>runtime</scope>
         </dependency>
 
@@ -200,12 +195,12 @@
         <!-- Testcontainers: integration tests run against a real MySQL 8 container -->
         <dependency>
             <groupId>org.testcontainers</groupId>
-            <artifactId>junit-jupiter</artifactId>
+            <artifactId>testcontainers-junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.testcontainers</groupId>
-            <artifactId>mysql</artifactId>
+            <artifactId>testcontainers-mysql</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

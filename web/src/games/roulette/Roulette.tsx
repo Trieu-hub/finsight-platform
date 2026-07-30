@@ -38,10 +38,12 @@ const SPIN_MS = 5200
 const SECTOR = 360 / POCKET_COUNT // 9.4737°
 
 const CHIP_STYLE: Record<number, string> = {
-  10_000: 'from-neutral-200 to-neutral-400 text-neutral-900',
+  // zinc, not neutral: a chip is a physical token and keeps its own colour in both themes,
+  // while the neutral ramp is reversed for light mode (see index.css).
+  10_000: 'from-zinc-200 to-zinc-400 text-black',
   50_000: 'from-red-400 to-red-600 text-white',
   100_000: 'from-emerald-400 to-emerald-600 text-white',
-  500_000: 'from-neutral-800 to-black text-amber-300 ring-1 ring-amber-400/60',
+  500_000: 'from-zinc-800 to-black text-amber-300 ring-1 ring-amber-400/60',
 }
 
 /** Compact chip face: 10.000 → "10K", 500.000 → "500K", 1.000.000 → "1M". */
@@ -384,7 +386,7 @@ export default function Roulette({ onBack }: { onBack: () => void }) {
       >
         {def.label}
         {amount > 0 && (
-          <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-400 px-1 text-[10px] font-black text-neutral-900">
+          <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-400 px-1 text-[10px] font-black text-black">
             {chipFace(amount)}
           </span>
         )}
@@ -586,7 +588,7 @@ export default function Roulette({ onBack }: { onBack: () => void }) {
                   <button
                     onClick={placeSelection}
                     disabled={!canBet || chip > available}
-                    className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-bold text-neutral-950 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-bold text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {t('roulette.placeBet', { amount: chipFace(chip) })}
                   </button>
@@ -659,7 +661,7 @@ export default function Roulette({ onBack }: { onBack: () => void }) {
               <button
                 onClick={doSpin}
                 disabled={!canBet || bets.length === 0}
-                className="flex-1 rounded-xl bg-gradient-to-r from-amber-400 to-red-500 py-3 text-base font-black text-neutral-950 shadow-lg transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex-1 rounded-xl bg-gradient-to-r from-amber-400 to-red-500 py-3 text-base font-black text-black shadow-lg transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {spinning ? t('roulette.spinning') : t('roulette.spin')}
               </button>

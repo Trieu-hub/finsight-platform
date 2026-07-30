@@ -69,6 +69,7 @@ export async function createTransaction(body: {
   transactionDate: string
   walletId?: number
   toWalletId?: number
+  budgetId?: string
 }): Promise<Transaction> {
   const { data } = await api.post<ApiResponse<Transaction>>('/transactions', body)
   return data.data
@@ -111,9 +112,11 @@ export async function deleteWallet(id: number): Promise<void> {
 }
 
 // ---- Budgets ----
-export async function listBudgets(): Promise<Budget[]> {
+// `activeOn` (yyyy-mm-dd) narrows to budgets whose [startDate, endDate] window contains
+// that day; omit it to list every budget regardless of period.
+export async function listBudgets(activeOn?: string): Promise<Budget[]> {
   const { data } = await api.get<ApiResponse<Budget[]>>('/budgets', {
-    params: { page: 1, limit: 100 },
+    params: { page: 1, limit: 100, ...(activeOn ? { activeOn } : {}) },
   })
   return data.data
 }

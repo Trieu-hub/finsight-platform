@@ -24,6 +24,7 @@ public class TransactionResponse {
     private LocalDate transactionDate;
     private Long walletId;
     private Long toWalletId;
+    private UUID budgetId;
     private Map<String, Object> metadata;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

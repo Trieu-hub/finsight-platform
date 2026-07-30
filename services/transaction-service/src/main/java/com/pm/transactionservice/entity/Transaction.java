@@ -58,6 +58,15 @@ public class Transaction {
     @Column(name = "category_id", nullable = false)
     private Long categoryId;
 
+    /**
+     * The budget this EXPENSE is charged against, chosen by the user at record time. An opaque
+     * reference to budget-service's UUID key (no FK, cross-service — like {@link #walletId}).
+     * Null for INCOME/TRANSFER and for expenses recorded without a budget (e.g. the game).
+     */
+    @JdbcTypeCode(SqlTypes.CHAR)
+    @Column(name = "budget_id", length = 36)
+    private UUID budgetId;
+
     @Column(name = "description", length = 500)
     private String description;
 
