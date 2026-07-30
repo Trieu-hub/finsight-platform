@@ -292,10 +292,13 @@ modules (`api-gateway`, `auth-service`, `user-service`, `transaction-service`, `
 > There is no aggregator pom; the matrix is what builds "all services" in CI.
 
 **Frontend** (`.github/workflows/frontend.yml`) — on each `pull_request` and push to `main` that
-touches `web/`, the React/Vite SPA is installed (`npm ci`), linted (ESLint), then type-checked and
-bundled (`tsc -b && vite build`). This closes the previous gap where frontend changes reached
-production checked only by hand. (New React-Compiler-era lint rules that fire on existing code are
-set to `warn` in `web/eslint.config.js`, so the job fails on genuine errors, not on those advisories.)
+touches `web/`, the React/Vite SPA is installed (`npm ci`), linted (ESLint), unit-tested
+(**Vitest** — `npm test`), then type-checked and bundled (`tsc -b && vite build`). This closes the
+previous gap where frontend changes reached production checked only by hand. The Vitest suite covers
+the pure logic — money/number formatting, client-side JWT decode, and the roulette payout maths
+(the `(36 − n)/n` invariant, mirroring the backend `RouletteTest`). (New React-Compiler-era lint
+rules that fire on existing code are set to `warn` in `web/eslint.config.js`, so the job fails on
+genuine errors, not on those advisories.)
 
 ## End-to-end validation
 

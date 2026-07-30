@@ -1,8 +1,9 @@
 name: Frontend CI
 
-# Lint + type-check + build the React/Vite SPA in web/. Until now the frontend had NO CI: three
-# large frontend changes reached production checked only by hand. This closes that gap — every PR
-# that touches web/ (and pushes to main) must lint clean and produce a successful production build.
+# Lint + unit-test + type-check + build the React/Vite SPA in web/. Until now the frontend had NO
+# CI: three large frontend changes reached production checked only by hand. This closes that gap —
+# every PR that touches web/ (and pushes to main) must lint clean, pass the Vitest unit tests, and
+# produce a successful production build.
 #
 # The Java services are covered separately by ci.yml; this job is scoped to web/ via path filters
 # so it only runs when the frontend actually changes.
@@ -52,6 +53,10 @@ jobs:
       # hooks-rule violations — while advisory warnings stay visible in the log.
       - name: Lint
         run: npm run lint
+
+      # Vitest unit tests for pure logic (formatters, JWT decode, roulette payout maths).
+      - name: Unit tests
+        run: npm test
 
       # `npm run build` = `tsc -b && vite build` — this is the type-check AND the production bundle
       # in one step. A type error or a broken import fails the job.
