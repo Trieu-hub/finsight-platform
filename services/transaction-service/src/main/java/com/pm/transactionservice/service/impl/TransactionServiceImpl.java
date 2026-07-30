@@ -76,6 +76,8 @@ public class TransactionServiceImpl implements TransactionService {
                 .walletId(request.getWalletId())
                 // toWalletId is only meaningful for a TRANSFER; keep it null otherwise.
                 .toWalletId(isTransfer ? request.getToWalletId() : null)
+                // A budget attribution only applies to an EXPENSE; ignore it for INCOME/TRANSFER.
+                .budgetId(request.getType() == TransactionType.EXPENSE ? request.getBudgetId() : null)
                 .isDeleted(false)
                 .metadata(request.getMetadata())
                 .build();
@@ -92,7 +94,8 @@ public class TransactionServiceImpl implements TransactionService {
                 saved.getCurrency(),
                 saved.getCategoryId(),
                 saved.getTransactionDate(),
-                saved.getWalletId()));
+                saved.getWalletId(),
+                saved.getBudgetId()));
 
         // Credit/debit the affected wallet(s) atomically, in this same DB transaction.
         walletService.applyTransactionEffect(userId, saved.getType(), saved.getAmount(),
@@ -145,6 +148,7 @@ public class TransactionServiceImpl implements TransactionService {
         String oldCurrency = transaction.getCurrency();
         Long oldCategoryId = transaction.getCategoryId();
         LocalDate oldTransactionDate = transaction.getTransactionDate();
+        UUID oldBudgetId = transaction.getBudgetId();
 
         if (request.getType() != null) {
             transaction.setType(request.getType());
@@ -171,6 +175,9 @@ public class TransactionServiceImpl implements TransactionService {
         if (request.getToWalletId() != null) {
             transaction.setToWalletId(request.getToWalletId());
         }
+        if (request.getBudgetId() != null) {
+            transaction.setBudgetId(request.getBudgetId());
+        }
         if (request.getMetadata() != null) {
             transaction.setMetadata(request.getMetadata());
         }
@@ -191,6 +198,11 @@ public class TransactionServiceImpl implements TransactionService {
             transaction.setToWalletId(null);
         }
 
+        // A budget attribution only applies to an EXPENSE; clear it if the resulting type isn't one.
+        if (transaction.getType() != TransactionType.EXPENSE) {
+            transaction.setBudgetId(null);
+        }
+
         // Validate the resulting wallet state, then move the balances: undo the old effect and
         // apply the new one (both atomic, same DB transaction) so a net change is reflected once.
         walletService.validateForTransaction(userId, transaction.getType(), transaction.getCurrency(),
@@ -204,9 +216,9 @@ public class TransactionServiceImpl implements TransactionService {
         eventPublisher.publishEvent(TransactionUpdatedEvent.of(
                 saved.getId(),
                 userId,
-                oldType, oldAmount, oldCurrency, oldCategoryId, oldTransactionDate,
+                oldType, oldAmount, oldCurrency, oldCategoryId, oldTransactionDate, oldBudgetId,
                 saved.getType(), saved.getAmount(), saved.getCurrency(),
-                saved.getCategoryId(), saved.getTransactionDate()));
+                saved.getCategoryId(), saved.getTransactionDate(), saved.getBudgetId()));
 
         walletService.applyTransactionEffect(userId, oldType, oldAmount, oldWalletId, oldToWalletId, -1);
         walletService.applyTransactionEffect(userId, saved.getType(), saved.getAmount(),
@@ -236,7 +248,8 @@ public class TransactionServiceImpl implements TransactionService {
                 transaction.getAmount(),
                 transaction.getCurrency(),
                 transaction.getCategoryId(),
-                transaction.getTransactionDate()));
+                transaction.getTransactionDate(),
+                transaction.getBudgetId()));
 
         // Undo this transaction's effect on wallet balance(s).
         walletService.applyTransactionEffect(userId, transaction.getType(), transaction.getAmount(),
@@ -293,6 +306,7 @@ public class TransactionServiceImpl implements TransactionService {
                 .transactionDate(t.getTransactionDate())
                 .walletId(t.getWalletId())
                 .toWalletId(t.getToWalletId())
+                .budgetId(t.getBudgetId())
                 .metadata(t.getMetadata())
                 .createdAt(t.getCreatedAt())
                 .updatedAt(t.getUpdatedAt())

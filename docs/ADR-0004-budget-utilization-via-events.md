@@ -76,6 +76,27 @@ Design notes that keep this consistent with the original decision:
 Still open (unchanged below): budget-edit drift, retry-exhaustion loss, no backfill, and
 the dashboard remaining the authoritative view.
 
+## Update — 2026-07-24: attribution is by chosen budget, not category match
+
+The original **Matching rules** (same `userId` + `categoryId` + `currency` + date-in-window,
+incrementing *every* matching budget) **double-counted** when a user kept two budgets on one
+category (e.g. "Ăn uống" and "Ăn vặt"): one expense hit both. That is now replaced.
+
+- The user **picks the budget** when recording an EXPENSE. The chosen budget's id rides every
+  transaction lifecycle event: `budgetId` on `TransactionCreated`/`TransactionDeleted`, and
+  `oldBudgetId`/`newBudgetId` on `TransactionUpdated`.
+- budget-service increments **exactly that one budget**, scoped to `userId` (so a spoofed
+  budgetId belonging to another user is never charged) and not soft-deleted. `categoryId`,
+  `currency` and `transactionDate` no longer take part in matching — they still ride the event
+  for risk/analytics. A null/unknown `budgetId` (INCOME/TRANSFER, or a budget-less expense such
+  as the game) charges nothing.
+- Everything else is unchanged: still one atomic `UPDATE` (reversal negates the amount), still
+  the `processed_events` inbox, still order-independent and eventually consistent, still no
+  blast radius to risk/analytics. The **frontend** enforces the "an expense must name a budget"
+  rule; the backend keeps `budgetId` nullable so internal producers (the game) are unaffected.
+- Historic `spent_amount` computed under the old rule is not recomputed; only new events
+  attribute by `budgetId`.
+
 ## Accepted tradeoffs (deliberate, documented, revisitable)
 
 - **~~`spent_amount` drifts on transaction edit/delete.~~** *(Closed 2026-07-03 — see the

@@ -10,10 +10,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
-import java.time.LocalDate;
-import java.time.format.DateTimeParseException;
-import java.util.UUID;
-
 /**
  * Consumes the three transaction-lifecycle events and keeps budgets' {@code spent_amount}
  * accurate: {@code TransactionCreated} adds an EXPENSE, {@code TransactionDeleted} reverses
@@ -27,9 +23,10 @@ import java.util.UUID;
  * the created listener).
  *
  * <p>Filter rules (events skipped here are NOT recorded in the inbox — re-skipping a
- * redelivered event is free): non-EXPENSE types, a missing/unparseable transactionDate,
- * and a missing eventId (without it the event cannot be de-duplicated, so applying it
- * could double-count on redelivery — dropping it is the safe failure mode).
+ * redelivered event is free): non-EXPENSE types, and a missing eventId (without it the event
+ * cannot be de-duplicated, so applying it could double-count on redelivery — dropping it is the
+ * safe failure mode). A missing/unknown {@code budgetId} is NOT filtered: it reaches the service,
+ * is recorded in the inbox and increments no budget (the normal "budget-less expense" outcome).
  *
  * <p>Every consumed event lands in exactly one counter: {@code processed} (passed all
  * filters and was applied — even if it matched zero budgets), {@code duplicate} (inbox
@@ -77,17 +74,13 @@ public class TransactionEventConsumer {
             ignored("non_expense");
             return;
         }
-        LocalDate transactionDate = parseDate(event.eventId(), event.transactionDate());
-        if (transactionDate == null) {
-            return;
-        }
 
         boolean applied = budgetService.applyExpense(event.eventId(), event.userId(),
-                event.categoryId(), event.currency(), event.amount(), transactionDate);
+                event.budgetId(), event.amount());
         if (applied) {
             processedEvents.increment();
-            log.info("Applied expense event {} to budgets: userId={}, categoryId={}, amount={} {}",
-                    event.eventId(), event.userId(), event.categoryId(),
+            log.info("Applied expense event {} to budget: userId={}, budgetId={}, amount={} {}",
+                    event.eventId(), event.userId(), event.budgetId(),
                     event.amount(), event.currency());
         } else {
             duplicateEvents.increment();
@@ -118,24 +111,10 @@ public class TransactionEventConsumer {
             return;
         }
 
-        ExpenseLine reverse = null;
-        if (reverseOld) {
-            LocalDate oldDate = parseDate(event.eventId(), event.oldTransactionDate());
-            if (oldDate == null) {
-                return;
-            }
-            reverse = new ExpenseLine(event.oldCategoryId(), event.oldCurrency(),
-                    event.oldAmount(), oldDate);
-        }
-        ExpenseLine apply = null;
-        if (applyNew) {
-            LocalDate newDate = parseDate(event.eventId(), event.newTransactionDate());
-            if (newDate == null) {
-                return;
-            }
-            apply = new ExpenseLine(event.newCategoryId(), event.newCurrency(),
-                    event.newAmount(), newDate);
-        }
+        ExpenseLine reverse = reverseOld
+                ? new ExpenseLine(event.oldBudgetId(), event.oldAmount()) : null;
+        ExpenseLine apply = applyNew
+                ? new ExpenseLine(event.newBudgetId(), event.newAmount()) : null;
 
         boolean applied = budgetService.applyUpdate(event.eventId(), event.userId(), reverse, apply);
         if (applied) {
@@ -166,37 +145,17 @@ public class TransactionEventConsumer {
             ignored("non_expense");
             return;
         }
-        LocalDate transactionDate = parseDate(event.eventId(), event.transactionDate());
-        if (transactionDate == null) {
-            return;
-        }
 
         boolean applied = budgetService.applyDelete(event.eventId(), event.userId(),
-                event.categoryId(), event.currency(), event.amount(), transactionDate);
+                event.budgetId(), event.amount());
         if (applied) {
             processedEvents.increment();
-            log.info("Reversed delete event {} from budgets: userId={}, categoryId={}, amount={} {}",
-                    event.eventId(), event.userId(), event.categoryId(),
+            log.info("Reversed delete event {} from budget: userId={}, budgetId={}, amount={} {}",
+                    event.eventId(), event.userId(), event.budgetId(),
                     event.amount(), event.currency());
         } else {
             duplicateEvents.increment();
             log.info("Skipped duplicate delete event {}", event.eventId());
-        }
-    }
-
-    private LocalDate parseDate(UUID eventId, String raw) {
-        if (raw == null) {
-            log.warn("Ignoring event {} without transactionDate (cannot match a budget window)",
-                    eventId);
-            ignored("no_date");
-            return null;
-        }
-        try {
-            return LocalDate.parse(raw);
-        } catch (DateTimeParseException e) {
-            log.warn("Ignoring event {} with unparseable transactionDate '{}'", eventId, raw);
-            ignored("bad_date");
-            return null;
         }
     }
 

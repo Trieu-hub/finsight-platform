@@ -106,9 +106,12 @@ Layering is strict and one-directional: `controller → service → repository`.
   amount** — same atomic increment; never read-modify-write. Ordering across the three
   topics is not guaranteed, but the increment is additive so the final total is correct
   regardless (a transient negative is harmless — no non-negative CHECK on `spent_amount`).
-- **Matching**: same `userId` + `categoryId` + `currency`, `transactionDate` within
-  `[startDate, endDate]`, not soft-deleted. `periodType` plays no role. One event may
-  increment **several overlapping budgets** — that is correct, not a bug.
+- **Matching**: the single budget named by the event's `budgetId`, scoped to `userId` and
+  not soft-deleted (the user picks which budget to charge when recording the expense). A
+  null/unknown `budgetId` matches nothing. This replaced the old "every budget matching
+  category + currency + date window" rule, which double-counted when two budgets shared a
+  category. `categoryId`/`currency`/`transactionDate` no longer drive matching (they still
+  ride the event for other consumers).
 - **EXPENSE only**; unknown types, null/unparseable dates and missing eventIds are
   ignored (and deliberately NOT recorded in the inbox).
 - **Idempotency**: `processed_events` inbox row written in the same DB transaction as

@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import {
   createTransaction,
+  listBudgets,
   listCategories,
   listTransactions,
   listWallets,
 } from '../api/endpoints'
 import { errorMessage } from '../api/client'
-import type { Category, Transaction, TransactionType, Wallet } from '../api/types'
-import { categoryName, groupThousands, money, sanitizeMoneyInput } from '../lib/format'
+import type { Budget, Category, Transaction, TransactionType, Wallet } from '../api/types'
+import { catLabel, categoryName, groupThousands, money, sanitizeMoneyInput } from '../lib/format'
 import { useI18n } from '../i18n'
 
 const today = () => new Date().toISOString().slice(0, 10)
@@ -27,18 +28,45 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
+// History is shown newest first: sort by transaction date, tie-broken by creation time.
+const byNewest = (a: Transaction, b: Transaction) =>
+  b.transactionDate.localeCompare(a.transactionDate) ||
+  (b.createdAt ?? '').localeCompare(a.createdAt ?? '')
+
+// A budget is eligible for an expense when it is on the chosen category, in the same currency,
+// and its window contains the transaction date — the only budgets the user may charge it to.
+function budgetEligible(
+  b: Budget,
+  tx: { categoryId: number; currency: string; transactionDate: string },
+): boolean {
+  return (
+    b.categoryId === tx.categoryId &&
+    b.currency === tx.currency &&
+    tx.transactionDate >= b.startDate &&
+    tx.transactionDate <= b.endDate
+  )
+}
+
 export default function Transactions() {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [wallets, setWallets] = useState<Wallet[]>([])
+  const [budgets, setBudgets] = useState<Budget[]>([])
+  // Set when a just-added expense pushes a matching budget over its limit — drives the popup.
+  const [overBudget, setOverBudget] = useState<
+    { name: string; spent: number; limit: number; currency: string } | null
+  >(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+  // History period filter: 'YYYY-MM' shows just that month, '' shows all. Defaults to this month.
+  const [month, setMonth] = useState(today().slice(0, 7))
 
   // form state — `amount` holds raw digits; it is rendered grouped (10.000.000).
   const [type, setType] = useState<TransactionType>('EXPENSE')
   const [amount, setAmount] = useState('')
   const [currency, setCurrency] = useState<string>('VND')
   const [categoryId, setCategoryId] = useState('')
+  const [budgetId, setBudgetId] = useState('') // chosen budget for an EXPENSE; '' = none
   const [walletId, setWalletId] = useState('') // source (or single) wallet; '' = none
   const [toWalletId, setToWalletId] = useState('') // TRANSFER destination
   const [description, setDescription] = useState('')
@@ -56,12 +84,53 @@ export default function Transactions() {
   const lockedCurrency = sourceWallet?.currency
   const effectiveCurrency = lockedCurrency ?? currency
 
+  // Budgets the user may charge this expense to (same category + currency, covering the date).
+  const matchingBudgets = useMemo(() => {
+    if (type !== 'EXPENSE' || !categoryId) return []
+    const catId = Number(categoryId)
+    return budgets.filter((b) =>
+      budgetEligible(b, { categoryId: catId, currency: effectiveCurrency, transactionDate: date }),
+    )
+  }, [budgets, type, categoryId, effectiveCurrency, date])
+
+  // The budget this expense is charged to: the user's pick if still eligible, else the first
+  // eligible one (so an expense always carries a budget when one exists). Derived, not stored,
+  // so it self-corrects as category/currency/date change — no state to keep in sync.
+  const effectiveBudgetId =
+    type === 'EXPENSE'
+      ? matchingBudgets.some((b) => b.id === budgetId)
+        ? budgetId
+        : (matchingBudgets[0]?.id ?? '')
+      : ''
+
+  // Distinct months present in the loaded history (plus the current one), newest first —
+  // populates the period filter. '' means "all months".
+  const months = useMemo(() => {
+    const set = new Set(transactions.map((tx) => tx.transactionDate.slice(0, 7)))
+    set.add(today().slice(0, 7))
+    return [...set].sort((a, b) => b.localeCompare(a))
+  }, [transactions])
+
+  // Rows actually shown: filtered to the chosen month (if any), newest first.
+  const visibleTransactions = useMemo(() => {
+    const list = month
+      ? transactions.filter((tx) => tx.transactionDate.slice(0, 7) === month)
+      : transactions
+    return [...list].sort(byNewest)
+  }, [transactions, month])
+
   async function load() {
     try {
-      const [tx, cats, ws] = await Promise.all([listTransactions(), listCategories(), listWallets()])
+      const [tx, cats, ws, bs] = await Promise.all([
+        listTransactions(),
+        listCategories(),
+        listWallets(),
+        listBudgets(),
+      ])
       setTransactions(tx)
       setCategories(cats)
       setWallets(ws)
+      setBudgets(bs)
       // Default to the first category that MATCHES the current type (avoids the
       // contradictory "EXPENSE + Salary" default).
       const firstOfType = cats.find((c) => c.type === type)
@@ -77,6 +146,14 @@ export default function Transactions() {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Auto-dismiss the over-budget popup after a few seconds.
+  useEffect(() => {
+    if (!overBudget) return
+    const id = setTimeout(() => setOverBudget(null), 7000)
+    return () => clearTimeout(id)
+  }, [overBudget])
+
 
   function onTypeChange(next: TransactionType) {
     setType(next)
@@ -125,8 +202,20 @@ export default function Transactions() {
           toWalletId: Number(toWalletId),
         })
       } else {
+        // An expense must be charged to a budget (the user picks which). Block if the category
+        // has no eligible budget in this period, or none is chosen.
+        if (type === 'EXPENSE') {
+          if (matchingBudgets.length === 0) {
+            setError(t('tx.errNoBudget'))
+            return
+          }
+          if (!effectiveBudgetId) {
+            setError(t('tx.errBudgetRequired'))
+            return
+          }
+        }
         setSubmitting(true)
-        await createTransaction({
+        const created = await createTransaction({
           type,
           amount: value,
           currency: effectiveCurrency,
@@ -134,7 +223,28 @@ export default function Transactions() {
           description: description || undefined,
           transactionDate: date,
           walletId: sourceWallet ? sourceWallet.id : undefined,
+          budgetId: type === 'EXPENSE' ? effectiveBudgetId : undefined,
         })
+        // Warn immediately if this expense pushes the chosen budget over its limit. Computed
+        // client-side (this budget's prior spend + this amount) so the popup is instant, ahead of
+        // the asynchronous budget tally that arrives over Kafka.
+        if (type === 'EXPENSE') {
+          const b = budgets.find((x) => x.id === effectiveBudgetId)
+          if (b) {
+            const prior = transactions
+              .filter((tx) => tx.type === 'EXPENSE' && tx.budgetId === b.id)
+              .reduce((s, tx) => s + Number(tx.amount), 0)
+            const spent = prior + Number(created.amount)
+            if (spent > b.limitAmount) {
+              setOverBudget({
+                name: b.name || categoryName(categories, b.categoryId, t),
+                spent,
+                limit: b.limitAmount,
+                currency: b.currency,
+              })
+            }
+          }
+        }
       }
       setAmount('')
       setDescription('')
@@ -152,7 +262,11 @@ export default function Transactions() {
   )
 
   return (
-    <div className="grid gap-6 md:grid-cols-3">
+    <>
+      {overBudget && (
+        <OverBudgetToast data={overBudget} onClose={() => setOverBudget(null)} t={t} />
+      )}
+      <div className="grid gap-6 md:grid-cols-3">
       {/* Create form */}
       <section data-tour="tx-form" className="md:col-span-1">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-400">
@@ -253,11 +367,36 @@ export default function Transactions() {
                     .filter((c) => c.type === type)
                     .map((c) => (
                       <option key={c.id} value={c.id}>
-                        {c.name}
+                        {catLabel(c.id, c.name, t)}
                       </option>
                     ))}
                 </select>
               </Field>
+
+              {type === 'EXPENSE' && (
+                <Field label={t('tx.budget')}>
+                  {matchingBudgets.length === 0 ? (
+                    <p className="rounded-lg border border-amber-500/30 bg-amber-950/30 px-3 py-2 text-sm text-amber-300">
+                      {t('tx.errNoBudget')}
+                    </p>
+                  ) : (
+                    <select
+                      value={effectiveBudgetId}
+                      onChange={(e) => setBudgetId(e.target.value)}
+                      className={inputClass}
+                    >
+                      {matchingBudgets.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {`${b.name || categoryName(categories, b.categoryId, t)} · ${money(
+                            b.spentAmount,
+                            b.currency,
+                          )} / ${money(b.limitAmount, b.currency)}`}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </Field>
+              )}
 
               <Field label={t('tx.wallet')}>
                 <select
@@ -298,7 +437,7 @@ export default function Transactions() {
 
           <button
             type="submit"
-            disabled={submitting}
+            disabled={submitting || (type === 'EXPENSE' && matchingBudgets.length === 0)}
             className="w-full rounded-lg bg-emerald-600 py-2.5 font-semibold text-white shadow-lg shadow-emerald-900/40 transition hover:bg-emerald-500 disabled:opacity-60"
           >
             {submitting ? t('tx.saving') : t('tx.add')}
@@ -308,14 +447,31 @@ export default function Transactions() {
 
       {/* List */}
       <section data-tour="tx-list" className="md:col-span-2">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-400">
-          {t('tx.title')}
-        </h2>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-400">
+            {t('tx.title')}
+          </h2>
+          {!loading && (
+            <select
+              value={month}
+              onChange={(e) => setMonth(e.target.value)}
+              aria-label={t('tx.filterMonth')}
+              className="rounded-lg border border-neutral-700 bg-neutral-950/60 px-2 py-1 text-xs text-neutral-300 outline-none transition focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
+            >
+              <option value="">{t('tx.allMonths')}</option>
+              {months.map((m) => (
+                <option key={m} value={m}>
+                  {`${m.slice(5)}/${m.slice(0, 4)}`}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
         {error && <p className="mb-3 text-sm text-red-400">{error}</p>}
         {loading ? (
           <p className="text-neutral-500">{t('common.loading')}</p>
-        ) : transactions.length === 0 ? (
-          <p className="text-neutral-500">{t('dashboard.noTx')}</p>
+        ) : visibleTransactions.length === 0 ? (
+          <p className="text-neutral-500">{month ? t('tx.noTxMonth') : t('dashboard.noTx')}</p>
         ) : (
           <div className="overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900">
             <table className="w-full text-sm">
@@ -328,22 +484,22 @@ export default function Transactions() {
                 </tr>
               </thead>
               <tbody>
-                {transactions.map((t) => {
-                  const xfer = t.type === 'TRANSFER'
+                {visibleTransactions.map((tx) => {
+                  const xfer = tx.type === 'TRANSFER'
                   const color = xfer
                     ? 'text-sky-400'
-                    : t.type === 'INCOME'
+                    : tx.type === 'INCOME'
                       ? 'text-emerald-400'
                       : 'text-rose-400'
-                  const prefix = xfer ? '⇄ ' : t.type === 'INCOME' ? '+' : '-'
+                  const prefix = xfer ? '⇄ ' : tx.type === 'INCOME' ? '+' : '-'
                   return (
-                    <tr key={t.id} className="border-t border-neutral-800 transition hover:bg-neutral-800/40">
-                      <td className="px-4 py-2.5 text-neutral-500">{t.transactionDate}</td>
-                      <td className="px-4 py-2.5 text-neutral-200">{categoryName(categories, t.categoryId)}</td>
-                      <td className="px-4 py-2.5 text-neutral-500">{t.description ?? '—'}</td>
+                    <tr key={tx.id} className="border-t border-neutral-800 transition hover:bg-neutral-800/40">
+                      <td className="px-4 py-2.5 text-neutral-500">{tx.transactionDate}</td>
+                      <td className="px-4 py-2.5 text-neutral-200">{categoryName(categories, tx.categoryId, t)}</td>
+                      <td className="px-4 py-2.5 text-neutral-500">{tx.description ?? '—'}</td>
                       <td className={`px-4 py-2.5 text-right font-semibold ${color}`}>
                         {prefix}
-                        {money(t.amount, t.currency)}
+                        {money(tx.amount, tx.currency)}
                       </td>
                     </tr>
                   )
@@ -353,6 +509,46 @@ export default function Transactions() {
           </div>
         )}
       </section>
+      </div>
+    </>
+  )
+}
+
+// Popup shown the moment a new expense pushes a matching budget over its limit.
+function OverBudgetToast({
+  data,
+  onClose,
+  t,
+}: {
+  data: { name: string; spent: number; limit: number; currency: string }
+  onClose: () => void
+  t: (key: string, vars?: Record<string, string | number>) => string
+}) {
+  return (
+    <div className="fixed inset-x-0 top-4 z-50 flex justify-center px-4">
+      <div
+        role="alert"
+        className="flex w-full max-w-md items-start gap-3 rounded-2xl border border-rose-500/40 bg-rose-950/90 px-4 py-3 shadow-2xl shadow-black/50 backdrop-blur"
+      >
+        <span className="mt-0.5 text-lg">⚠️</span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-rose-200">{t('budget.exceededTitle')}</p>
+          <p className="mt-0.5 text-sm text-rose-100/90">
+            {t('budget.exceededBody', {
+              name: data.name,
+              spent: money(data.spent, data.currency),
+              limit: money(data.limit, data.currency),
+            })}
+          </p>
+        </div>
+        <button
+          onClick={onClose}
+          aria-label="Close"
+          className="shrink-0 rounded-md px-1.5 text-rose-300 transition hover:bg-rose-900/60 hover:text-rose-100"
+        >
+          ✕
+        </button>
+      </div>
     </div>
   )
 }

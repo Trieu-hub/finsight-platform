@@ -1,4 +1,7 @@
-# Vernfy
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/vernfy-logo-dark.svg">
+  <img src="docs/images/vernfy-logo-light.svg" alt="Vernfy" height="56">
+</picture>
 
 [![CI](https://github.com/Trieu-hub/finsight-platform/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Trieu-hub/finsight-platform/actions/workflows/ci.yml)
 
@@ -13,7 +16,7 @@ coupling is asynchronous over Kafka.
 
 > **Status:** working MVP with a rule-based intelligence layer. The intelligence is
 > **rule-based, not ML**. See [Roadmap / not yet built](#roadmap--not-yet-built) for what is
-> intentionally absent, and [`project-status.md`](project-status.md) for a detailed breakdown.
+> intentionally absent.
 
 ## Documentation
 
@@ -23,18 +26,24 @@ coupling is asynchronous over Kafka.
 | [`docs/event-catalog.md`](docs/event-catalog.md) | Every Kafka event: producer, consumers, payloads |
 | [`docs/intelligence.md`](docs/intelligence.md) | Risk rules, insights, anomalies — triggers & metrics |
 | [`docs/runbook.md`](docs/runbook.md) | Startup, compose workflow, Kafka/Prometheus/Grafana verification, troubleshooting |
-| [`project-status.md`](project-status.md) | Phase-by-phase completion and roadmap |
+| [`docs/deploy.md`](docs/deploy.md) | Production deployment on a single VPS (Caddy, TLS, SOPS secrets) |
+| [`docs/security/jwt-key-rotation.md`](docs/security/jwt-key-rotation.md) | Zero-downtime RS256 signing-key rotation |
 | [`docs/ADR-0004-budget-utilization-via-events.md`](docs/ADR-0004-budget-utilization-via-events.md) | Why budget utilization is event-driven (and its accepted drift) |
+| [`services/api-gateway/docs/`](services/api-gateway/docs/) | ADR-0001/0002/0003/0005 — gateway contract, identity freeze, BFF token relay, RS256 |
+| [`docs/brand.md`](docs/brand.md) | Logo files, palette, and the reasoning behind the mark |
+| [`docs/unit-testing/unit-testing-1.txt`](docs/unit-testing/unit-testing-1.txt) | Full test-suite catalog — every test class (unit vs integration), count, and what it verifies (434 tests across 9 services) |
 
 ## Tech stack
 
-- **Java 21**, **Spring Boot 4.0.6**, Spring Security, Spring Data JPA
+- **Java 21**, **Spring Boot 4.1.0**, Spring Security, Spring Data JPA
 - **MySQL 8** — one shared instance, one logical database per service
 - **Redis** — used by auth-service (refresh tokens + brute-force lockout)
 - **Kafka** (single-node KRaft broker) — asynchronous event backbone
 - **Flyway** — schema ownership (`ddl-auto: validate`)
 - **JWT** (RS256) — signed by auth-service, the only holder of the private key; every service
   verifies with the public key alone, discovered by `kid` from a published JWK Set
+- **gRPC** (Spring Boot 4.1 **native** gRPC — `spring-boot-starter-grpc-server`/`-client`) — the
+  platform's one internal synchronous call: the dashboard BFF → user-service `UserProfileService`
 - **springdoc / OpenAPI** — API docs on the user-facing REST services
 - **Micrometer + Prometheus + Grafana** — metrics and dashboards
 - **Docker / Docker Compose**, **GitHub Actions** (CI), **Testcontainers** (integration tests)
@@ -72,9 +81,11 @@ coupling is asynchronous over Kafka.
                           (per-month rollup from TransactionCreated; AI monthly summary)
 ```
 
-- **Synchronous** (HTTP/REST): client → gateway → owning service; the dashboard BFF fans out
-  to user/transaction/budget, relaying the caller's JWT (fail-fast). No other business service
-  calls another at runtime.
+- **Synchronous**: client → gateway → owning service over HTTP/REST; the dashboard BFF fans out
+  to user/transaction/budget, relaying the caller's JWT (fail-fast). The BFF → user-service hop
+  is **gRPC** (`finsight.user.v1.UserProfileService`, bearer token relayed as call metadata) —
+  the platform's one internal gRPC call; transaction and budget stay REST. No other business
+  service calls another at runtime.
 - **Asynchronous** (Kafka): transaction-service produces `TransactionCreated`; budget-service,
   risk-service **and analytics-service** consume it; budget-service produces `BudgetChanged`
   (consumed by risk-service); risk-service produces `RiskDetected`, consumed by
@@ -181,8 +192,9 @@ probes at `/actuator/health/{liveness,readiness}`.
   - **FinSight Consumer Lag** — Kafka consumer lag per service / group / partition.
 - **Alertmanager** — <http://localhost:9093> — receives firing alerts from Prometheus. Rules in
   `docker/prometheus/alerts.yml`: service down, 5xx rate, JVM heap, Kafka consumer lag, dashboard
-  circuit-breaker open. No delivery
-  channel is wired by default (a Slack/email/webhook stub is in `docker/alertmanager/alertmanager.yml`).
+  circuit-breaker open. Locally no delivery channel is configured (a Slack/email/webhook stub is in
+  `docker/alertmanager/alertmanager.yml`); **production delivers firing alerts to Telegram**, with
+  the bot token rendered to tmpfs at start so it never lands on disk.
 
 > Dev-stack posture, on purpose: Grafana allows anonymous admin and the scrape endpoint is
 > unauthenticated — acceptable on a local compose network, not a production posture.
@@ -207,14 +219,22 @@ stay in the backend.
   every request by an Axios interceptor; a `401` clears it and redirects to `/login`. Protected
   routes are gated client-side for UX only — the backend remains the security boundary.
 - **Pages**: Login / Register, Dashboard (income / expense / balance + recent activity + budget
-  progress), Transactions (list + create, incl. wallet selection and wallet-to-wallet transfers),
-  Budgets (list + utilization bars), Wallets (accounts with live balances, create / delete),
-  Analytics (month-over-month overview, spend forecast, top movers, category breakdown, and an
-  AI/template monthly summary — served by analytics-service), Admin console (RBAC user management,
-  ROLE_ADMIN only).
-- **Notification bell**: a header bell polls `GET /api/v1/notifications/unread-count`, shows an
-  unread badge, and opens a dropdown of risk alerts (severity-coloured) with mark-read /
-  mark-all-read — the in-app surface for what notification-service materializes from `RiskDetected`.
+  progress), Transactions (history newest-first, filterable by month — current month by default —
+  + create, incl. wallet selection and wallet-to-wallet transfers), Budgets (utilization bars,
+  showing the current period's budgets by default with a toggle to reveal expired ones, and an
+  instant popup the moment a new expense pushes its budget over the limit), Wallets (accounts with
+  live balances, create / delete), Analytics (month-over-month overview, spend forecast, top movers,
+  category breakdown, and an AI/template monthly summary — served by analytics-service), Admin
+  console (RBAC user management, ROLE_ADMIN only).
+- **Bilingual & themed**: a header toggle switches between English and Vietnamese (all copy and
+  category names localized) and between light/dark colour themes; both choices persist in the
+  browser.
+- **Notification bell**: a header bell shows an unread badge and opens a dropdown of risk alerts
+  (severity-coloured) with mark-read / mark-all-read — the in-app surface for what
+  notification-service materializes from `RiskDetected`. Alerts arrive **live over SSE**: the Kafka
+  consumer that writes a notification also pushes it to every open connection that user has, so it
+  appears immediately. A long-interval poll of `GET /api/v1/notifications/unread-count` remains as
+  a fallback.
 - **Dev proxy**: Vite forwards `/api` → `http://localhost:8080`, so the browser stays
   same-origin and no backend CORS configuration is needed (a reverse proxy plays this role in
   production).
@@ -227,7 +247,7 @@ npm run build --prefix web      # type-check + production build to web/dist
 
 ## Local startup (Docker Compose)
 
-The root `docker-compose.yml` builds all eight services and starts MySQL, Redis, Kafka,
+The root `docker-compose.yml` builds all nine services and starts MySQL, Redis, Kafka,
 Prometheus, and Grafana. auth-service holds the JWT signing key; the rest get the public key.
 
 **1. Secrets (`.env`) — required first.** No secrets live in compose; they are interpolated
@@ -237,8 +257,8 @@ missing.
 ```bash
 cp .env.example .env
 ./scripts/gen-jwt-keys.sh          # prints an RS256 keypair; paste into JWT_PRIVATE_KEY / JWT_PUBLIC_KEY
-# Then fill in: MYSQL_ROOT_PASSWORD and the five *_DB_PASSWORD values
-# (AUTH/USER/TRANSACTION/BUDGET/RISK). Generation commands are in the file.
+# Then fill in: MYSQL_ROOT_PASSWORD and the seven *_DB_PASSWORD values
+# (AUTH/USER/TRANSACTION/BUDGET/RISK/NOTIFICATION/ANALYTICS). Commands are in the file.
 ```
 
 **2. Start the stack:**
@@ -254,14 +274,14 @@ docker compose down              # stop  (add -v to also drop MySQL/Prometheus/G
 
 ```bash
 # risk-service (8086) is not host-published (internal-only); check it via `docker compose ps`.
-for p in 8080 8081 8082 8083 8084 8085; do
+for p in 8080 8081 8082 8083 8084 8085 8087 8088; do
   curl -fsS http://localhost:$p/actuator/health/readiness && echo " <- $p OK"
 done
 ```
 
-On the **first** MySQL start, init scripts create the five databases and one least-privilege
-user per service (`auth_user`, `user_user`, `transaction_user`, `budget_user`, `risk_user`) —
-each service connects as its own user, never `root`. Kafka/MySQL/Redis ports are not published
+On the **first** MySQL start, init scripts create the seven databases and one least-privilege
+user per service (`auth_user`, `user_user`, `transaction_user`, `budget_user`, `risk_user`,
+`notification_user`, `analytics_user`) — each service connects as its own user, never `root`. Kafka/MySQL/Redis ports are not published
 to the host; see [`docs/runbook.md`](docs/runbook.md) for Kafka/Prometheus/Grafana verification
 and troubleshooting.
 
@@ -278,10 +298,10 @@ cd services/<service>
 
 ## Continuous Integration
 
-GitHub Actions (`.github/workflows/ci.yml`) builds and tests every service on each
-`pull_request` and on pushes to `main`. A single matrix job fans out across all **eight**
-modules (`api-gateway`, `auth-service`, `user-service`, `transaction-service`, `budget-service`,
-`dashboard-service`, `risk-service`):
+**Build & test** (`.github/workflows/ci.yml`) — on each `pull_request` and push to `main`, a single
+matrix job fans out across all **nine** modules (`api-gateway`, `auth-service`, `user-service`,
+`transaction-service`, `budget-service`, `dashboard-service`, `risk-service`,
+`notification-service`, `analytics-service`):
 
 - **JDK 21** (Temurin) with the Maven (`~/.m2`) cache enabled.
 - Each module runs `mvn -B -ntp verify` — unit **and** Testcontainers integration tests in one
@@ -289,7 +309,19 @@ modules (`api-gateway`, `auth-service`, `user-service`, `transaction-service`, `
 - `fail-fast` is off, so one run reports every failing service; failing modules upload their
   Surefire reports as artifacts.
 
-> There is no aggregator pom; the matrix is what builds "all services" in CI.
+**Security** (`.github/workflows/security.yml`) — same triggers, plus a weekly schedule so a
+newly-disclosed CVE turns the build red even when no code changed:
+
+- **Secret scan** — gitleaks over the **full git history**, not just the tip. Blocking: any finding
+  fails the job, so a leaked credential cannot merge.
+- **Dependency scan** — Trivy filesystem scan across every `pom.xml` and `web/package-lock.json`,
+  HIGH/CRITICAL and `--ignore-unfixed`. Report-only (`continue-on-error`) — findings surface in the
+  log and Dependabot opens the PRs that fix them.
+- **Dependabot** (`.github/dependabot.yml`) — weekly, grouped, across the nine Maven modules, npm
+  `web/`, and the workflows themselves.
+
+> There is no aggregator pom; the matrix is what builds "all services" in CI. Adding a service means
+> adding it to the matrix.
 
 **Frontend** (`.github/workflows/frontend.yml`) — on each `pull_request` and push to `main` that
 touches `web/`, the React/Vite SPA is installed (`npm ci`), linted (ESLint), unit-tested
@@ -320,16 +352,25 @@ runtime is captured by the committed Grafana dashboard screenshots above.
 
 These are **absent from the codebase** — do not assume they exist:
 
-- **gRPC** — no proto, no dependencies; all synchronous calls are REST.
-- **External notification delivery** — notification-service creates **in-app** notifications
-  from `RiskDetected`; email/push/webhook delivery is not built. (An optional **LLM message
-  narrator** — OpenAI-compatible, default Groq free tier, off by default with a rule-based
-  fallback — *is* built; see [Web frontend](#web-frontend) / `services/notification-service`.)
+- **External notification delivery to end users** — notification-service creates **in-app**
+  notifications from `RiskDetected` and pushes them live over SSE; email/push/webhook delivery to
+  users is not built. (Two things that *are* built and often mistaken for absent: an optional
+  **LLM message narrator** — OpenAI-compatible, default Groq free tier, off by default with a
+  rule-based fallback; and **Telegram delivery for Prometheus alerts**, which is an operator
+  channel, not a user-facing one.)
 - **ML-based intelligence** — current rules are deterministic and threshold-based.
-- **A managed secrets store and an orchestrated deployment target** (Kubernetes/ECS, Vault).
-  The live demo runs Docker Compose on a single VPS behind Caddy with TLS, and secrets in a
-  `chmod 600` `.env` — fine at hobby scale, not a secrets manager.
-- **Load/performance testing, whole-stack E2E in CI, and security scanning** (SAST/dependency/
-  secret).
-
-See [`project-status.md`](project-status.md) §5 for the prioritized roadmap.
+- **An orchestrated deployment target** (Kubernetes/ECS) **and a managed secrets store**
+  (Vault/KMS). The live demo runs Docker Compose on a single VPS behind Caddy with TLS; secrets
+  are **SOPS/age-encrypted at rest** and injected into the process environment at launch, which
+  is a real improvement over a plaintext `.env` but still not a managed secrets manager.
+- **SAST** (CodeQL/Semgrep/SpotBugs) — secret and dependency scanning *are* wired
+  (see [Continuous Integration](#continuous-integration)); static analysis of the code is not.
+- **Load/performance testing** — no k6/Gatling/JMeter suite and no published baseline.
+- **Whole-stack E2E in CI** — the matrix builds and tests each service in isolation; nothing
+  exercises browser → gateway → Kafka → risk end to end on every PR.
+- **Frontend component / E2E tests** — the frontend now has unit tests (Vitest, wired into CI) for
+  pure logic, but no component-render, hook, or browser E2E coverage yet.
+- **Log aggregation** — metrics (Prometheus) and traces (Tempo) are wired; there is no Loki/ELK,
+  so log inspection is per-container.
+- **Continuous deployment** — deployment is a manual `ssh` + `scripts/prod-compose.sh up -d --build`;
+  no workflow deploys on merge.

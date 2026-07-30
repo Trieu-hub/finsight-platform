@@ -94,31 +94,32 @@ class BudgetUtilizationConsumerIntegrationTest extends AbstractMySqlIntegrationT
     }
 
     @Test
-    void expenseEventIncrementsMatchingBudget() {
+    void expenseEventIncrementsTheChosenBudget() {
         long userId = uniqueUserId();
         UUID budgetId = createBudget(userId, 4L, BudgetPeriod.MONTHLY,
                 LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30), "USD");
 
-        sendExpense(userId, 4L, "42.50", "USD", "2026-06-15");
+        sendExpense(userId, budgetId, "42.50", "USD", "2026-06-15");
 
         awaitSpentAmount(budgetId, "42.50");
     }
 
     @Test
-    void expenseEventIncrementsAllOverlappingBudgets() {
+    void expenseChargesOnlyTheChosenBudgetNotSiblingsInTheSameCategory() {
         long userId = uniqueUserId();
-        // A MONTHLY and a YEARLY budget for the same category legitimately coexist
-        // (the duplicate guard keys on periodType + startDate); one expense inside
-        // both windows must count against both.
-        UUID monthly = createBudget(userId, 4L, BudgetPeriod.MONTHLY,
+        // Two budgets on the SAME category — the case that used to double-count. The expense
+        // names exactly one; only that one moves, the sibling stays at zero.
+        UUID chosen = createBudget(userId, 4L, BudgetPeriod.MONTHLY,
                 LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30), "USD");
-        UUID yearly = createBudget(userId, 4L, BudgetPeriod.YEARLY,
+        UUID sibling = createBudget(userId, 4L, BudgetPeriod.YEARLY,
                 LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31), "USD");
 
-        sendExpense(userId, 4L, "100.00", "USD", "2026-06-15");
+        sendExpense(userId, chosen, "100.00", "USD", "2026-06-15");
+        // Sentinel against the sibling proves the consumer processed past the first expense.
+        sendExpense(userId, sibling, "1.00", "USD", "2026-06-15");
 
-        awaitSpentAmount(monthly, "100.00");
-        awaitSpentAmount(yearly, "100.00");
+        awaitSpentAmount(chosen, "100.00");
+        awaitSpentAmount(sibling, "1.00");
     }
 
     @Test
@@ -127,14 +128,12 @@ class BudgetUtilizationConsumerIntegrationTest extends AbstractMySqlIntegrationT
         UUID budgetId = createBudget(userId, 4L, BudgetPeriod.MONTHLY,
                 LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30), "USD");
 
-        // None of these may move spent_amount:
-        sendEvent(UUID.randomUUID(), userId, "INCOME", "500.00", "USD", 4L, "2026-06-10");
-        sendEvent(UUID.randomUUID(), userId, "EXPENSE", "77.00", "EUR", 4L, "2026-06-10");  // currency mismatch
-        sendEvent(UUID.randomUUID(), userId, "EXPENSE", "88.00", "USD", 9L, "2026-06-10");  // other category
-        sendEvent(UUID.randomUUID(), userId, "EXPENSE", "99.00", "USD", 4L, "2026-05-10");  // outside window
-        sendEvent(UUID.randomUUID(), userId, "EXPENSE", "11.00", "USD", 4L, null);          // no date
+        // None of these may move the target budget's spent_amount:
+        sendEvent(UUID.randomUUID(), userId, "INCOME", "500.00", "USD", budgetId, "2026-06-10"); // not an expense
+        sendEvent(UUID.randomUUID(), userId, "EXPENSE", "88.00", "USD", UUID.randomUUID(), "2026-06-10"); // other budget
+        sendEvent(UUID.randomUUID(), userId, "EXPENSE", "11.00", "USD", null, "2026-06-10");     // budget-less
         // Sentinel: consumed after all of the above (same partition, same key).
-        sendExpense(userId, 4L, "10.00", "USD", "2026-06-15");
+        sendExpense(userId, budgetId, "10.00", "USD", "2026-06-15");
 
         awaitSpentAmount(budgetId, "10.00");
     }
@@ -148,9 +147,9 @@ class BudgetUtilizationConsumerIntegrationTest extends AbstractMySqlIntegrationT
         // The same event delivered twice (Kafka is at-least-once), then a distinct
         // sentinel so the await target proves the redelivery was skipped.
         UUID eventId = UUID.randomUUID();
-        sendEvent(eventId, userId, "EXPENSE", "42.50", "USD", 4L, "2026-06-15");
-        sendEvent(eventId, userId, "EXPENSE", "42.50", "USD", 4L, "2026-06-15");
-        sendExpense(userId, 4L, "7.50", "USD", "2026-06-16");
+        sendEvent(eventId, userId, "EXPENSE", "42.50", "USD", budgetId, "2026-06-15");
+        sendEvent(eventId, userId, "EXPENSE", "42.50", "USD", budgetId, "2026-06-15");
+        sendExpense(userId, budgetId, "7.50", "USD", "2026-06-16");
 
         awaitSpentAmount(budgetId, "50.00"); // 42.50 once + 7.50, not 92.50
     }
@@ -161,7 +160,9 @@ class BudgetUtilizationConsumerIntegrationTest extends AbstractMySqlIntegrationT
         // so the native lag metric is bound to Micrometer and exported at /actuator/prometheus (P2-3).
         // One expense forces the consumer to fetch so the lag sensors populate.
         long userId = uniqueUserId();
-        sendExpense(userId, 4L, "1.00", "USD", "2026-06-15");
+        UUID budgetId = createBudget(userId, 4L, BudgetPeriod.MONTHLY,
+                LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30), "USD");
+        sendExpense(userId, budgetId, "1.00", "USD", "2026-06-15");
 
         await().atMost(Duration.ofSeconds(60)).untilAsserted(() ->
                 assertThat(meterRegistry.getMeters())
@@ -185,23 +186,24 @@ class BudgetUtilizationConsumerIntegrationTest extends AbstractMySqlIntegrationT
         return budget.getId();
     }
 
-    private void sendExpense(long userId, long categoryId, String amount,
+    private void sendExpense(long userId, UUID budgetId, String amount,
                              String currency, String transactionDate) {
         sendEvent(UUID.randomUUID(), userId, "EXPENSE", amount, currency,
-                categoryId, transactionDate);
+                budgetId, transactionDate);
     }
 
     /** Sends the producer's exact wire format: JSON keyed by userId, no type headers. */
     private void sendEvent(UUID eventId, long userId, String type, String amount,
-                           String currency, Long categoryId, String transactionDate) {
+                           String currency, UUID budgetId, String transactionDate) {
         String dateField = transactionDate == null ? "null" : "\"" + transactionDate + "\"";
+        String budgetField = budgetId == null ? "null" : "\"" + budgetId + "\"";
         String json = """
                 {"eventId":"%s","eventType":"TransactionCreated",
                  "occurredAt":"2026-06-12T10:00:00Z","transactionId":"%s",
                  "userId":%d,"type":"%s","amount":%s,"currency":"%s",
-                 "categoryId":%d,"transactionDate":%s,"walletId":7}
+                 "categoryId":4,"transactionDate":%s,"walletId":7,"budgetId":%s}
                 """.formatted(eventId, UUID.randomUUID(), userId, type, amount,
-                currency, categoryId, dateField);
+                currency, dateField, budgetField);
         producer.send(new ProducerRecord<>(TOPIC, String.valueOf(userId), json));
         producer.flush();
     }

@@ -27,7 +27,10 @@ public record TransactionDeletedEvent(
         BigDecimal amount,
         String currency,
         Long categoryId,
-        String transactionDate
+        String transactionDate,
+        // The budget this EXPENSE was charged against, so the consumer reverses that exact
+        // budget's spent_amount. Null when the transaction carried no budget.
+        UUID budgetId
 ) {
 
     /** Stable discriminator carried in {@link #eventType()}. */
@@ -40,7 +43,8 @@ public record TransactionDeletedEvent(
                                              BigDecimal amount,
                                              String currency,
                                              Long categoryId,
-                                             LocalDate transactionDate) {
+                                             LocalDate transactionDate,
+                                             UUID budgetId) {
         return new TransactionDeletedEvent(
                 UUID.randomUUID(),
                 EVENT_TYPE,
@@ -51,6 +55,7 @@ public record TransactionDeletedEvent(
                 amount,
                 currency,
                 categoryId,
-                transactionDate == null ? null : transactionDate.toString());
+                transactionDate == null ? null : transactionDate.toString(),
+                budgetId);
     }
 }

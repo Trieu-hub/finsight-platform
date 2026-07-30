@@ -1,15 +1,118 @@
 @import "tailwindcss";
 
+/*
+  Theme switching is driven by a `.dark` class on <html> (see src/theme), not by the OS setting
+  alone — a manual toggle has to be able to disagree with the OS. Tailwind v4's `dark:` variant
+  defaults to prefers-color-scheme, so point it at the class instead.
+*/
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+  ---------------------------------------------------------------------------------------------
+  HOW LIGHT MODE WORKS HERE — read this before changing a colour anywhere in the app.
+  ---------------------------------------------------------------------------------------------
+  This UI was built dark-first: ~320 hardcoded `neutral-*` utilities across 21 components, where
+  a low number means light ink and a high number means a dark surface (text-neutral-100 on
+  bg-neutral-900 on a bg-neutral-950 page).
+
+  Rather than rewrite all 320 into `light dark:` pairs, light mode **reverses the neutral ramp**:
+  below, `--color-neutral-950` is redefined to near-white and `--color-neutral-50` to near-black,
+  and every step in between is swapped with its mirror (900↔100, 800↔200, …). Tailwind v4
+  compiles `bg-neutral-900` to `var(--color-neutral-900)`, so every existing class flips with it
+  and keeps the exact contrast relationship it was designed with. Dark mode restores the real
+  scale.
+
+  What this means for you:
+    * A number is a POSITION IN THE RAMP, not a fixed colour. `neutral-900` means "one step off
+      the page background", in both themes.
+    * Anything that must NOT flip — dark text sitting on a bright accent, a game chip's own
+      colour — must avoid the neutral scale. Use `text-black` / `text-white`, or another palette
+      (zinc/slate/…), which are untouched here.
+    * Accent colours (emerald, teal, rose, amber…) are untouched and read correctly on both.
+*/
+:root {
+  --color-neutral-50: #0a0a0a;
+  --color-neutral-100: #171717;
+  --color-neutral-200: #262626;
+  --color-neutral-300: #404040;
+  --color-neutral-400: #525252;
+  --color-neutral-500: #737373;
+  --color-neutral-600: #a3a3a3;
+  --color-neutral-700: #d4d4d4;
+  --color-neutral-800: #e5e5e5;
+  --color-neutral-900: #f5f5f5;
+  --color-neutral-950: #fafafa;
+
+  --page-bg: #fafafa;
+  --page-fg: #171717;
+}
+
+.dark {
+  /* Tailwind's real neutral scale, restored. */
+  --color-neutral-50: #fafafa;
+  --color-neutral-100: #f5f5f5;
+  --color-neutral-200: #e5e5e5;
+  --color-neutral-300: #d4d4d4;
+  --color-neutral-400: #a3a3a3;
+  --color-neutral-500: #737373;
+  --color-neutral-600: #525252;
+  --color-neutral-700: #404040;
+  --color-neutral-800: #262626;
+  --color-neutral-900: #171717;
+  --color-neutral-950: #0a0a0a;
+
+  --page-bg: #0a0a0a;
+  --page-fg: #e5e5e5;
+}
+
 html,
 body,
 #root {
   min-height: 100%;
 }
 
+/*
+  The page cross-fade. Slow-in/slow-out over most of a second, matching the toggle's own
+  choreography (src/components/ThemeToggle.tsx) so the button and the page it changes read as one
+  move rather than two. Colours only — layout must never animate.
+*/
+:root {
+  --theme-fade: 900ms;
+  --theme-ease: cubic-bezier(0.76, 0, 0.24, 1);
+}
+
 body {
-  /* neutral-950 — keeps page edges dark, no white flash */
-  background-color: #0a0a0a;
-  color: #e5e5e5;
+  /* Keeps the page edges in theme, so overscroll never flashes the opposite colour. */
+  background-color: var(--page-bg);
+  color: var(--page-fg);
+  transition: background-color var(--theme-fade) var(--theme-ease),
+    color var(--theme-fade) var(--theme-ease);
+}
+
+/*
+  Surfaces and borders dissolve too, so the whole page turns over instead of snapping. The class
+  is added only for the length of a switch (see ThemeProvider) — left on permanently it would
+  also slow down ordinary hovers, which have to stay instant.
+
+  Surfaces trail the page by 60ms: the background turns first and the cards follow, which reads
+  as depth rather than as one flat repaint.
+
+  The toggle itself is excluded. This rule sets the `transition` shorthand, which would reset
+  transition-property on everything it matches — including the toggle's knob and rays, whose
+  transform animations would then be dead for exactly the window in which they are supposed to
+  play. It carries its own timings, so it opts out via [data-theme-toggle].
+*/
+@media (prefers-reduced-motion: no-preference) {
+  .theme-transition *:not([data-theme-toggle]):not([data-theme-toggle] *),
+  .theme-transition *:not([data-theme-toggle]):not([data-theme-toggle] *)::before,
+  .theme-transition *:not([data-theme-toggle]):not([data-theme-toggle] *)::after {
+    transition: background-color var(--theme-fade) var(--theme-ease) 60ms,
+      border-color var(--theme-fade) var(--theme-ease) 60ms,
+      color var(--theme-fade) var(--theme-ease) 60ms,
+      fill var(--theme-fade) var(--theme-ease) 60ms,
+      stroke var(--theme-fade) var(--theme-ease) 60ms,
+      box-shadow var(--theme-fade) var(--theme-ease) 60ms;
+  }
 }
 
 /* LuckyMe confetti burst (green result). Pieces fall + tumble, then fade. */

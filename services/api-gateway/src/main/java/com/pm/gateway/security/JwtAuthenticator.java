@@ -42,6 +42,19 @@ public class JwtAuthenticator {
 
     public enum Outcome { AUTHENTICATED, MISSING, EXPIRED, INVALID, REVOKED }
 
+    /**
+     * Validation outcome plus the caller's identity.
+     *
+     * <p>{@code userId} is populated only when {@code outcome == AUTHENTICATED}, and comes from the
+     * claims of an already signature-verified token — so it is safe to key the rate limiter on
+     * (unlike anything a client can set). Null on every failure path.
+     */
+    public record Result(Outcome outcome, String userId) {
+        private static Result of(Outcome outcome) {
+            return new Result(outcome, null);
+        }
+    }
+
     private final JwtKeyResolver keyResolver;
     private final String expectedIssuer;
     private final String expectedAudience;
@@ -57,15 +70,15 @@ public class JwtAuthenticator {
 
     /**
      * @param authorizationHeader the raw {@code Authorization} header value (may be null)
-     * @return the validation outcome
+     * @return the validation outcome, with the userId when it is AUTHENTICATED
      */
-    public Outcome authenticate(String authorizationHeader) {
+    public Result authenticate(String authorizationHeader) {
         if (authorizationHeader == null || !authorizationHeader.startsWith(BEARER_PREFIX)) {
-            return Outcome.MISSING;
+            return Result.of(Outcome.MISSING);
         }
         String token = authorizationHeader.substring(BEARER_PREFIX.length()).trim();
         if (token.isEmpty()) {
-            return Outcome.MISSING;
+            return Result.of(Outcome.MISSING);
         }
 
         try {
@@ -82,30 +95,34 @@ public class JwtAuthenticator {
             // Pin the algorithm explicitly: an RSA public key would also verify a token signed
             // RS384/RS512, so enforce RS256 here.
             if (!REQUIRED_ALG.equals(jws.getHeader().getAlgorithm())) {
-                return Outcome.INVALID;
+                return Result.of(Outcome.INVALID);
             }
 
             Claims claims = jws.getPayload();
             if (!expectedIssuer.equals(claims.getIssuer())) {
-                return Outcome.INVALID;
+                return Result.of(Outcome.INVALID);
             }
             Set<String> audience = claims.getAudience();
             if (audience == null || !audience.contains(expectedAudience)) {
-                return Outcome.INVALID;
+                return Result.of(Outcome.INVALID);
             }
 
             // Last: the token is authentic, but may have been revoked since it was minted.
             // Checked only once the cheap, local checks pass, so a bogus token never costs a
             // Redis round-trip.
             if (revocationChecker.isRevoked(claims)) {
-                return Outcome.REVOKED;
+                return Result.of(Outcome.REVOKED);
             }
-            return Outcome.AUTHENTICATED;
+
+            // Same claim the revocation denylist is keyed on. Absent only on a token this
+            // gateway did not mint the shape of; the rate limiter then falls back to IP.
+            Object userId = claims.get("userId");
+            return new Result(Outcome.AUTHENTICATED, userId == null ? null : String.valueOf(userId));
 
         } catch (ExpiredJwtException e) {
-            return Outcome.EXPIRED;
+            return Result.of(Outcome.EXPIRED);
         } catch (JwtException | IllegalArgumentException e) {
-            return Outcome.INVALID;
+            return Result.of(Outcome.INVALID);
         }
     }
 

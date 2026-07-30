@@ -69,11 +69,12 @@ class TransactionEventPublishingIntegrationTest extends AbstractMockMvcIntegrati
             // Ensure the consumer is assigned before we produce, so we don't miss the record.
             consumer.poll(Duration.ofMillis(500));
 
+            String budgetId = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
             String body = """
                     {"type":"EXPENSE","amount":42.50,"currency":"USD","categoryId":4,
                      "description":"Lunch","transactionDate":"2026-06-01","walletId":%d,
-                     "metadata":{"merchant":"Cafe"}}
-                    """.formatted(wallet);
+                     "budgetId":"%s","metadata":{"merchant":"Cafe"}}
+                    """.formatted(wallet, budgetId);
 
             String response = mockMvc.perform(post("/api/v1/transactions")
                             .header("Authorization", bearer(userId))
@@ -102,6 +103,8 @@ class TransactionEventPublishingIntegrationTest extends AbstractMockMvcIntegrati
             assertThat(event.path("categoryId").asLong()).isEqualTo(4);
             assertThat(event.path("transactionDate").asText()).isEqualTo("2026-06-01");
             assertThat(event.path("walletId").asLong()).isEqualTo(wallet);
+            // The user's chosen budget rides on the event so budget-service charges that exact budget.
+            assertThat(event.path("budgetId").asText()).isEqualTo(budgetId);
         }
     }
 

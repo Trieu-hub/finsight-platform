@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { createBudget, listBudgets, listCategories, listWallets } from '../api/endpoints'
 import { errorMessage } from '../api/client'
 import type { Budget, BudgetPeriod, Category, Wallet } from '../api/types'
-import { categoryName, groupThousands, money, sanitizeMoneyInput } from '../lib/format'
+import { catLabel, categoryName, groupThousands, money, sanitizeMoneyInput } from '../lib/format'
 import { useI18n } from '../i18n'
 
 // Local (not UTC) yyyy-mm-dd so week/month edges don't slip a day in +07:00.
@@ -59,6 +59,8 @@ export default function Budgets() {
   const [wallets, setWallets] = useState<Wallet[]>([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+  // Default view is current-period budgets only; the toggle also pulls in expired ones.
+  const [showExpired, setShowExpired] = useState(false)
 
   const [name, setName] = useState('')
   const [categoryId, setCategoryId] = useState('')
@@ -73,7 +75,11 @@ export default function Budgets() {
 
   async function load() {
     try {
-      const [bs, cats, ws] = await Promise.all([listBudgets(), listCategories(), listWallets()])
+      const [bs, cats, ws] = await Promise.all([
+        listBudgets(showExpired ? undefined : toISODate(new Date())),
+        listCategories(),
+        listWallets(),
+      ])
       setBudgets(bs)
       setCategories(cats)
       setWallets(ws)
@@ -91,6 +97,18 @@ export default function Budgets() {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Flip between "current period only" and "all budgets". Re-fetches just the list
+  // (categories/wallets are unaffected by the date filter).
+  async function toggleExpired() {
+    const next = !showExpired
+    setShowExpired(next)
+    try {
+      setBudgets(await listBudgets(next ? undefined : toISODate(new Date())))
+    } catch (err) {
+      setError(errorMessage(err))
+    }
+  }
 
   // Switching the period snaps the dates to that period (this week / this month /
   // this year). CUSTOM leaves them alone so the user can pick any range by hand.
@@ -139,6 +157,7 @@ export default function Budgets() {
     .filter((w) => w.currency === currency)
     .reduce((sum, w) => sum + w.balance, 0)
   const overBalance = Number(limitAmount) > 0 && Number(limitAmount) > availableBalance
+  const today = toISODate(new Date())
 
   return (
     <div className="grid gap-6 md:grid-cols-3">
@@ -182,7 +201,7 @@ export default function Budgets() {
                 .filter((c) => c.type === 'EXPENSE')
                 .map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.name}
+                    {catLabel(c.id, c.name, t)}
                   </option>
                 ))}
             </select>
@@ -268,9 +287,20 @@ export default function Budgets() {
       </section>
 
       <section data-tour="budget-list" className="md:col-span-2">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-400">
-          {t('budget.title')}
-        </h2>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-400">
+            {t('budget.title')}
+          </h2>
+          <label className="flex cursor-pointer select-none items-center gap-1.5 text-[11px] text-neutral-400">
+            <input
+              type="checkbox"
+              checked={showExpired}
+              onChange={toggleExpired}
+              className="h-3 w-3 rounded border-neutral-600 bg-neutral-800 text-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
+            />
+            {t('budget.showExpired')}
+          </label>
+        </div>
         {error && <p className="mb-3 text-sm text-red-400">{error}</p>}
         {loading ? (
           <p className="text-neutral-500">{t('common.loading')}</p>
@@ -281,11 +311,12 @@ export default function Budgets() {
             {budgets.map((b) => {
               const pct = b.limitAmount > 0 ? Math.min(100, (b.spentAmount / b.limitAmount) * 100) : 0
               const over = b.spentAmount > b.limitAmount
+              const expired = b.endDate < today
               return (
                 <div key={b.id} className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4 transition hover:border-neutral-700">
                   <div className="mb-2 flex items-center justify-between">
                     <span className="font-medium text-neutral-200">
-                      {b.name || categoryName(categories, b.categoryId)}
+                      {b.name || categoryName(categories, b.categoryId, t)}
                     </span>
                     <span className="text-sm text-neutral-400">
                       {money(b.spentAmount, b.currency)} / {money(b.limitAmount, b.currency)}
@@ -299,6 +330,7 @@ export default function Budgets() {
                   </div>
                   <div className="mt-1.5 text-xs text-neutral-500">
                     {over && <span className="mr-2 font-medium text-rose-400">{t('budget.over')}</span>}
+                    {expired && <span className="mr-2 font-medium text-neutral-400">{t('budget.expired')}</span>}
                     {t(`period.${b.periodType}`)} · {b.startDate} → {b.endDate}
                   </div>
                 </div>

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="248" height="64" viewBox="0 0 248 64" role="img" aria-label="Vernfy">
+  <title>Vernfy</title>
+  <!-- Horizontal lockup for LIGHT backgrounds (README on github.com, slides, print). -->
+  <defs>
+    <linearGradient id="vernfy-stroke-l" x1="10" y1="46" x2="54" y2="12" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#059669"/>
+      <stop offset="1" stop-color="#0D9488"/>
+    </linearGradient>
+  </defs>
+
+  <g>
+    <circle cx="51" cy="14" r="11" fill="#0D9488" opacity="0.14"/>
+    <path d="M12 25 L27 44 L51 14"
+          fill="none"
+          stroke="url(#vernfy-stroke-l)"
+          stroke-width="9"
+          stroke-linecap="round"
+          stroke-linejoin="round"/>
+    <circle cx="51" cy="14" r="5.5" fill="#0D9488"/>
+  </g>
+
+  <!-- Live text — see the note in vernfy-logo-dark.svg about outlining before print. -->
+  <text x="76" y="43"
+        font-family="Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+        font-size="34"
+        font-weight="600"
+        letter-spacing="-0.8"
+        fill="#0F172A">Vernfy</text>
+</svg>
