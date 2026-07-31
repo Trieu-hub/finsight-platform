@@ -1,0 +1,107 @@
+name: Deploy to production
+
+# Manual, gated deploy to the single prod VPS. This does NOT auto-deploy on merge: vernfy.com
+# is a live site, so a human clicks "Run workflow" (and, if the `production` Environment has
+# required reviewers configured, a second human approves) before anything ships.
+#
+# How it works: CI already builds and tests every service on main. This workflow simply SSHes
+# into the VPS and runs the box's OWN deploy path — `git reset --hard` to the chosen ref, then
+# `scripts/prod-compose.sh up -d --build`. Crucially, CI never touches secrets: the SOPS age
+# key lives only on the VPS (docs/deploy.md §3.1), so the box decrypts secrets.env itself. The
+# runner holds one thing — an SSH key — and orchestrates; it never sees an application secret.
+#
+# One-time setup (Settings → Environments → "production" → add these secrets; add required
+# reviewers there too for the approval gate):
+#   DEPLOY_SSH_HOST        VPS host or IP           (e.g. vernfy.com)
+#   DEPLOY_SSH_USER        SSH user                 (e.g. root)
+#   DEPLOY_SSH_KEY         private key with access to the box (PEM, the whole file)
+#   DEPLOY_APP_DIR         path to the repo on the box (e.g. /root/finsight-platform)
+#   DEPLOY_SSH_PORT        optional, default 22
+#   DEPLOY_SSH_KNOWN_HOSTS optional; the box's SSH host key (`ssh-keyscan <host>`), to pin it
+#                          instead of trust-on-first-use
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to deploy (branch, tag, or SHA the box should check out)"
+        required: true
+        default: main
+
+concurrency:
+  # Never let two deploys race onto the box.
+  group: deploy-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: SSH deploy + health gate
+    runs-on: ubuntu-latest
+    # Binds this job to the `production` Environment: configure required reviewers there to make
+    # the deploy approval-gated, and scope the DEPLOY_* secrets to it.
+    environment: production
+    timeout-minutes: 20
+
+    steps:
+      - name: Configure SSH
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          PORT="${{ secrets.DEPLOY_SSH_PORT || '22' }}"
+          if [ -n "${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}" ]; then
+            printf '%s\n' "${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          else
+            # No pinned host key provided — trust on first use (accept-new).
+            ssh-keyscan -p "$PORT" "${{ secrets.DEPLOY_SSH_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+          fi
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy + health gate over SSH
+        env:
+          SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+          SSH_USER: ${{ secrets.DEPLOY_SSH_USER }}
+          SSH_PORT: ${{ secrets.DEPLOY_SSH_PORT || '22' }}
+          APP_DIR: ${{ secrets.DEPLOY_APP_DIR }}
+          REF: ${{ github.event.inputs.ref }}
+        run: |
+          set -euo pipefail
+          # Everything below runs ON THE VPS. gitignored files (secrets.env, the age key, .env)
+          # are untracked, so `git reset --hard` never disturbs them — it only fast-forwards the
+          # tracked code to the chosen ref. The box then decrypts its own secrets via SOPS.
+          ssh -i ~/.ssh/id_deploy -p "$SSH_PORT" \
+              -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
+              "$SSH_USER@$SSH_HOST" \
+              "APP_DIR='$APP_DIR' REF='$REF' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd "$APP_DIR"
+          echo "== deploying ref: $REF =="
+          git fetch --all --prune
+          git checkout "$REF"
+          git reset --hard "origin/$REF" 2>/dev/null || git reset --hard "$REF"
+          echo "== now at: $(git rev-parse --short HEAD) =="
+          # The box's own SOPS wrapper injects secrets for the life of this one command. Serialize
+          # the 9 image builds so the 8 GB box doesn't oversubscribe RAM (docs/deploy.md §8).
+          COMPOSE_PARALLEL_LIMIT=1 scripts/prod-compose.sh up -d --build
+          echo "== waiting for the gateway to report healthy =="
+          for i in $(seq 1 30); do
+            if scripts/prod-compose.sh exec -T api-gateway \
+                 curl -fsS http://localhost:8080/actuator/health >/dev/null 2>&1; then
+              echo "gateway healthy after ~$((i*10))s"
+              scripts/prod-compose.sh ps
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "gateway did NOT become healthy within ~5m after deploy" >&2
+          scripts/prod-compose.sh ps
+          exit 1
+          REMOTE
+
+      - name: Remove SSH key
+        if: always()
+        run: rm -f ~/.ssh/id_deploy

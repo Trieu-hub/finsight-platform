@@ -1,0 +1,121 @@
+name: Staging (ephemeral)
+
+# The project's "staging" is ephemeral, not a standing server: stand up the WHOLE compose
+# stack on a throwaway runner, prove it works end to end (k6 smoke), measure it under load
+# (k6 load), then tear it down. $0, no extra box to maintain — the single 8 GB prod VPS has no
+# room for a parallel stack, so staging lives here instead. A failed smoke or a missed SLO
+# fails the job, giving a merge/deploy gate that exercises the real containers over real HTTP.
+#
+# Runs on PRs that change the runtime (services / compose / the load scripts) and nightly.
+# Deliberately NOT on every push: building nine Maven images is minutes of work, so it is
+# scoped to changes that could actually affect runtime behaviour.
+
+on:
+  pull_request:
+    paths:
+      - "services/**"
+      - "docker-compose.yml"
+      - "load-test/**"
+      - ".github/workflows/staging.yml"
+  schedule:
+    - cron: "0 3 * * *" # 03:00 UTC nightly — a daily health/perf signal independent of PRs.
+  workflow_dispatch: {}
+
+concurrency:
+  group: staging-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ephemeral-staging:
+    name: stand up stack + k6 smoke & load
+    runs-on: ubuntu-latest
+    # Building 9 images on a 2-core runner + a load run is well under an hour, but give it room.
+    timeout-minutes: 50
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # A throwaway .env: a fresh RS256 keypair (gen-jwt-keys.sh) plus random DB passwords.
+      # Nothing here is a real secret — the stack is destroyed at the end of the job. AI stays
+      # off (defaults), tracing off. Trailing whitespace is avoided on purpose (deploy.md §3.1
+      # gotcha: compose trims it from .env-file values, so a stray space would not bite here,
+      # but we keep the file clean regardless).
+      - name: Generate throwaway .env
+        run: |
+          set -euo pipefail
+          bash scripts/gen-jwt-keys.sh > .env
+          for var in MYSQL_ROOT_PASSWORD AUTH_DB_PASSWORD USER_DB_PASSWORD \
+                     TRANSACTION_DB_PASSWORD BUDGET_DB_PASSWORD RISK_DB_PASSWORD \
+                     NOTIFICATION_DB_PASSWORD ANALYTICS_DB_PASSWORD; do
+            printf '%s=%s\n' "$var" "$(openssl rand -hex 16)" >> .env
+          done
+          printf 'TRACING_SAMPLING_PROBABILITY=0\n' >> .env
+          # Show the keys are present without leaking values.
+          echo "generated .env with $(grep -c '=' .env) entries"
+
+      - name: Build images
+        run: docker compose build
+
+      - name: Start the full stack (no monitoring profile)
+        run: docker compose up -d
+
+      # Gate on the gateway's health: it depends_on every business service being healthy, so a
+      # 200 here means the whole path (auth → transaction → dashboard, and the rest) is ready.
+      - name: Wait for the gateway to be healthy
+        run: |
+          set -euo pipefail
+          echo "waiting for http://localhost:8080/actuator/health ..."
+          for i in $(seq 1 90); do
+            if curl -fsS http://localhost:8080/actuator/health >/dev/null 2>&1; then
+              echo "gateway healthy after ~$((i*10))s"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "gateway did not become healthy in ~15m" >&2
+          docker compose ps
+          exit 1
+
+      # "Healthy" only means the readiness probes pass — the JVMs are still cold, and the
+      # dashboard BFF's first fan-out (user gRPC + transaction/budget REST) can exceed the
+      # gateway's 10s read timeout on a cold call. Warm the critical path once, ignoring the
+      # result, so the GRADED smoke/load below run against warm services instead of flaking on a
+      # one-off cold-start timeout.
+      - name: Warm up the critical path
+        run: |
+          docker run --rm --network host \
+            -e BASE_URL=http://localhost:8080 \
+            -v "$PWD/load-test:/scripts" grafana/k6 run /scripts/smoke.js || true
+
+      # Smoke first (fast pass/fail on the critical path), then load with small-box SLOs — a
+      # 2-core shared runner is not the prod VPS, so the thresholds are looser than a local run.
+      # k6 runs from its official image on the host network so localhost:8080 reaches the stack.
+      - name: k6 smoke
+        run: |
+          docker run --rm --network host \
+            -e BASE_URL=http://localhost:8080 \
+            -v "$PWD/load-test:/scripts" grafana/k6 run /scripts/smoke.js
+
+      # A 2-core shared runner hosting nine JVMs is not a latency benchmark, so the load step
+      # gates CORRECTNESS under concurrency (error rate + checks) and disables the p95 SLO
+      # (P95_MS=0). Modest concurrency keeps the box from thrashing; the real latency SLO is a
+      # local / perf-representative run (load.js default P95_MS=800).
+      - name: k6 load
+        run: |
+          docker run --rm --network host \
+            -e BASE_URL=http://localhost:8080 \
+            -e VUS=5 -e DURATION=30s -e P95_MS=0 -e ERROR_RATE=0.05 -e CHECK_RATE=0.95 \
+            -v "$PWD/load-test:/scripts" grafana/k6 run /scripts/load.js
+
+      # When something fails, the container logs are the first thing you want.
+      - name: Dump stack logs on failure
+        if: failure()
+        run: docker compose logs --no-color --tail=200
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

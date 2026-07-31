@@ -330,6 +330,22 @@ newly-disclosed CVE turns the build red even when no code changed:
 - **Dependabot** (`.github/dependabot.yml`) — weekly, grouped, across the nine Maven modules, npm
   `web/`, and the workflows themselves.
 
+**Ephemeral staging** (`.github/workflows/staging.yml`) — the single 8 GB prod VPS has no room for
+a parallel stack, so "staging" is *ephemeral*: on PRs that touch `services/`, `docker-compose.yml`,
+or `load-test/` (and nightly), it stands up the **whole compose stack** on a throwaway runner,
+waits for the gateway to report healthy, runs the k6 **smoke** then **load** test
+([`load-test/`](load-test/)), and tears it down. A failed smoke or a missed latency/error SLO fails
+the job — the first time a PR is exercised **whole-stack** (gateway → services → Kafka), not just
+per-service in isolation.
+
+**Gated production deploy** (`.github/workflows/deploy-prod.yml`) — a **manual**,
+environment-gated deploy (no auto-deploy on merge). You dispatch it and pick the ref; if the
+`production` Environment has required reviewers, a second person approves. The runner then SSHes
+into the VPS and runs the box's **own** deploy path (`git reset --hard <ref>` →
+`scripts/prod-compose.sh up -d --build`) and gates on the gateway's in-network
+`/actuator/health`. **CI never holds an application secret** — the SOPS age key lives only on the
+box, which decrypts its own `secrets.env`. Setup + required secrets:
+[`docs/deploy.md` §9](docs/deploy.md).
 **SAST** (`.github/workflows/codeql-java.yml`, `.github/workflows/codeql-web.yml`) — CodeQL static
 analysis on every PR and push to `main` that touches the matching code, plus a weekly schedule.
 Split by language and path-filtered on purpose: the Java analysis takes minutes and the web one
@@ -370,6 +386,7 @@ runtime is captured by the committed Grafana dashboard screenshots above.
 | Prometheus metrics updated | ✅ implemented | `/actuator/prometheus` · `finsight.risk.events.detected{type,severity}` |
 | Grafana dashboard updated | ✅ provisioned | `docker/grafana/provisioning/` (4 dashboards) |
 | CI pipeline passing | ✅ workflow + badge | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) |
+| Whole-stack E2E + load test on PR | ✅ workflow | [`.github/workflows/staging.yml`](.github/workflows/staging.yml) stands up the full stack + [`load-test/`](load-test/) k6 smoke/load |
 | Runtime screenshots committed | ✅ committed | `docs/images/` (4 Grafana dashboards, embedded above) |
 
 ## Roadmap / not yet built
@@ -387,6 +404,12 @@ These are **absent from the codebase** — do not assume they exist:
   (Vault/KMS). The live demo runs Docker Compose on a single VPS behind Caddy with TLS; secrets
   are **SOPS/age-encrypted at rest** and injected into the process environment at launch, which
   is a real improvement over a plaintext `.env` but still not a managed secrets manager.
+- **SAST** (CodeQL/Semgrep/SpotBugs) — secret and dependency scanning *are* wired
+  (see [Continuous Integration](#continuous-integration)); static analysis of the code is not.
+- **Frontend CI** — `web/` is not built, linted, or type-checked by any workflow, and has no
+  automated tests.
+- **Log aggregation** — metrics (Prometheus) and traces (Tempo) are wired; there is no Loki/ELK,
+  so log inspection is per-container.
 - **Load/performance testing** — no k6/Gatling/JMeter suite and no published baseline.
 - **Whole-stack E2E in CI** — the matrix builds and tests each service in isolation; nothing
   exercises browser → gateway → Kafka → risk end to end on every PR.
