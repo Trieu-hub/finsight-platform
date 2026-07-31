@@ -1,0 +1,15 @@
+name: FinSight CodeQL config
+
+# Everything CodeQL should NOT read. Both entries are about analysis time, not about hiding
+# anything: neither path ships to production.
+#
+# Test sources are 11.6k of the repo's 30.4k lines of Java (~38%). Analysing them cost minutes on
+# every PR and produced only noise — test fixtures are full of throwaway JWT keys and passwords,
+# which is exactly what a hardcoded-credentials query is built to flag.
+#
+# paths-ignore is honoured here because both languages are extracted WITHOUT a build
+# (build-mode: none). Were the Java job ever switched to build-mode: manual, this file would stop
+# applying to it and the exclusion would have to move into the build steps instead.
+paths-ignore:
+  - "services/*/src/test/**"
+  - "web/dist/**"

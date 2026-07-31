@@ -4,7 +4,8 @@
 </picture>
 
 [![CI](https://github.com/Trieu-hub/finsight-platform/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Trieu-hub/finsight-platform/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/Trieu-hub/finsight-platform/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/Trieu-hub/finsight-platform/actions/workflows/codeql.yml)
+[![CodeQL (Java)](https://github.com/Trieu-hub/finsight-platform/actions/workflows/codeql-java.yml/badge.svg?branch=main)](https://github.com/Trieu-hub/finsight-platform/actions/workflows/codeql-java.yml)
+[![CodeQL (web)](https://github.com/Trieu-hub/finsight-platform/actions/workflows/codeql-web.yml/badge.svg?branch=main)](https://github.com/Trieu-hub/finsight-platform/actions/workflows/codeql-web.yml)
 
 **Financial Intelligence & Risk Monitoring Platform** — a Spring Boot 4 / Java 21
 microservice monorepo.
@@ -329,13 +330,19 @@ newly-disclosed CVE turns the build red even when no code changed:
 - **Dependabot** (`.github/dependabot.yml`) — weekly, grouped, across the nine Maven modules, npm
   `web/`, and the workflows themselves.
 
-**SAST** (`.github/workflows/codeql.yml`) — CodeQL static analysis on every PR and push to `main`,
-plus a weekly schedule. Two matrix jobs, `java-kotlin` (the nine services) and
-`javascript-typescript` (`web/`), both with **`build-mode: none`**: there is no aggregator pom, so
-compiling for extraction would mean nine `mvn package` runs per PR; source-only extraction trades a
-little dataflow precision through third-party jars for a job that finishes in minutes. The default
-(high-precision) query suite is used — injection, path traversal, unsafe deserialization, hardcoded
-credentials. Results appear under **Security → Code scanning** and as annotations on the PR diff.
+**SAST** (`.github/workflows/codeql-java.yml`, `.github/workflows/codeql-web.yml`) — CodeQL static
+analysis on every PR and push to `main` that touches the matching code, plus a weekly schedule.
+Split by language and path-filtered on purpose: the Java analysis takes minutes and the web one
+seconds, so a frontend-only PR never waits on the backend job, and vice versa. The weekly run is
+*not* path-filtered — new CodeQL queries ship continuously and can flag code that never changed.
+
+Both use **`build-mode: none`**: there is no aggregator pom, so compiling for extraction would mean
+nine `mvn package` runs per PR; source-only extraction trades a little dataflow precision through
+third-party jars for a job that finishes in minutes. `.github/codeql/codeql-config.yml` excludes
+`services/*/src/test/**` — 38% of the Java in the repo, none of it shipped, and a reliable source
+of false hardcoded-credential alerts from test fixtures. The default (high-precision) query suite
+is used — injection, path traversal, unsafe deserialization, hardcoded credentials. Results appear
+under **Security → Code scanning** and as annotations on the PR diff.
 
 > There is no aggregator pom; the matrix is what builds "all services" in CI. Adding a service means
 > adding it to the matrix.

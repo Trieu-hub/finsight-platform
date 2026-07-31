@@ -441,9 +441,14 @@ Do not add ad-hoc try/catch in controllers to produce error responses.
 - `.github/workflows/security.yml` — gitleaks over full history (**blocking**) + Trivy filesystem
   scan (report-only via `continue-on-error`, vuln DBs pulled from the AWS ECR mirror to avoid
   ghcr rate limits).
-- `.github/workflows/codeql.yml` — SAST. Matrix over `java-kotlin` + `javascript-typescript`,
-  both `build-mode: none` (no aggregator pom, so nothing is compiled for extraction), default
-  query suite. Alerts go to Security → Code scanning; the workflow itself never fails on a finding.
+- `.github/workflows/codeql-java.yml` + `codeql-web.yml` — SAST, split by language and
+  path-filtered (`services/**` vs `web/**`) so a change to one side does not run the other's
+  analysis; the weekly cron in both is deliberately *not* path-filtered. Both are
+  `build-mode: none` (no aggregator pom, so nothing is compiled for extraction) with the default
+  query suite; `.github/codeql/codeql-config.yml` drops test sources. **That config file only
+  applies while the mode stays `none`.** Alerts go to Security → Code scanning; the workflows
+  never fail on a finding. Keep the `category:` values stable — changing one re-files every
+  existing alert as new.
 - `.github/workflows/frontend.yml` — `web/` only (path-filtered): `npm ci`, ESLint, Vitest, then
   `tsc -b && vite build`.
 - `.github/dependabot.yml` — nine Maven directories + npm `/web` + github-actions, weekly.
