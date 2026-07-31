@@ -436,6 +436,11 @@ Do not add ad-hoc try/catch in controllers to produce error responses.
 - `.github/workflows/security.yml` — gitleaks over full history (**blocking**) + Trivy filesystem
   scan (report-only via `continue-on-error`, vuln DBs pulled from the AWS ECR mirror to avoid
   ghcr rate limits).
+- `.github/workflows/codeql.yml` — SAST. Matrix over `java-kotlin` + `javascript-typescript`,
+  both `build-mode: none` (no aggregator pom, so nothing is compiled for extraction), default
+  query suite. Alerts go to Security → Code scanning; the workflow itself never fails on a finding.
+- `.github/workflows/frontend.yml` — `web/` only (path-filtered): `npm ci`, ESLint, Vitest, then
+  `tsc -b && vite build`.
 - `.github/dependabot.yml` — nine Maven directories + npm `/web` + github-actions, weekly.
 
 ---
@@ -537,6 +542,26 @@ Refactoring
 - behavior must remain identical
 
 ---
+
+# Definition of Done — Keep the Docs in Sync
+
+After finishing a piece of work, update these in the **same change**, before reporting done.
+Do not wait to be asked.
+
+- `README.md` — whenever the change alters what the platform does, how it is built, run,
+  tested, or deployed, or what is still missing. Adding a capability means also deleting its
+  bullet from the "Roadmap / not yet built" section.
+- `project-status.md` — the personal progress tracker. Update the `Cập nhật:` date + `origin/main`
+  ref line, the status tables, the milestone percentages, and tick off the numbered item the work
+  closes. It is **gitignored** — update it, never stage it, never link it from committed docs.
+- `docs/unit-testing/unit-testing-1.txt` — whenever tests are added, removed, or renamed: the test
+  class, its test names, and the running totals at the top of the file.
+- The other authoritative docs when the change touches their subject — `docs/architecture.md`,
+  `docs/event-catalog.md`, `docs/intelligence.md` (a rule threshold change **must** update this),
+  `docs/runbook.md`, `docs/deploy.md`.
+
+Only update what the change actually affects. This is a sync obligation, not a licence to rewrite
+unrelated documentation.
 
 # Success Checklist
 

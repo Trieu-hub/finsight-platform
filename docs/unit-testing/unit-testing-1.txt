@@ -5,7 +5,7 @@ Tài liệu liệt kê chi tiết toàn bộ test tự động của nền tản
 test, loại (unit / integration), số lượng test và những gì nó kiểm chứng.
 
 Phạm vi tính đến: 9 microservice (api-gateway, auth, user, transaction, budget,
-dashboard, risk, notification, analytics).
+dashboard, risk, notification, analytics) + frontend `web/` (mục 10).
 
 TỔNG QUAN CON SỐ
 --------------------------------------------------------------------------------
@@ -14,7 +14,8 @@ TỔNG QUAN CON SỐ
 - Trong đó:
     * Unit / component test (chạy KHÔNG cần Docker):  ~253
     * Integration test (cần Docker – Testcontainers): ~181
-- Framework: JUnit 5 (Jupiter) + Mockito + AssertJ.
+- Frontend (Vitest, ngoài con số 434 ở trên):          29 test / 3 file
+- Framework: JUnit 5 (Jupiter) + Mockito + AssertJ; frontend dùng Vitest.
 - Integration test dùng Testcontainers (MySQL 8, Kafka KRaft, Redis) và WireMock
   (giả lập HTTP upstream), Awaitility (chờ bất đồng bộ).
 
@@ -636,6 +637,53 @@ Quy ước chung của test:
 [UNIT] TemplateSummarizerTest — 2 test
    - describesSavingsRateTrendAndTopCategory
    - reportsNoActivityWhenEmpty
+
+
+================================================================================
+10) FRONTEND `web/` (React + Vite) — VITEST, TOÀN UNIT TEST
+================================================================================
+Chạy bằng `npm test --prefix web` (= `vitest run`), không cần Docker, không cần
+backend. Nằm trong CI ở `.github/workflows/frontend.yml`. Phạm vi cố ý giới hạn ở
+logic thuần — chưa có component/hook/E2E test.
+
+[UNIT] src/lib/format.test.ts — 11 test  (định dạng tiền và input tiền)
+   - money: formats a USD amount with symbol, thousands and 2 decimals
+   - money: honours a non-default currency code
+   - money: falls back to "<amount> <currency>" when the currency code is invalid
+   - categoryName: returns the matching category name
+   - categoryName: falls back to "#<id>" for an unknown id
+   - groupThousands: dot-separates thousands
+   - groupThousands: strips non-digits before grouping
+   - groupThousands: returns empty for a digit-free string
+   - sanitizeMoneyInput: keeps digits only
+   - sanitizeMoneyInput: caps the length at MAX_MONEY_DIGITS
+     (soi gương @Digits(integer=15) phía backend)
+   - sanitizeMoneyInput: returns empty when there are no digits
+
+[UNIT] src/lib/jwt.test.ts — 6 test  (giải mã JWT phía client, CHỈ để dựng UI)
+   - decodeJwt: decodes the payload claims
+   - decodeJwt: handles base64url payloads containing - and _
+   - decodeJwt: returns null for a null token
+   - decodeJwt: returns null for a malformed token (no dot / bad base64)
+   - roleFromToken: extracts the role claim
+   - roleFromToken: returns null when there is no role or no token
+
+[UNIT] src/games/roulette/engine.test.ts — 12 test  (toán chi trả LuckyMe)
+   - wheel: has 38 distinct pockets (American: 0, 00, 1..36)
+   - colourOf: 0 and 00 are green
+   - colourOf: matches the standard red/black assignment
+   - colourOf: splits 1..36 into exactly 18 red and 18 black
+   - payout: every inside bet type except basket pays (36 - n)/n
+   - payout: the basket is the deliberate outlier — 6:1 on 5 pockets, not 6.2:1
+   - payout: every even-money bet pays 1:1
+   - classify: rejects an illegal chip position (non-adjacent numbers)
+   - classify: is order-independent — keyOf canonicalises the cover set
+   - classify: an empty selection is not a bet
+   - outside bets: each column/dozen covers 12, each even-money bet covers 18
+   - probability: is n / 38
+
+Bất biến `(36 - n)/n` ở đây soi gương `RouletteTest` phía transaction-service:
+cùng một luật chi trả, kiểm ở cả hai đầu.
 
 
 ================================================================================

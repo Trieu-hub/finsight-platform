@@ -4,6 +4,7 @@
 </picture>
 
 [![CI](https://github.com/Trieu-hub/finsight-platform/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Trieu-hub/finsight-platform/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/Trieu-hub/finsight-platform/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/Trieu-hub/finsight-platform/actions/workflows/codeql.yml)
 
 **Financial Intelligence & Risk Monitoring Platform** — a Spring Boot 4 / Java 21
 microservice monorepo.
@@ -320,6 +321,14 @@ newly-disclosed CVE turns the build red even when no code changed:
 - **Dependabot** (`.github/dependabot.yml`) — weekly, grouped, across the nine Maven modules, npm
   `web/`, and the workflows themselves.
 
+**SAST** (`.github/workflows/codeql.yml`) — CodeQL static analysis on every PR and push to `main`,
+plus a weekly schedule. Two matrix jobs, `java-kotlin` (the nine services) and
+`javascript-typescript` (`web/`), both with **`build-mode: none`**: there is no aggregator pom, so
+compiling for extraction would mean nine `mvn package` runs per PR; source-only extraction trades a
+little dataflow precision through third-party jars for a job that finishes in minutes. The default
+(high-precision) query suite is used — injection, path traversal, unsafe deserialization, hardcoded
+credentials. Results appear under **Security → Code scanning** and as annotations on the PR diff.
+
 > There is no aggregator pom; the matrix is what builds "all services" in CI. Adding a service means
 > adding it to the matrix.
 
@@ -363,8 +372,6 @@ These are **absent from the codebase** — do not assume they exist:
   (Vault/KMS). The live demo runs Docker Compose on a single VPS behind Caddy with TLS; secrets
   are **SOPS/age-encrypted at rest** and injected into the process environment at launch, which
   is a real improvement over a plaintext `.env` but still not a managed secrets manager.
-- **SAST** (CodeQL/Semgrep/SpotBugs) — secret and dependency scanning *are* wired
-  (see [Continuous Integration](#continuous-integration)); static analysis of the code is not.
 - **Load/performance testing** — no k6/Gatling/JMeter suite and no published baseline.
 - **Whole-stack E2E in CI** — the matrix builds and tests each service in isolation; nothing
   exercises browser → gateway → Kafka → risk end to end on every PR.
