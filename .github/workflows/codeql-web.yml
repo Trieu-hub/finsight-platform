@@ -1,0 +1,60 @@
+name: CodeQL (web)
+
+# SAST for the React/Vite SPA in web/ — the JavaScript/TypeScript half of the split described in
+# codeql-java.yml. It runs in well under a minute, so it is cheap to keep on every PR that touches
+# the frontend.
+#
+# frontend.yml is the correctness gate (lint, Vitest, type-check, build); this is the security one.
+# Findings land in Security -> Code scanning, not as a failed job.
+on:
+  pull_request:
+    paths:
+      - "web/**"
+      - "!web/**/*.md"
+      - ".github/workflows/codeql-web.yml"
+      - ".github/codeql/codeql-config.yml"
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - "!web/**/*.md"
+      - ".github/workflows/codeql-web.yml"
+      - ".github/codeql/codeql-config.yml"
+  # Not path-filtered, for the same reason as the Java workflow: new queries land continuously.
+  schedule:
+    - cron: "0 4 * * 1" # Mondays 04:00 UTC
+
+concurrency:
+  group: codeql-web-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: analyze (javascript-typescript)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      security-events: write # upload the SARIF results to the Security tab
+      contents: read
+      actions: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # JS/TS never needs a build for extraction, and node_modules is excluded by CodeQL itself.
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: javascript-typescript
+          build-mode: none
+          config-file: .github/codeql/codeql-config.yml
+
+      # Keep the category stable or existing alerts are re-filed as new ones.
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:javascript-typescript"

@@ -175,10 +175,16 @@ Verify in Grafana (**Explore** → datasource **Loki**):
 {service="transaction-service"} | json               # ECS-parsed fields (level, correlationId)
 ```
 
-Three services emit ECS JSON (`LOGGING_STRUCTURED_FORMAT_CONSOLE=ecs`), so their lines carry
-`level`/`service` labels; the rest ship as plain text (container/compose_service labels only) until
-the ECS rollout finishes. Config lives in `docker/loki/loki.yml` and `docker/promtail/promtail.yml`;
-retention is 7 days on the local filesystem.
+All nine services emit ECS JSON (`LOGGING_STRUCTURED_FORMAT_CONSOLE=ecs` in compose), so every line
+carries `level`/`service` labels plus the `correlationId` MDC field — meaning one request can be
+followed across services with a single query:
+
+```logql
+{compose_service=~".+"} | json | correlationId = "<id from the X-Correlation-ID response header>"
+```
+
+Config lives in `docker/loki/loki.yml` and `docker/promtail/promtail.yml`; retention is 7 days on
+the local filesystem.
 
 **Troubleshooting:**
 
@@ -186,7 +192,7 @@ retention is 7 days on the local filesystem.
 |---|---|---|
 | No datasource / "No data" in Explore | started without `--profile monitoring` | bring the stack up with the profile so Loki + Promtail run |
 | A container's logs never appear | Promtail can't read the Docker socket | confirm `/var/run/docker.sock` is mounted into `finsight-promtail`; check its logs |
-| `{service=...}` matches nothing but `{container=...}` works | that container isn't emitting ECS JSON yet | filter by `container`/`compose_service`; ECS labels only exist for services with `LOGGING_STRUCTURED_FORMAT_CONSOLE=ecs` |
+| `{service=...}` matches nothing but `{container=...}` works | it is an infrastructure container (mysql, kafka, redis, caddy), which logs plain text | filter by `container`/`compose_service`; ECS labels only exist for the nine Spring services, which set `LOGGING_STRUCTURED_FORMAT_CONSOLE=ecs` |
 | Promtail warns `400 … timestamp too old` on first start | it is backfilling a long-running container's old stdout past Loki's 7-day window | benign — Loki drops only those ancient lines; current logs ingest normally. Recreate the container to reset its stdout, or ignore |
 
 ---
