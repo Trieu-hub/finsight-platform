@@ -148,7 +148,8 @@ Authoritative docs — read these instead of re-deriving:
 - `docs/runbook.md` — startup, compose workflow, troubleshooting
 - `docs/deploy.md` — production deployment
 - `docs/security/jwt-key-rotation.md` — key rotation procedure
-- `docs/unit-testing/unit-testing-1.txt` — full test catalog (434 tests, 93 classes)
+- `docs/unit-testing/unit-testing-1.txt` — full test catalog (470 backend tests, 102 classes,
+  plus the frontend Vitest suite)
 
 ---
 
@@ -311,6 +312,10 @@ DTOs are Lombok classes, not records — match the surrounding style.
   never as root.
 - **`risk-service` is internal**: not behind the gateway, no JWT stack, port not published to the
   host. Its `/api/v1/{risks,insights,anomalies}` controllers are unauthenticated by design.
+- **Every service carries `logging/CorrelationIdFilter`** (registered at `HIGHEST_PRECEDENCE` by
+  `config/CorrelationIdFilterConfig`) and sets `LOGGING_STRUCTURED_FORMAT_CONSOLE: ecs` in compose.
+  A new service needs both, or its lines drop out of a cross-service log trace. The id is
+  HTTP-only — it does not travel on Kafka messages.
 
 ## Event backbone
 
@@ -436,6 +441,16 @@ Do not add ad-hoc try/catch in controllers to produce error responses.
 - `.github/workflows/security.yml` — gitleaks over full history (**blocking**) + Trivy filesystem
   scan (report-only via `continue-on-error`, vuln DBs pulled from the AWS ECR mirror to avoid
   ghcr rate limits).
+- `.github/workflows/codeql-java.yml` + `codeql-web.yml` — SAST, split by language and
+  path-filtered (`services/**` vs `web/**`) so a change to one side does not run the other's
+  analysis; the weekly cron in both is deliberately *not* path-filtered. Both are
+  `build-mode: none` (no aggregator pom, so nothing is compiled for extraction) with the default
+  query suite; `.github/codeql/codeql-config.yml` drops test sources. **That config file only
+  applies while the mode stays `none`.** Alerts go to Security → Code scanning; the workflows
+  never fail on a finding. Keep the `category:` values stable — changing one re-files every
+  existing alert as new.
+- `.github/workflows/frontend.yml` — `web/` only (path-filtered): `npm ci`, ESLint, Vitest, then
+  `tsc -b && vite build`.
 - `.github/dependabot.yml` — nine Maven directories + npm `/web` + github-actions, weekly.
 
 ---
@@ -537,6 +552,26 @@ Refactoring
 - behavior must remain identical
 
 ---
+
+# Definition of Done — Keep the Docs in Sync
+
+After finishing a piece of work, update these in the **same change**, before reporting done.
+Do not wait to be asked.
+
+- `README.md` — whenever the change alters what the platform does, how it is built, run,
+  tested, or deployed, or what is still missing. Adding a capability means also deleting its
+  bullet from the "Roadmap / not yet built" section.
+- `project-status.md` — the personal progress tracker. Update the `Cập nhật:` date + `origin/main`
+  ref line, the status tables, the milestone percentages, and tick off the numbered item the work
+  closes. It is **gitignored** — update it, never stage it, never link it from committed docs.
+- `docs/unit-testing/unit-testing-1.txt` — whenever tests are added, removed, or renamed: the test
+  class, its test names, and the running totals at the top of the file.
+- The other authoritative docs when the change touches their subject — `docs/architecture.md`,
+  `docs/event-catalog.md`, `docs/intelligence.md` (a rule threshold change **must** update this),
+  `docs/runbook.md`, `docs/deploy.md`.
+
+Only update what the change actually affects. This is a sync obligation, not a licence to rewrite
+unrelated documentation.
 
 # Success Checklist
 

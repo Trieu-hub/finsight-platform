@@ -1,0 +1,79 @@
+name: CodeQL (Java)
+
+# Static application security testing (SAST) for the nine Spring services — the gap left by
+# ci.yml (build+test) and security.yml (secrets + dependency CVEs): neither of those looks at what
+# the code itself does. CodeQL analyses the source for injection, path traversal, unsafe
+# deserialization, hardcoded credentials, and the rest of GitHub's default security suite.
+#
+# Split from codeql-web.yml purely for speed. This analysis runs ~6-9 minutes against ~19k lines
+# of Java; the web one finishes in under a minute. Most PRs touch one side or the other, so the
+# path filters below mean a frontend-only change never waits on this job, and vice versa.
+#
+# Findings land in the repo's Security -> Code scanning tab and are annotated on the PR diff.
+# The workflow itself does not fail on an alert (the "Code scanning results" check does that,
+# once it is made a required check in branch protection).
+on:
+  pull_request:
+    paths:
+      - "services/**"
+      - "!services/**/*.md" # the api-gateway ADRs live under services/, and prose is not code
+      - ".github/workflows/codeql-java.yml"
+      - ".github/codeql/codeql-config.yml"
+  push:
+    branches: [main]
+    paths:
+      - "services/**"
+      - "!services/**/*.md"
+      - ".github/workflows/codeql-java.yml"
+      - ".github/codeql/codeql-config.yml"
+  # Deliberately NOT path-filtered: CodeQL ships new queries continuously, so a weekly run can
+  # turn up a finding in code that has not changed at all. It also keeps the badge current on a
+  # quiet week.
+  schedule:
+    - cron: "0 4 * * 1" # Mondays 04:00 UTC
+
+concurrency:
+  group: codeql-java-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: analyze (java-kotlin)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      security-events: write # upload the SARIF results to the Security tab
+      contents: read
+      actions: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # build-mode: none analyses the sources without compiling them. This repo has no aggregator
+      # pom — nine standalone Maven projects — so a build-based extraction would mean nine
+      # `mvn package` runs on every PR. The trade-off is slightly weaker dataflow through
+      # third-party jars; switch to `manual` with an explicit build step if a rule ever needs the
+      # full classpath. Note that .github/codeql/codeql-config.yml only applies while the mode
+      # stays `none`.
+      #
+      # No `queries:` override — the default suite is what GitHub's own default setup runs:
+      # high-precision security rules, so an alert here is worth triaging rather than muting.
+      # `threads`/`ram` are left unset on purpose: CodeQL already defaults to every core and most
+      # of the RAM on the runner, so pinning them can only make it slower.
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: java-kotlin
+          build-mode: none
+          config-file: .github/codeql/codeql-config.yml
+
+      # The category is what keys results to a language in the Security tab — keep it stable or
+      # existing alerts are re-filed as new ones.
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:java-kotlin"

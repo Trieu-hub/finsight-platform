@@ -1,0 +1,64 @@
+name: Frontend CI
+
+# Lint + unit-test + type-check + build the React/Vite SPA in web/. Until now the frontend had NO
+# CI: three large frontend changes reached production checked only by hand. This closes that gap —
+# every PR that touches web/ (and pushes to main) must lint clean, pass the Vitest unit tests, and
+# produce a successful production build.
+#
+# The Java services are covered separately by ci.yml; this job is scoped to web/ via path filters
+# so it only runs when the frontend actually changes.
+
+on:
+  pull_request:
+    paths:
+      - "web/**"
+      - ".github/workflows/frontend.yml"
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - ".github/workflows/frontend.yml"
+
+concurrency:
+  group: frontend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: lint & build (web)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24" # matches the dev environment; Vite 8 / TS 6 / ESLint 10 need a recent Node
+          cache: npm
+          cache-dependency-path: web/package-lock.json # the lockfile lives in web/, not the repo root
+
+      # `npm ci` installs exactly the locked versions (fails if package.json and the lock disagree).
+      - name: Install dependencies
+        run: npm ci
+
+      # eslint. New React-Compiler-era rules are set to `warn` in eslint.config.js (they fire on
+      # existing working code), so this fails only on genuine errors — syntax, unused vars, real
+      # hooks-rule violations — while advisory warnings stay visible in the log.
+      - name: Lint
+        run: npm run lint
+
+      # Vitest unit tests for pure logic (formatters, JWT decode, roulette payout maths).
+      - name: Unit tests
+        run: npm test
+
+      # `npm run build` = `tsc -b && vite build` — this is the type-check AND the production bundle
+      # in one step. A type error or a broken import fails the job.
+      - name: Type-check & build
+        run: npm run build

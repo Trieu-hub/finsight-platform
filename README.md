@@ -4,6 +4,8 @@
 </picture>
 
 [![CI](https://github.com/Trieu-hub/finsight-platform/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Trieu-hub/finsight-platform/actions/workflows/ci.yml)
+[![CodeQL (Java)](https://github.com/Trieu-hub/finsight-platform/actions/workflows/codeql-java.yml/badge.svg?branch=main)](https://github.com/Trieu-hub/finsight-platform/actions/workflows/codeql-java.yml)
+[![CodeQL (web)](https://github.com/Trieu-hub/finsight-platform/actions/workflows/codeql-web.yml/badge.svg?branch=main)](https://github.com/Trieu-hub/finsight-platform/actions/workflows/codeql-web.yml)
 
 **Financial Intelligence & Risk Monitoring Platform** — a Spring Boot 4 / Java 21
 microservice monorepo.
@@ -31,8 +33,7 @@ coupling is asynchronous over Kafka.
 | [`docs/ADR-0004-budget-utilization-via-events.md`](docs/ADR-0004-budget-utilization-via-events.md) | Why budget utilization is event-driven (and its accepted drift) |
 | [`services/api-gateway/docs/`](services/api-gateway/docs/) | ADR-0001/0002/0003/0005 — gateway contract, identity freeze, BFF token relay, RS256 |
 | [`docs/brand.md`](docs/brand.md) | Logo files, palette, and the reasoning behind the mark |
-| [`docs/unit-testing/unit-testing-1.txt`](docs/unit-testing/unit-testing-1.txt) | Full test-suite catalog — every test class (unit vs integration), count, and what it verifies (434 tests across 9 services) |
-| [`load-test/`](load-test/) | k6 smoke + load scripts, run by the staging workflow (guarded so they never hit prod) |
+| [`docs/unit-testing/unit-testing-1.txt`](docs/unit-testing/unit-testing-1.txt) | Full test-suite catalog — every test class (unit vs integration), count, and what it verifies (470 backend tests across 9 services, plus the 29 frontend Vitest tests) |
 
 ## Tech stack
 
@@ -191,6 +192,14 @@ probes at `/actuator/health/{liveness,readiness}`.
   - **FinSight Event Pipeline** — budget consumer `processed` / `duplicate` / `ignored` / `failed`.
   - **FinSight Risk** — detected risks by type and severity.
   - **FinSight Consumer Lag** — Kafka consumer lag per service / group / partition.
+- **Structured logs** — all nine services log **ECS JSON** to stdout in compose
+  (`LOGGING_STRUCTURED_FORMAT_CONSOLE=ecs`, native to Spring Boot 4 — no logback XML, no extra
+  dependency). Each carries `service.name` and a **`correlationId`**: a `CorrelationIdFilter`
+  reuses an inbound `X-Correlation-ID` or mints one, api-gateway sets it at the edge and forwards
+  it downstream, and dashboard-service relays it across its BFF fan-out — so one request is one id
+  across every service it touches, and the id comes back on the response header. Under the
+  `monitoring` profile **Loki + Promtail** make that searchable in Grafana (see
+  [`docs/runbook.md`](docs/runbook.md) §5.1). The id does not cross the Kafka boundary yet.
 - **Alertmanager** — <http://localhost:9093> — receives firing alerts from Prometheus. Rules in
   `docker/prometheus/alerts.yml`: service down, 5xx rate, JVM heap, Kafka consumer lag, dashboard
   circuit-breaker open. Locally no delivery channel is configured (a Slack/email/webhook stub is in
@@ -337,11 +346,31 @@ into the VPS and runs the box's **own** deploy path (`git reset --hard <ref>` �
 `/actuator/health`. **CI never holds an application secret** — the SOPS age key lives only on the
 box, which decrypts its own `secrets.env`. Setup + required secrets:
 [`docs/deploy.md` §9](docs/deploy.md).
+**SAST** (`.github/workflows/codeql-java.yml`, `.github/workflows/codeql-web.yml`) — CodeQL static
+analysis on every PR and push to `main` that touches the matching code, plus a weekly schedule.
+Split by language and path-filtered on purpose: the Java analysis takes minutes and the web one
+seconds, so a frontend-only PR never waits on the backend job, and vice versa. The weekly run is
+*not* path-filtered — new CodeQL queries ship continuously and can flag code that never changed.
+
+Both use **`build-mode: none`**: there is no aggregator pom, so compiling for extraction would mean
+nine `mvn package` runs per PR; source-only extraction trades a little dataflow precision through
+third-party jars for a job that finishes in minutes. `.github/codeql/codeql-config.yml` excludes
+`services/*/src/test/**` — 38% of the Java in the repo, none of it shipped, and a reliable source
+of false hardcoded-credential alerts from test fixtures. The default (high-precision) query suite
+is used — injection, path traversal, unsafe deserialization, hardcoded credentials. Results appear
+under **Security → Code scanning** and as annotations on the PR diff.
 
 > There is no aggregator pom; the matrix is what builds "all services" in CI. Adding a service means
 > adding it to the matrix.
->
-> The frontend is **not** covered by CI — see [Roadmap / not yet built](#roadmap--not-yet-built).
+
+**Frontend** (`.github/workflows/frontend.yml`) — on each `pull_request` and push to `main` that
+touches `web/`, the React/Vite SPA is installed (`npm ci`), linted (ESLint), unit-tested
+(**Vitest** — `npm test`), then type-checked and bundled (`tsc -b && vite build`). This closes the
+previous gap where frontend changes reached production checked only by hand. The Vitest suite covers
+the pure logic — money/number formatting, client-side JWT decode, and the roulette payout maths
+(the `(36 − n)/n` invariant, mirroring the backend `RouletteTest`). (New React-Compiler-era lint
+rules that fire on existing code are set to `warn` in `web/eslint.config.js`, so the job fails on
+genuine errors, not on those advisories.)
 
 ## End-to-end validation
 
@@ -381,3 +410,13 @@ These are **absent from the codebase** — do not assume they exist:
   automated tests.
 - **Log aggregation** — metrics (Prometheus) and traces (Tempo) are wired; there is no Loki/ELK,
   so log inspection is per-container.
+- **Load/performance testing** — no k6/Gatling/JMeter suite and no published baseline.
+- **Whole-stack E2E in CI** — the matrix builds and tests each service in isolation; nothing
+  exercises browser → gateway → Kafka → risk end to end on every PR.
+- **Frontend component / E2E tests** — the frontend now has unit tests (Vitest, wired into CI) for
+  pure logic, but no component-render, hook, or browser E2E coverage yet.
+- **Correlation across the async boundary** — the correlation id follows a request through every
+  synchronous hop, but it is not carried on Kafka messages, so a consumer's log lines cannot be
+  tied back to the request that produced the event.
+- **Continuous deployment** — deployment is a manual `ssh` + `scripts/prod-compose.sh up -d --build`;
+  no workflow deploys on merge.

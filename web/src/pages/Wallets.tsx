@@ -45,7 +45,7 @@ export default function Wallets() {
 
   useEffect(() => {
     load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [])
 
   async function handleSubmit(e: FormEvent) {

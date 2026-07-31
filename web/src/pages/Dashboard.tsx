@@ -186,7 +186,7 @@ function TrendChart({
 
   const n = series.length
   const values = series.map((s) => s.value)
-  let min = Math.min(0, ...values)
+  const min = Math.min(0, ...values)
   let max = Math.max(0, ...values)
   if (min === max) max = min + 1 // avoid divide-by-zero on a flat line
 

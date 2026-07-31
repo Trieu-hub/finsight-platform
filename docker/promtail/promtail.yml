@@ -1,0 +1,46 @@
+# Promtail — tails the FinSight stack's container logs and ships them to Loki.
+#
+# Discovery is via the Docker Engine API (the socket is mounted read-only in compose), so no
+# per-container wiring is needed: every finsight-* container is picked up automatically, including
+# ones that come and go. Three services already emit ECS-formatted JSON to stdout
+# (LOGGING_STRUCTURED_FORMAT_CONSOLE=ecs in docker-compose.yml); for those we parse out level /
+# service / correlationId into Loki labels. Plain-text containers (mysql, kafka, caddy, the
+# services without ECS yet) still ship — they just carry the container/compose_service labels
+# without the parsed fields, so nothing is lost while the ECS rollout finishes (runbook §4F).
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: finsight-containers
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 15s
+    relabel_configs:
+      # Keep only this stack's containers (finsight-*); drop everything else on the host.
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(finsight-.*)'
+        action: keep
+      # Stable labels: the container name and the compose service it belongs to.
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(finsight-.*)'
+        target_label: 'container'
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
+        target_label: 'compose_service'
+    pipeline_stages:
+      # Best-effort ECS JSON parse. On a non-JSON line the stage errors out for that line only —
+      # the raw line is still forwarded to Loki, just without the extracted labels below.
+      - json:
+          expressions:
+            level: 'log.level'
+            service: 'service.name'
+            correlationId: correlationId
+      - labels:
+          level:
+          service:

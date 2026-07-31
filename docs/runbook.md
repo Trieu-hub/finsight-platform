@@ -158,6 +158,43 @@ Open <http://localhost:3000> (anonymous admin in the dev stack — no login).
 If a panel is empty, the underlying metric simply hasn't been produced yet — generate activity
 (create transactions/budgets) and re-check.
 
+### 5.1 Log aggregation (Loki)
+
+The `monitoring` profile also starts **Loki** (log store, :3100) and **Promtail** (shipper).
+Promtail discovers every `finsight-*` container through the Docker socket and pushes its stdout to
+Loki; Grafana auto-provisions the **Loki** datasource alongside Prometheus and Tempo. This is the
+third observability pillar — metrics (Prometheus), traces (Tempo), logs (Loki) — and, like the
+other two, is **opt-in** and absent from a default prod deploy (it stays off there to save memory;
+turn it on when an incident needs logs searchable instead of `docker logs` per container).
+
+Verify in Grafana (**Explore** → datasource **Loki**):
+
+```logql
+{container="finsight-transaction-service"}          # one service's logs
+{compose_service=~".+"}                              # everything Promtail is shipping
+{service="transaction-service"} | json               # ECS-parsed fields (level, correlationId)
+```
+
+All nine services emit ECS JSON (`LOGGING_STRUCTURED_FORMAT_CONSOLE=ecs` in compose), so every line
+carries `level`/`service` labels plus the `correlationId` MDC field — meaning one request can be
+followed across services with a single query:
+
+```logql
+{compose_service=~".+"} | json | correlationId = "<id from the X-Correlation-ID response header>"
+```
+
+Config lives in `docker/loki/loki.yml` and `docker/promtail/promtail.yml`; retention is 7 days on
+the local filesystem.
+
+**Troubleshooting:**
+
+| Symptom | Likely cause | Action |
+|---|---|---|
+| No datasource / "No data" in Explore | started without `--profile monitoring` | bring the stack up with the profile so Loki + Promtail run |
+| A container's logs never appear | Promtail can't read the Docker socket | confirm `/var/run/docker.sock` is mounted into `finsight-promtail`; check its logs |
+| `{service=...}` matches nothing but `{container=...}` works | it is an infrastructure container (mysql, kafka, redis, caddy), which logs plain text | filter by `container`/`compose_service`; ECS labels only exist for the nine Spring services, which set `LOGGING_STRUCTURED_FORMAT_CONSOLE=ecs` |
+| Promtail warns `400 … timestamp too old` on first start | it is backfilling a long-running container's old stdout past Loki's 7-day window | benign — Loki drops only those ancient lines; current logs ingest normally. Recreate the container to reset its stdout, or ignore |
+
 ---
 
 ## 6. Kafka consumer lag monitoring
