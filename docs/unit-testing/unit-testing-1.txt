@@ -9,12 +9,12 @@ dashboard, risk, notification, analytics) + frontend `web/` (mục 10).
 
 TỔNG QUAN CON SỐ
 --------------------------------------------------------------------------------
-- Tổng số test method (@Test / @ParameterizedTest):  434
-- Tổng số lớp test:                                   93 (+ vài lớp base/support)
+- Tổng số test method (@Test / @ParameterizedTest):  470
+- Tổng số lớp test:                                  102 (+ vài lớp base/support)
 - Trong đó:
-    * Unit / component test (chạy KHÔNG cần Docker):  ~253
+    * Unit / component test (chạy KHÔNG cần Docker):  ~289
     * Integration test (cần Docker – Testcontainers): ~181
-- Frontend (Vitest, ngoài con số 434 ở trên):          29 test / 3 file
+- Frontend (Vitest, ngoài con số 470 ở trên):          29 test / 3 file
 - Framework: JUnit 5 (Jupiter) + Mockito + AssertJ; frontend dùng Vitest.
 - Integration test dùng Testcontainers (MySQL 8, Kafka KRaft, Redis) và WireMock
   (giả lập HTTP upstream), Awaitility (chờ bất đồng bộ).
@@ -93,6 +93,8 @@ Quy ước chung của test:
    - knownPrefixWithValidTokenAndDeadBackendReturnsServiceUnavailable
    - oversizedBodyReturnsPayloadTooLarge (chặn body > 2 MiB → 413)
 
+[UNIT] CorrelationIdFilterTest — 4 test  (bộ chuẩn correlation id — xem GHI CHÚ CUỐI)
+
 [COMPONENT] PrometheusEndpointTest — 1 test
    - prometheusEndpointIsReachableAndCarriesJvmMetrics
 
@@ -165,6 +167,8 @@ Quy ước chung của test:
    - aTokenVerifiesWithTheKeyTakenFromTheJwks
    - theJwksNeverLeaksPrivateKeyMaterial (bảo vệ tuyệt đối private key)
 
+[UNIT] CorrelationIdFilterTest — 4 test  (bộ chuẩn correlation id — xem GHI CHÚ CUỐI)
+
 [INTEGRATION] TokenRevocationIntegrationTest — 3 test  (Redis)
    - loginAloneRevokesNothing
    - logoutWritesACutoffThatCoversTheAccessTokenJustIssued
@@ -207,6 +211,8 @@ Quy ước chung của test:
 
 [UNIT] JwtServiceTest — 5 test  (validTokenAccepted / wrongIssuer / wrongAudience /
         wrongAlgorithm / expiredToken — cùng bộ như các service khác)
+
+[UNIT] CorrelationIdFilterTest — 4 test  (bộ chuẩn correlation id — xem GHI CHÚ CUỐI)
 
 [INTEGRATION] UserProfileApiIntegrationTest — 5 test  (MySQL)
    - createThenGetProfile_persistsToMySql
@@ -259,6 +265,7 @@ Quy ước chung của test:
    - emptyBatch_sendsNothingAndDeletesNothing
 
 [UNIT] JwtServiceTest — 5 test  (bộ chuẩn validTokenAccepted/wrongIssuer/...)
+[UNIT] CorrelationIdFilterTest — 4 test  (bộ chuẩn correlation id — xem GHI CHÚ CUỐI)
 
 [INTEGRATION] TransactionApiCrudIntegrationTest — 12 test  (MySQL)
    - createReturnsCreatedTransaction
@@ -376,6 +383,7 @@ Quy ước chung của test:
    - eachRecoveredRecordIncrementsFailedOnce
 
 [UNIT] JwtServiceTest — 5 test  (bộ chuẩn)
+[UNIT] CorrelationIdFilterTest — 4 test  (bộ chuẩn correlation id — xem GHI CHÚ CUỐI)
 
 [INTEGRATION] BudgetApiCrudIntegrationTest — 10 test  (MySQL)
    - createReturnsCreatedBudget / getByIdReturnsBudget / updateAppliesPartialChanges
@@ -488,6 +496,7 @@ Quy ước chung của test:
    - me_wrapsServerErrorAsUpstreamException
 
 [UNIT] JwtServiceTest — 5 test  (bộ chuẩn)
+[UNIT] CorrelationIdFilterTest — 4 test  (bộ chuẩn correlation id — xem GHI CHÚ CUỐI)
 [COMPONENT] OpenApiDocsTest — 2 test / PrometheusEndpointTest — 2 test
 [CONTEXT]   DashboardApplicationTests — 2 test
 
@@ -540,6 +549,7 @@ Quy ước chung của test:
 
 [UNIT] RiskEventConsumerTest — 4 test / BudgetEventConsumerTest — 3 test
 [UNIT] KafkaConsumerConfigTest — 2 test  (metric thất bại consumer)
+[UNIT] CorrelationIdFilterTest — 4 test  (bộ chuẩn correlation id — xem GHI CHÚ CUỐI)
 
 [INTEGRATION] RiskDetectionIntegrationTest — 4 test  (Kafka + MySQL)
    - highAmountExpensePublishesRiskDetected
@@ -596,6 +606,7 @@ Quy ước chung của test:
    - fallsBackToTemplateOnEmptyLlmFields
 
 [UNIT] KafkaConsumerConfigTest — 2 test / JwtServiceTest — 5 test
+[UNIT] CorrelationIdFilterTest — 4 test  (bộ chuẩn correlation id — xem GHI CHÚ CUỐI)
 
 [INTEGRATION] NotificationApiCrudIntegrationTest — 4 test  (MySQL)
    - listsNotificationsNewestFirstAndReportsUnreadCount
@@ -637,6 +648,8 @@ Quy ước chung của test:
 [UNIT] TemplateSummarizerTest — 2 test
    - describesSavingsRateTrendAndTopCategory
    - reportsNoActivityWhenEmpty
+
+[UNIT] CorrelationIdFilterTest — 4 test  (bộ chuẩn correlation id — xem GHI CHÚ CUỐI)
 
 
 ================================================================================
@@ -691,6 +704,11 @@ GHI CHÚ CUỐI
 ================================================================================
 - Một số lớp base/support không phải test (không tính vào 434): AbstractMySql/
   MockMvc/IntegrationTest, JwtTestTokens, TestUpstreamCalls...
+- Bộ "CorrelationIdFilterTest" (4 test) lặp lại giống nhau ở **cả 9 service**: giữ nguyên
+  X-Correlation-ID đến từ upstream, sinh UUID khi thiếu/rỗng, echo lên response, và xoá
+  MDC khi request kết thúc (id rò rỉ sẽ dán nhầm sang request kế tiếp trên cùng thread của
+  pool). Mỗi service có bản sao filter của riêng nó vì monorepo không có module dùng chung —
+  cùng lý do với JwtServiceTest bên dưới.
 - Bộ "JwtServiceTest" (5 test) lặp lại giống nhau ở 5 service (auth, user,
   transaction, budget, dashboard, notification) vì mỗi service tự xác thực token
   cục bộ bằng public key — đây là chủ đích thiết kế (gateway có thể gỡ bỏ, service

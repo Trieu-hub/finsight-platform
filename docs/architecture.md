@@ -160,8 +160,15 @@ unauthenticated — acceptable for the local stack only) and liveness/readiness 
   - **FinSight Risk** — detected risks by type and severity.
 
 Structured logging: native Boot 4 ECS JSON on stdout, toggled by
-`LOGGING_STRUCTURED_FORMAT_CONSOLE=ecs` (set in compose for api-gateway, transaction-service,
-and dashboard-service); `correlationId` (MDC) and `service.name` are included automatically.
+`LOGGING_STRUCTURED_FORMAT_CONSOLE=ecs` (set in compose for **all nine** services);
+`correlationId` (MDC) and `service.name` are included automatically.
+
+Correlation id: every service registers a `logging/CorrelationIdFilter` at `HIGHEST_PRECEDENCE`
+that reads `X-Correlation-ID`, or mints a UUID when the header is absent, puts it in the MDC for
+the request, echoes it on the response, and clears it on the way out. api-gateway establishes the
+id at the edge and forwards it to the service it proxies to; dashboard-service relays it on its
+BFF fan-out. So one browser request is one id from edge to database, greppable in Loki.
+The id does **not** currently cross the Kafka boundary — an async consumer logs under its own id.
 
 ```mermaid
 graph LR

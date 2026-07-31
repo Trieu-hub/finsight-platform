@@ -32,7 +32,7 @@ coupling is asynchronous over Kafka.
 | [`docs/ADR-0004-budget-utilization-via-events.md`](docs/ADR-0004-budget-utilization-via-events.md) | Why budget utilization is event-driven (and its accepted drift) |
 | [`services/api-gateway/docs/`](services/api-gateway/docs/) | ADR-0001/0002/0003/0005 — gateway contract, identity freeze, BFF token relay, RS256 |
 | [`docs/brand.md`](docs/brand.md) | Logo files, palette, and the reasoning behind the mark |
-| [`docs/unit-testing/unit-testing-1.txt`](docs/unit-testing/unit-testing-1.txt) | Full test-suite catalog — every test class (unit vs integration), count, and what it verifies (434 tests across 9 services) |
+| [`docs/unit-testing/unit-testing-1.txt`](docs/unit-testing/unit-testing-1.txt) | Full test-suite catalog — every test class (unit vs integration), count, and what it verifies (470 backend tests across 9 services, plus the 29 frontend Vitest tests) |
 
 ## Tech stack
 
@@ -191,6 +191,14 @@ probes at `/actuator/health/{liveness,readiness}`.
   - **FinSight Event Pipeline** — budget consumer `processed` / `duplicate` / `ignored` / `failed`.
   - **FinSight Risk** — detected risks by type and severity.
   - **FinSight Consumer Lag** — Kafka consumer lag per service / group / partition.
+- **Structured logs** — all nine services log **ECS JSON** to stdout in compose
+  (`LOGGING_STRUCTURED_FORMAT_CONSOLE=ecs`, native to Spring Boot 4 — no logback XML, no extra
+  dependency). Each carries `service.name` and a **`correlationId`**: a `CorrelationIdFilter`
+  reuses an inbound `X-Correlation-ID` or mints one, api-gateway sets it at the edge and forwards
+  it downstream, and dashboard-service relays it across its BFF fan-out — so one request is one id
+  across every service it touches, and the id comes back on the response header. Under the
+  `monitoring` profile **Loki + Promtail** make that searchable in Grafana (see
+  [`docs/runbook.md`](docs/runbook.md) §5.1). The id does not cross the Kafka boundary yet.
 - **Alertmanager** — <http://localhost:9093> — receives firing alerts from Prometheus. Rules in
   `docker/prometheus/alerts.yml`: service down, 5xx rate, JVM heap, Kafka consumer lag, dashboard
   circuit-breaker open. Locally no delivery channel is configured (a Slack/email/webhook stub is in
@@ -377,7 +385,8 @@ These are **absent from the codebase** — do not assume they exist:
   exercises browser → gateway → Kafka → risk end to end on every PR.
 - **Frontend component / E2E tests** — the frontend now has unit tests (Vitest, wired into CI) for
   pure logic, but no component-render, hook, or browser E2E coverage yet.
-- **Log aggregation** — metrics (Prometheus) and traces (Tempo) are wired; there is no Loki/ELK,
-  so log inspection is per-container.
+- **Correlation across the async boundary** — the correlation id follows a request through every
+  synchronous hop, but it is not carried on Kafka messages, so a consumer's log lines cannot be
+  tied back to the request that produced the event.
 - **Continuous deployment** — deployment is a manual `ssh` + `scripts/prod-compose.sh up -d --build`;
   no workflow deploys on merge.

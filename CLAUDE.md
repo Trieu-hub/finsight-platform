@@ -148,7 +148,8 @@ Authoritative docs — read these instead of re-deriving:
 - `docs/runbook.md` — startup, compose workflow, troubleshooting
 - `docs/deploy.md` — production deployment
 - `docs/security/jwt-key-rotation.md` — key rotation procedure
-- `docs/unit-testing/unit-testing-1.txt` — full test catalog (434 tests, 93 classes)
+- `docs/unit-testing/unit-testing-1.txt` — full test catalog (470 backend tests, 102 classes,
+  plus the frontend Vitest suite)
 
 ---
 
@@ -311,6 +312,10 @@ DTOs are Lombok classes, not records — match the surrounding style.
   never as root.
 - **`risk-service` is internal**: not behind the gateway, no JWT stack, port not published to the
   host. Its `/api/v1/{risks,insights,anomalies}` controllers are unauthenticated by design.
+- **Every service carries `logging/CorrelationIdFilter`** (registered at `HIGHEST_PRECEDENCE` by
+  `config/CorrelationIdFilterConfig`) and sets `LOGGING_STRUCTURED_FORMAT_CONSOLE: ecs` in compose.
+  A new service needs both, or its lines drop out of a cross-service log trace. The id is
+  HTTP-only — it does not travel on Kafka messages.
 
 ## Event backbone
 

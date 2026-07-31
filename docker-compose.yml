@@ -126,6 +126,9 @@ services:
       # rotating does not log everyone out. Empty except while rotating; see
       # scripts/rotate-jwt-key.sh and docs/runbook.md.
       JWT_PREVIOUS_PUBLIC_KEYS: ${JWT_PREVIOUS_PUBLIC_KEYS:-}
+      # Native Spring Boot 4 structured logging: ECS JSON on stdout, carrying service.name and
+      # the correlationId MDC key. Unset (local/CI) => plain text, unchanged.
+      LOGGING_STRUCTURED_FORMAT_CONSOLE: ecs
     ports:
       - "8081:8081"
     restart: unless-stopped
@@ -159,6 +162,9 @@ services:
       JWT_JWKS_URI: http://auth-service:8081/.well-known/jwks.json
       # gRPC server hosting the internal UserProfileService (called by dashboard-service).
       GRPC_SERVER_PORT: "9092"
+      # Native Spring Boot 4 structured logging: ECS JSON on stdout, carrying service.name and
+      # the correlationId MDC key. Unset (local/CI) => plain text, unchanged.
+      LOGGING_STRUCTURED_FORMAT_CONSOLE: ecs
     ports:
       - "8082:8082"
     # gRPC port reachable only over the Docker network by service name — deliberately NOT
@@ -237,6 +243,9 @@ services:
       # Async event backbone: consumes TransactionCreated to materialize budget
       # utilization (spent_amount). See docs/ADR-0004.
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      # Native Spring Boot 4 structured logging: ECS JSON on stdout, carrying service.name and
+      # the correlationId MDC key. Unset (local/CI) => plain text, unchanged.
+      LOGGING_STRUCTURED_FORMAT_CONSOLE: ecs
     ports:
       - "8084:8084"
     restart: unless-stopped
@@ -277,6 +286,9 @@ services:
       DB_USERNAME: risk_user
       DB_PASSWORD: ${RISK_DB_PASSWORD:?set RISK_DB_PASSWORD in .env}
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      # Native Spring Boot 4 structured logging: ECS JSON on stdout, carrying service.name and
+      # the correlationId MDC key. Unset (local/CI) => plain text, unchanged.
+      LOGGING_STRUCTURED_FORMAT_CONSOLE: ecs
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8086/actuator/health/readiness"]
@@ -320,6 +332,9 @@ services:
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_BASE_URL: ${LLM_BASE_URL:-https://api.groq.com/openai/v1}
       LLM_MODEL: ${LLM_MODEL:-llama-3.1-8b-instant}
+      # Native Spring Boot 4 structured logging: ECS JSON on stdout, carrying service.name and
+      # the correlationId MDC key. Unset (local/CI) => plain text, unchanged.
+      LOGGING_STRUCTURED_FORMAT_CONSOLE: ecs
     ports:
       - "8087:8087"
     restart: unless-stopped
@@ -367,6 +382,9 @@ services:
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_BASE_URL: ${LLM_BASE_URL:-https://api.groq.com/openai/v1}
       LLM_MODEL: ${LLM_MODEL:-llama-3.1-8b-instant}
+      # Native Spring Boot 4 structured logging: ECS JSON on stdout, carrying service.name and
+      # the correlationId MDC key. Unset (local/CI) => plain text, unchanged.
+      LOGGING_STRUCTURED_FORMAT_CONSOLE: ecs
     ports:
       - "8088:8088"
     restart: unless-stopped
