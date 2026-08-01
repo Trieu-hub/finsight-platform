@@ -531,7 +531,11 @@ Then report the branch and commit hash and stop; the user reviews and pushes.
 - On Windows, `bash` resolves to a broken WSL install. Use the **Git Bash** tool for `.sh`
   scripts and PowerShell for everything else.
 - Production: Hetzner CX33, reachable as `ssh vernfy`, repo at `/root/finsight-platform`,
-  Cloudflare DNS with proxy off, Caddy terminating TLS.
+  Cloudflare DNS with the **proxy ON** (`vernfy.com` and `www.` resolve to Cloudflare anycast
+  IPs, not the box). Cloudflare terminates browser TLS with Universal SSL (`vernfy.com` +
+  `*.vernfy.com`); Caddy serves a **Cloudflare Origin certificate** that only Cloudflare trusts,
+  so the proxy must stay ON and SSL/TLS mode on **Full (strict)** — turning the proxy off would
+  hand browsers an untrusted cert. `www.` 308-redirects to the apex (see `docker/caddy/Caddyfile`).
 
 ---
 

@@ -162,6 +162,36 @@ Verify it resolves before requesting a certificate:
 dig +short finsight.example.com     # should print your VPS IP
 ```
 
+### 1.1 The `www.` name
+
+Add a **second record for `www.`** (an A record to the same IP, or a CNAME to the apex). The
+Caddyfile has a `www.{$FINSIGHT_DOMAIN}` block that 308-redirects to the apex, so `www.` is a
+redirect rather than a second copy of the site — one canonical origin, so a JWT in `localStorage`
+can't be present on one hostname and missing on the other.
+
+Two things must line up or `www.` breaks in ways the apex does not:
+
+- **The edge cert must cover it.** Behind Cloudflare's proxy, Universal SSL issues for
+  `example.com` **and** `*.example.com`, so `www.` is covered automatically. On a direct
+  (un-proxied) deploy Caddy fetches the cert itself, and it can only do that once the `www.`
+  record resolves.
+- **The origin cert must cover it too.** With Cloudflare SSL/TLS mode **Full (strict)**, the
+  Cloudflare→Caddy leg is validated as well. A Cloudflare Origin CA cert is issued for
+  `example.com, *.example.com` by default — if yours lists only the apex, Cloudflare answers
+  **error 526** on `www.` while the apex keeps working. Check the SAN list:
+
+```bash
+openssl x509 -in docker/caddy/certs/origin.pem -noout -text | grep -A1 'Subject Alternative Name'
+```
+
+Verify both names end up on the same page once deployed (`-A` because Cloudflare Bot Fight Mode
+403s curl's default User-Agent):
+
+```bash
+curl -sI -A 'Mozilla/5.0' https://www.example.com/   # 308 → https://example.com/
+curl -s  -A 'Mozilla/5.0' https://example.com/ | head -c 200
+```
+
 ## 2. Firewall
 
 Open **only** SSH and HTTP/HTTPS. Everything else stays on the Docker network.
