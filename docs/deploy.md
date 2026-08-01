@@ -162,6 +162,36 @@ Verify it resolves before requesting a certificate:
 dig +short finsight.example.com     # should print your VPS IP
 ```
 
+### 1.1 The `www.` name
+
+Add a **second record for `www.`** (an A record to the same IP, or a CNAME to the apex). The
+Caddyfile has a `www.{$FINSIGHT_DOMAIN}` block that 308-redirects to the apex, so `www.` is a
+redirect rather than a second copy of the site — one canonical origin, so a JWT in `localStorage`
+can't be present on one hostname and missing on the other.
+
+Two things must line up or `www.` breaks in ways the apex does not:
+
+- **The edge cert must cover it.** Behind Cloudflare's proxy, Universal SSL issues for
+  `example.com` **and** `*.example.com`, so `www.` is covered automatically. On a direct
+  (un-proxied) deploy Caddy fetches the cert itself, and it can only do that once the `www.`
+  record resolves.
+- **The origin cert must cover it too.** With Cloudflare SSL/TLS mode **Full (strict)**, the
+  Cloudflare→Caddy leg is validated as well. A Cloudflare Origin CA cert is issued for
+  `example.com, *.example.com` by default — if yours lists only the apex, Cloudflare answers
+  **error 526** on `www.` while the apex keeps working. Check the SAN list:
+
+```bash
+openssl x509 -in docker/caddy/certs/origin.pem -noout -text | grep -A1 'Subject Alternative Name'
+```
+
+Verify both names end up on the same page once deployed (`-A` because Cloudflare Bot Fight Mode
+403s curl's default User-Agent):
+
+```bash
+curl -sI -A 'Mozilla/5.0' https://www.example.com/   # 308 → https://example.com/
+curl -s  -A 'Mozilla/5.0' https://example.com/ | head -c 200
+```
+
 ## 2. Firewall
 
 Open **only** SSH and HTTP/HTTPS. Everything else stays on the Docker network.
@@ -426,10 +456,28 @@ scp <user>@<host>:'/root/backups/*.sql.gz' /path/to/local/backups/
 ### 7.4 Edge rate limiting
 
 Auth endpoints are rate-limited at Caddy (custom build with the `caddy-ratelimit` plugin — see
-`docker/caddy/Dockerfile`): `/api/v1/auth/register` + `/login` capped at 10 req/min/IP (keyed on
-`CF-Connecting-IP`) → HTTP 429. Cloudflare **Bot Fight Mode** + a rate-limiting rule add a second
-edge layer. **Never run load tests against production** — a load test once created ~84k junk
-accounts here.
+`docker/caddy/Dockerfile`): `/api/v1/auth/register`, `/login` **and `/refresh`** (all three are in
+the `@auth` matcher) capped at 10 req/min/IP, keyed on `CF-Connecting-IP` → HTTP 429 with a
+`Retry-After` header. Cloudflare **Bot Fight Mode** + a rate-limiting rule add a second edge layer.
+**Never run load tests against production** — a load test once created ~84k junk accounts here.
+
+To confirm the limiter is alive, probe **`/refresh`**, never `/register`: a bogus refresh token is
+rejected without creating a row, whereas `/register` is exactly what produced those 84k accounts.
+`/login` is also a poor probe — it feeds the per-email brute-force lockout in Redis.
+
+```bash
+for i in $(seq 1 15); do
+  curl -s -o /dev/null -A 'Mozilla/5.0' -w '%{http_code} retry-after=%header{retry-after}\n' \
+    -X POST https://vernfy.com/api/v1/auth/refresh \
+    -H 'Content-Type: application/json' -d '{"refreshToken":"probe"}'
+done
+```
+
+Expect ten `401`s (the token reaches auth-service and is refused), then `429 retry-after=<n>` with
+`n` counting down as the 1-minute sliding window drains. Caddy answers the 429 with an **empty
+body and no Content-Type** — a large HTML page instead means Cloudflare's own layer blocked you,
+not this rule. A control burst against `/api/v1/auth/logout` (reaches the origin, outside the
+matcher) must stay 429-free.
 
 ## 8. Updating
 

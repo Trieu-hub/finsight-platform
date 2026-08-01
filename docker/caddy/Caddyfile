@@ -46,3 +46,23 @@
 		reverse_proxy web:80
 	}
 }
+
+# `www.` is a redirect, not a second copy of the site. Without this block Caddy matches no site
+# for a `Host: www.vernfy.com` request and answers an empty 200, so typing the www form used to
+# land on a blank page (DNS and Cloudflare's edge cert were never the problem — the www record
+# already resolves and Universal SSL covers *.vernfy.com).
+#
+# One canonical origin is deliberate: the SPA and the API share an origin, so serving both names
+# would split JWTs and localStorage across two of them and let a user be "logged in" on one and
+# not the other.
+#
+# 308 rather than 301 because /api/* lives on this same origin — a 301 lets a client downgrade a
+# POST to GET, which would silently turn a login into a no-op. 308 preserves method and body.
+#
+# Same Cloudflare Origin cert as above: it must list `*.vernfy.com` (or www explicitly) in its
+# SAN, otherwise Cloudflare's Full (strict) mode rejects this leg with error 526 — see deploy.md.
+www.{$FINSIGHT_DOMAIN} {
+	tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin.key
+
+	redir https://{$FINSIGHT_DOMAIN}{uri} 308
+}

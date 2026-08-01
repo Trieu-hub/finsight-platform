@@ -280,6 +280,7 @@ docker compose exec kafka /opt/kafka/bin/kafka-consumer-groups.sh \
 | Consumer group lag climbing | a consumer is failing to process | check the service logs; budget-service retries twice then increments `finsight_budget_events_failed_total` and skips (no DLT) |
 | Prometheus target DOWN | service not healthy, or scrape endpoint blocked | confirm `/actuator/prometheus` returns 200 for that service |
 | Port already in use on `up` | a host port (8080–8085, 9090, 3000) is taken | stop the conflicting process or remap the `ports:` entry |
+| Edited a bind-mounted config (`Caddyfile`, `prometheus.yml`, …) and the container still serves the old one — a reload even reports success | the file was replaced with `mv`, `sed -i`, `scp`, or an editor that writes-then-renames. A **single-file** bind mount follows the **inode**, not the path, so a new inode leaves the container on the old file | compare `stat -c %i <host path>` with `docker exec <c> stat -c %i <container path>`. Rewrite in place to keep the inode — `tr -d '\r' < f > /tmp/f && cat /tmp/f > f` — or force a fresh mount with `up -d --force-recreate <svc>` (plain `up -d` won't: the service definition hasn't changed) |
 
 ---
 

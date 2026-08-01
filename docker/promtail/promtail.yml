@@ -2,11 +2,11 @@
 #
 # Discovery is via the Docker Engine API (the socket is mounted read-only in compose), so no
 # per-container wiring is needed: every finsight-* container is picked up automatically, including
-# ones that come and go. Three services already emit ECS-formatted JSON to stdout
-# (LOGGING_STRUCTURED_FORMAT_CONSOLE=ecs in docker-compose.yml); for those we parse out level /
-# service / correlationId into Loki labels. Plain-text containers (mysql, kafka, caddy, the
-# services without ECS yet) still ship — they just carry the container/compose_service labels
-# without the parsed fields, so nothing is lost while the ECS rollout finishes (runbook §4F).
+# ones that come and go. All nine Spring services emit ECS-formatted JSON to stdout
+# (LOGGING_STRUCTURED_FORMAT_CONSOLE=ecs in docker-compose.yml); for those we promote level and
+# service to Loki labels and keep correlationId as a parsed field (see the pipeline note below).
+# Plain-text infrastructure containers (mysql, kafka, redis, caddy) still ship — they just carry
+# the container/compose_service labels without the parsed fields, so nothing is lost (runbook §5.1).
 server:
   http_listen_port: 9080
   grpc_listen_port: 0
@@ -41,6 +41,9 @@ scrape_configs:
             level: 'log.level'
             service: 'service.name'
             correlationId: correlationId
+      # Only the low-cardinality fields become labels. correlationId is deliberately NOT one:
+      # it is unique per request, and a label per request would explode Loki's index into one
+      # stream per request. Query it as a parsed field instead — `{...} | json | correlationId = "…"`.
       - labels:
           level:
           service:
