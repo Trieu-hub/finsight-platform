@@ -456,10 +456,28 @@ scp <user>@<host>:'/root/backups/*.sql.gz' /path/to/local/backups/
 ### 7.4 Edge rate limiting
 
 Auth endpoints are rate-limited at Caddy (custom build with the `caddy-ratelimit` plugin — see
-`docker/caddy/Dockerfile`): `/api/v1/auth/register` + `/login` capped at 10 req/min/IP (keyed on
-`CF-Connecting-IP`) → HTTP 429. Cloudflare **Bot Fight Mode** + a rate-limiting rule add a second
-edge layer. **Never run load tests against production** — a load test once created ~84k junk
-accounts here.
+`docker/caddy/Dockerfile`): `/api/v1/auth/register`, `/login` **and `/refresh`** (all three are in
+the `@auth` matcher) capped at 10 req/min/IP, keyed on `CF-Connecting-IP` → HTTP 429 with a
+`Retry-After` header. Cloudflare **Bot Fight Mode** + a rate-limiting rule add a second edge layer.
+**Never run load tests against production** — a load test once created ~84k junk accounts here.
+
+To confirm the limiter is alive, probe **`/refresh`**, never `/register`: a bogus refresh token is
+rejected without creating a row, whereas `/register` is exactly what produced those 84k accounts.
+`/login` is also a poor probe — it feeds the per-email brute-force lockout in Redis.
+
+```bash
+for i in $(seq 1 15); do
+  curl -s -o /dev/null -A 'Mozilla/5.0' -w '%{http_code} retry-after=%header{retry-after}\n' \
+    -X POST https://vernfy.com/api/v1/auth/refresh \
+    -H 'Content-Type: application/json' -d '{"refreshToken":"probe"}'
+done
+```
+
+Expect ten `401`s (the token reaches auth-service and is refused), then `429 retry-after=<n>` with
+`n` counting down as the 1-minute sliding window drains. Caddy answers the 429 with an **empty
+body and no Content-Type** — a large HTML page instead means Cloudflare's own layer blocked you,
+not this rule. A control burst against `/api/v1/auth/logout` (reaches the origin, outside the
+matcher) must stay 429-free.
 
 ## 8. Updating
 
