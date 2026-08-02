@@ -18,13 +18,15 @@ const fieldBase =
   'rounded-lg border border-neutral-700 bg-neutral-950/60 px-3 py-2 text-neutral-100 placeholder-neutral-500 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30'
 const inputClass = `w-full ${fieldBase}`
 
-// Field label above each input (no helper text).
+// Field label above each input (no helper text). The <label> wraps the control so the two are
+// associated without an id, as in Login's Field — a bare <label> next to the input named nothing,
+// which left every control here unlabelled for screen readers.
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="space-y-1.5">
-      <label className="block text-sm font-medium text-neutral-300">{label}</label>
+    <label className="block space-y-1.5">
+      <span className="block text-sm font-medium text-neutral-300">{label}</span>
       {children}
-    </div>
+    </label>
   )
 }
 

@@ -21,10 +21,8 @@ const CATEGORIES: Category[] = [
   { id: 15, name: 'Transfer', type: 'TRANSFER' },
 ]
 
-/** Order in the form: type, currency, category, wallet — the labels are not wired to the controls. */
-const selects = () => Array.from(document.querySelectorAll<HTMLSelectElement>('form select'))
-const typeSelect = () => selects()[0]
-const categorySelect = () => selects()[2]
+const typeSelect = () => screen.getByLabelText<HTMLSelectElement>('Type')
+const categorySelect = () => screen.getByLabelText<HTMLSelectElement>('Category')
 
 const renderPage = () =>
   render(
@@ -75,7 +73,7 @@ describe('Transactions', () => {
 
     await waitFor(() => expect(categorySelect().value).toBe('1'))
 
-    fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '1250000' } })
+    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '1250000' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add transaction' }))
 
     await waitFor(() => expect(createTransaction).toHaveBeenCalled())

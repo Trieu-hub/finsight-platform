@@ -97,6 +97,8 @@ export default function Admin() {
                     </td>
                     <td className="px-4 py-2.5">
                       <select
+                        // One of these per row, so the name has to carry the row's user.
+                        aria-label={`Role for ${u.username}`}
                         value={u.role}
                         disabled={isSelf || busy}
                         onChange={(e) => run(u.id, () => updateUserRole(u.id, e.target.value))}
