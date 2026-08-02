@@ -1,5 +1,6 @@
 package com.pm.notificationservice.service.impl;
 
+import com.pm.notificationservice.delivery.DeliveryChannel;
 import com.pm.notificationservice.entity.Notification;
 import com.pm.notificationservice.entity.ProcessedEvent;
 import com.pm.notificationservice.event.RiskDetectedEvent;
@@ -10,6 +11,8 @@ import com.pm.notificationservice.repository.NotificationRepository;
 import com.pm.notificationservice.repository.ProcessedEventRepository;
 import com.pm.notificationservice.service.NotificationService;
 import com.pm.notificationservice.stream.NotificationStream;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -18,26 +21,32 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Service
 public class NotificationServiceImpl implements NotificationService {
 
+    private static final Logger log = LoggerFactory.getLogger(NotificationServiceImpl.class);
+
     private final NotificationRepository notificationRepository;
     private final ProcessedEventRepository processedEventRepository;
     private final AlertNarrator narrator;
     private final NotificationStream notificationStream;
+    private final List<DeliveryChannel> deliveryChannels;
     private final TransactionTemplate transactionTemplate;
 
     public NotificationServiceImpl(NotificationRepository notificationRepository,
                                    ProcessedEventRepository processedEventRepository,
                                    AlertNarrator narrator,
                                    NotificationStream notificationStream,
+                                   List<DeliveryChannel> deliveryChannels,
                                    PlatformTransactionManager transactionManager) {
         this.notificationRepository = notificationRepository;
         this.processedEventRepository = processedEventRepository;
         this.narrator = narrator;
         this.notificationStream = notificationStream;
+        this.deliveryChannels = deliveryChannels;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -90,6 +99,18 @@ public class NotificationServiceImpl implements NotificationService {
         // Best-effort — the row is already durable, so a failed push only costs the client its
         // fallback poll interval.
         notificationStream.publish(created);
+
+        // Same rule for the external channels, with one addition: a channel that threw must not
+        // propagate. Failing here would fail the Kafka listener, the event would be redelivered,
+        // and every user who *did* get their alert would get it again.
+        for (DeliveryChannel channel : deliveryChannels) {
+            try {
+                channel.deliver(created);
+            } catch (RuntimeException e) {
+                log.warn("Delivery channel {} failed for notification {}: {}",
+                        channel.getClass().getSimpleName(), created.getId(), e.toString());
+            }
+        }
         return true;
     }
 

@@ -479,6 +479,47 @@ body and no Content-Type** — a large HTML page instead means Cloudflare's own 
 not this rule. A control burst against `/api/v1/auth/logout` (reaches the origin, outside the
 matcher) must stay 429-free.
 
+## 7.5 Alert delivery: web push and email (both optional)
+
+Risk alerts always land in the app (bell + SSE). These two channels take them further, and each is
+**off until configured** — the SPA hides a switch it cannot honour, so a box with neither set up
+behaves exactly as before.
+
+**Web push.** No provider account and no DNS. Generate the VAPID keypair once, on the box:
+
+```bash
+./scripts/gen-vapid-keys.sh          # prints PUSH_VAPID_PUBLIC_KEY / PUSH_VAPID_PRIVATE_KEY
+sops set secrets.env '["PUSH_VAPID_PUBLIC_KEY"]' '"B..."'
+sops set secrets.env '["PUSH_VAPID_PRIVATE_KEY"]' '"..."'
+scripts/prod-compose.sh up -d notification-service
+```
+
+> ⚠️ **The pair does not rotate cleanly.** Every browser bakes the public key into its
+> subscription, so replacing the pair makes existing subscriptions fail with 403 until each user
+> re-subscribes. Generate once and keep it — treat it like the JWT signing key.
+
+Requires HTTPS (already true here) and a service worker at `/sw.js` (shipped in the web image).
+iOS Safari only delivers push once the site has been **added to the home screen**.
+
+**Email.** Any SMTP provider works — setting `MAIL_HOST` is what switches the channel on:
+
+```bash
+sops set secrets.env '["MAIL_HOST"]' '"smtp.resend.com"'
+sops set secrets.env '["MAIL_USERNAME"]' '"resend"'
+sops set secrets.env '["MAIL_PASSWORD"]' '"re_..."'
+sops set secrets.env '["MAIL_FROM"]' '"Vernfy <alerts@vernfy.com>"'
+```
+
+> ⚠️ **`vernfy.com` publishes no TXT records today** (`dig TXT vernfy.com` returns nothing), so
+> mail sent from it will be filtered as spam. Before turning this on, add the provider's **SPF**
+> and **DKIM** records in Cloudflare DNS — with the proxy **off** for those records; they are TXT,
+> not proxied. A `DMARC` record (`_dmarc.vernfy.com`) is the third one worth adding once SPF and
+> DKIM pass.
+
+The address alerts go to is the `email` claim of the user's own JWT, captured when they switch the
+channel on — nothing is emailed to a user who never opted in, and there is no admin path to set
+someone else's address.
+
 ## 8. Updating
 
 ```bash

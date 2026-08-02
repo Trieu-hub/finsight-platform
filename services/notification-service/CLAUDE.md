@@ -30,7 +30,11 @@ phrases the alert with an LLM over any **OpenAI-compatible** Chat Completions AP
 (free tier), swappable to OpenAI/OpenRouter/Ollama by config alone. It is `@Primary` when enabled
 and falls back to `TemplateNarrator` on any error, so the pipeline never depends on the API.
 
-Deliberately deferred: external delivery channels (email/push/webhook — only in-app for now).
+Alerts also leave the app through **delivery channels** (`delivery/DeliveryChannel`): **web push**
+to subscribed browsers and **email** over SMTP. Both are configuration-gated and inert by default,
+so a fresh checkout still behaves exactly as before — in-app bell + SSE only.
+
+Deliberately deferred: webhooks, and any digest/batching (one alert = one delivery).
 
 ## Commands
 
@@ -101,7 +105,32 @@ Layering is strict and one-directional: `controller → service → repository`.
 - Endpoints (all require a Bearer JWT, all user-scoped):
   `GET /api/v1/notifications`, `GET /api/v1/notifications/unread-count`,
   `PATCH /api/v1/notifications/{id}/read`, `PATCH /api/v1/notifications/read-all`,
-  `GET /api/v1/notifications/stream` (SSE).
+  `GET /api/v1/notifications/stream` (SSE),
+  `GET|PUT /api/v1/notifications/preferences`,
+  `GET /api/v1/push/public-key`, `POST|DELETE /api/v1/push/subscriptions`.
+  The gateway routes `/api/v1/push` here as well as `/api/v1/notifications`.
+
+### Delivery channels
+- `DeliveryChannel` implementations run in `NotificationServiceImpl.createFromEvent` **after the
+  commit**, next to the SSE publish, and each one **swallows its own failures**. A throw would fail
+  the Kafka listener, the event would be redelivered, and every user who already got their alert
+  would get it again.
+- **Web push** (`push/`): pushes carry **no payload** — the service worker fetches the notification
+  over the normal API instead. That keeps the alert text out of Google's and Mozilla's push
+  infrastructure and, because RFC 8291 content encryption is then unnecessary, keeps the crypto
+  down to an ES256 VAPID JWT that the jjwt already on the classpath can sign (no web-push library).
+  Off until `finsight.push.{public-key,private-key}` are set (`scripts/gen-vapid-keys.sh`).
+  A 404/410 from a push service means that browser is gone: the subscription row is deleted.
+  The private key is validated to be exactly 32 bytes — a truncated one still *signs*, and the only
+  symptom would be the push service answering 401.
+- **Email** (`email/`): there is no enabled flag. Spring only creates a `JavaMailSender` when
+  `spring.mail.host` is set, so the presence of SMTP configuration is the switch. The body is the
+  narrator's existing text, so wording never diverges between channels.
+- **The address comes from the JWT.** This service is Kafka-driven and `RiskDetected` carries only
+  a userId; it must not call auth-service for a mailbox. So `notification_preferences` stores the
+  `email` claim of the caller's own token, captured when they switch email alerts on. That keeps
+  the copy an explicit consequence of opting in, and `EmailPreferenceRequest` deliberately has no
+  address field — accepting one would let a caller redirect another account's alerts.
 
 ### Live push (SSE)
 - `NotificationStream` holds the open `SseEmitter`s in a per-user, **in-process** registry.

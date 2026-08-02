@@ -33,7 +33,7 @@ coupling is asynchronous over Kafka.
 | [`docs/ADR-0004-budget-utilization-via-events.md`](docs/ADR-0004-budget-utilization-via-events.md) | Why budget utilization is event-driven (and its accepted drift) |
 | [`services/api-gateway/docs/`](services/api-gateway/docs/) | ADR-0001/0002/0003/0005 — gateway contract, identity freeze, BFF token relay, RS256 |
 | [`docs/brand.md`](docs/brand.md) | Logo files, palette, and the reasoning behind the mark |
-| [`docs/unit-testing/unit-testing-1.txt`](docs/unit-testing/unit-testing-1.txt) | Full test-suite catalog — every test class (unit vs integration), count, and what it verifies (501 backend tests across 9 services, plus the 57 frontend Vitest tests and the 3 Playwright journeys) |
+| [`docs/unit-testing/unit-testing-1.txt`](docs/unit-testing/unit-testing-1.txt) | Full test-suite catalog — every test class (unit vs integration), count, and what it verifies (513 backend tests across 9 services, plus the 62 frontend Vitest tests and the 3 Playwright journeys) |
 
 ## Tech stack
 
@@ -91,7 +91,8 @@ coupling is asynchronous over Kafka.
 - **Asynchronous** (Kafka): transaction-service produces `TransactionCreated`; budget-service,
   risk-service **and analytics-service** consume it; budget-service produces `BudgetChanged`
   (consumed by risk-service); risk-service produces `RiskDetected`, consumed by
-  notification-service, which materializes per-user in-app notifications. analytics-service
+  notification-service, which materializes per-user in-app notifications and delivers them by
+  SSE, **web push** and **email** (both optional, off until configured). analytics-service
   folds `TransactionCreated` into a per-month rollup read model.
 
 Full diagrams (Mermaid) are in [`docs/architecture.md`](docs/architecture.md).
@@ -400,12 +401,9 @@ runtime is captured by the committed Grafana dashboard screenshots above.
 
 These are **absent from the codebase** — do not assume they exist:
 
-- **External notification delivery to end users** — notification-service creates **in-app**
-  notifications from `RiskDetected` and pushes them live over SSE; email/push/webhook delivery to
-  users is not built. (Two things that *are* built and often mistaken for absent: an optional
-  **LLM message narrator** — OpenAI-compatible, default Groq free tier, off by default with a
-  rule-based fallback; and **Telegram delivery for Prometheus alerts**, which is an operator
-  channel, not a user-facing one.)
+- **Webhook delivery, and digests** — an alert reaches the user in-app (bell + SSE), by **web
+  push** and by **email**, but there is no outbound webhook and no batching: one alert is one
+  delivery, however many arrive at once.
 - **ML-based intelligence** — current rules are deterministic and threshold-based.
 - **An orchestrated deployment target** (Kubernetes/ECS) **and a managed secrets store**
   (Vault/KMS). The live demo runs Docker Compose on a single VPS behind Caddy with TLS; secrets
