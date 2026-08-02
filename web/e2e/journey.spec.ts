@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { randomBytes } from 'node:crypto'
 
 /**
  * The critical journey, in a real browser against the real stack: sign up → record income → see it
@@ -12,7 +13,7 @@ import { expect, test, type Page } from '@playwright/test'
 
 /** Unique per run: auth rejects a duplicate username OR email, and CI re-runs against a live DB. */
 function newAccount() {
-  const stamp = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e6)}`
+  const stamp = `${Date.now().toString(36)}${randomBytes(6).toString('hex')}`
   return { username: `e2e${stamp}`, email: `e2e${stamp}@vernfy.test`, password: 'E2ePass123' }
 }
 
