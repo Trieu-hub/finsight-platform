@@ -46,22 +46,19 @@ test('a new user can sign up, record income and find it in their history', async
   const form = page.locator('section[data-tour="tx-form"] form')
   await expect(form).toBeVisible()
 
-  // The selects are filled by an async load. Changing the type before it lands resets the category
-  // to '' (there is nothing to pick from yet) and the browser then *displays* the first option while
-  // React still holds '' — the form looks filled in and posts categoryId 0. Wait for the options,
-  // then assert the category really is set, so a regression fails here and not on the list below.
-  // Order in the form: type, currency, category, wallet — the Field labels are not wired to their
-  // controls, so these can only be reached positionally.
-  const category = form.getByRole('combobox').nth(2)
+  // Reaching the controls by their label is also the check that they *have* one: the fields are
+  // built by a Field component whose <label> wraps the control, so a regression there fails here.
+  // The selects are filled by an async load, so wait for the options before touching the form.
+  const category = form.getByLabel('Category')
   await expect(category.locator('option').first()).toBeAttached()
 
   // INCOME on purpose: an expense must be charged to a budget the user has not created yet, so
   // income is the journey that stands alone. The category defaults to the first of the chosen type.
-  await form.getByRole('combobox').first().selectOption('INCOME')
+  await form.getByLabel('Type').selectOption('INCOME')
   await expect(category).not.toHaveValue('')
-  await form.getByPlaceholder('0').fill('1250000')
+  await form.getByLabel('Amount').fill('1250000')
   const description = `salary ${Date.now()}`
-  await form.getByPlaceholder('Optional').fill(description)
+  await form.getByLabel('Description').fill(description)
   await form.getByRole('button', { name: 'Add transaction' }).click()
 
   // The row is the proof the write reached transaction-service and came back through the gateway.

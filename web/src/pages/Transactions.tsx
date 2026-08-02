@@ -18,13 +18,15 @@ const fieldBase =
   'rounded-lg border border-neutral-700 bg-neutral-950/60 px-3 py-2 text-neutral-100 placeholder-neutral-500 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30'
 const inputClass = `w-full ${fieldBase}`
 
-// Field label above each input (no helper text).
+// Field label above each input (no helper text). The <label> wraps the control so the two are
+// associated without an id, as in Login's Field — a bare <label> next to the input named nothing,
+// which left every control here unlabelled for screen readers.
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="space-y-1.5">
-      <label className="block text-sm font-medium text-neutral-300">{label}</label>
+    <label className="block space-y-1.5">
+      <span className="block text-sm font-medium text-neutral-300">{label}</span>
       {children}
-    </div>
+    </label>
   )
 }
 
@@ -84,14 +86,25 @@ export default function Transactions() {
   const lockedCurrency = sourceWallet?.currency
   const effectiveCurrency = lockedCurrency ?? currency
 
+  // The category this transaction carries: the user's pick while it is valid for the chosen type,
+  // else the first category of that type. Derived like the budget below rather than stored, so it
+  // also covers the type changing *before* the categories arrive — the stored version was left
+  // empty then, and because an empty value matches no <option> the browser still displayed the
+  // first one: a form that looked filled in but posted categoryId 0.
+  const effectiveCategoryId = useMemo(() => {
+    if (categories.some((c) => String(c.id) === categoryId && c.type === type)) return categoryId
+    const firstOfType = categories.find((c) => c.type === type)
+    return firstOfType ? String(firstOfType.id) : ''
+  }, [categories, categoryId, type])
+
   // Budgets the user may charge this expense to (same category + currency, covering the date).
   const matchingBudgets = useMemo(() => {
-    if (type !== 'EXPENSE' || !categoryId) return []
-    const catId = Number(categoryId)
+    if (type !== 'EXPENSE' || !effectiveCategoryId) return []
+    const catId = Number(effectiveCategoryId)
     return budgets.filter((b) =>
       budgetEligible(b, { categoryId: catId, currency: effectiveCurrency, transactionDate: date }),
     )
-  }, [budgets, type, categoryId, effectiveCurrency, date])
+  }, [budgets, type, effectiveCategoryId, effectiveCurrency, date])
 
   // The budget this expense is charged to: the user's pick if still eligible, else the first
   // eligible one (so an expense always carries a budget when one exists). Derived, not stored,
@@ -131,10 +144,6 @@ export default function Transactions() {
       setCategories(cats)
       setWallets(ws)
       setBudgets(bs)
-      // Default to the first category that MATCHES the current type (avoids the
-      // contradictory "EXPENSE + Salary" default).
-      const firstOfType = cats.find((c) => c.type === type)
-      if (firstOfType && !categoryId) setCategoryId(String(firstOfType.id))
     } catch (err) {
       setError(errorMessage(err))
     } finally {
@@ -144,7 +153,6 @@ export default function Transactions() {
 
   useEffect(() => {
     load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Auto-dismiss the over-budget popup after a few seconds.
@@ -157,14 +165,9 @@ export default function Transactions() {
 
   function onTypeChange(next: TransactionType) {
     setType(next)
-    if (next === 'TRANSFER') {
-      setCategoryId(transferCat ? String(transferCat.id) : '')
-    } else {
-      // Reset the category to one valid for the new type (e.g. never EXPENSE + Salary).
-      const firstOfType = categories.find((c) => c.type === next)
-      setCategoryId(firstOfType ? String(firstOfType.id) : '')
-      setToWalletId('')
-    }
+    // The category follows from the type in the effect above; only the transfer-specific field
+    // is this handler's business.
+    if (next !== 'TRANSFER') setToWalletId('')
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -219,7 +222,7 @@ export default function Transactions() {
           type,
           amount: value,
           currency: effectiveCurrency,
-          categoryId: Number(categoryId),
+          categoryId: Number(effectiveCategoryId),
           description: description || undefined,
           transactionDate: date,
           walletId: sourceWallet ? sourceWallet.id : undefined,
@@ -359,7 +362,7 @@ export default function Transactions() {
             <>
               <Field label={t('tx.category')}>
                 <select
-                  value={categoryId}
+                  value={effectiveCategoryId}
                   onChange={(e) => setCategoryId(e.target.value)}
                   className={inputClass}
                 >

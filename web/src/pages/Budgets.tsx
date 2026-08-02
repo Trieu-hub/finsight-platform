@@ -44,12 +44,13 @@ const fieldBase =
 const inputClass = `w-full ${fieldBase}`
 
 // Field label above each input (no helper text).
+// The <label> wraps the control so the two are associated without an id, as in Login's Field.
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="space-y-1.5">
-      <label className="block text-sm font-medium text-neutral-300">{label}</label>
+    <label className="block space-y-1.5">
+      <span className="block text-sm font-medium text-neutral-300">{label}</span>
       {children}
-    </div>
+    </label>
   )
 }
 
