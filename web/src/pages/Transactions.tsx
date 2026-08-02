@@ -153,7 +153,6 @@ export default function Transactions() {
 
   useEffect(() => {
     load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Auto-dismiss the over-budget popup after a few seconds.
