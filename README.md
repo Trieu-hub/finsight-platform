@@ -273,6 +273,11 @@ cp .env.example .env
 ./scripts/gen-jwt-keys.sh          # prints an RS256 keypair; paste into JWT_PRIVATE_KEY / JWT_PUBLIC_KEY
 # Then fill in: MYSQL_ROOT_PASSWORD and the seven *_DB_PASSWORD values
 # (AUTH/USER/TRANSACTION/BUDGET/RISK/NOTIFICATION/ANALYTICS). Commands are in the file.
+
+# Optional — browser notifications for risk alerts. Skip it and the alert still reaches the
+# in-app bell; the UI simply hides the control. The pair does not rotate cleanly (every
+# browser pins the public key into its subscription), so generate it once and keep it.
+./scripts/gen-vapid-keys.sh >> .env
 ```
 
 **2. Start the stack:**
