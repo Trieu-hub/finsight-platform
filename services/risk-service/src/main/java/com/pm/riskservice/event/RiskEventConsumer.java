@@ -1,5 +1,6 @@
 package com.pm.riskservice.event;
 
+import com.pm.riskservice.logging.CorrelationIdFilter;
 import com.pm.riskservice.rule.RiskRule;
 import com.pm.riskservice.rule.RiskRuleEngine;
 import com.pm.riskservice.service.AnomalyService;
@@ -7,13 +8,17 @@ import com.pm.riskservice.service.InsightService;
 import com.pm.riskservice.service.RiskAlertService;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
+
+import java.nio.charset.StandardCharsets;
 
 /**
  * Consumes {@code TransactionCreated}, runs every risk rule via {@link RiskRuleEngine},
@@ -86,11 +91,29 @@ public class RiskEventConsumer {
                 event.userId(), event.transactionId(), rule.name(), rule.severity());
         // Persist first (durable record), then publish (best-effort notification).
         riskAlertService.record(risk);
-        kafkaTemplate.send(riskTopic, String.valueOf(event.userId()), risk);
+        kafkaTemplate.send(toRecord(String.valueOf(event.userId()), risk));
         // Tagged by type/severity so the Risk dashboard breaks detections down by each.
         meterRegistry.counter(DETECTED_COUNTER, "type", rule.name(), "severity", rule.severity())
                 .increment();
         log.info("Risk detected [{}/{}]: transactionId={}, userId={}, amount={}",
                 rule.name(), rule.severity(), event.transactionId(), event.userId(), event.amount());
+    }
+
+    /**
+     * The record to publish, keyed by {@code userId} as before, carrying the correlation id of the
+     * {@code TransactionCreated} that triggered this detection as a
+     * {@value CorrelationIdFilter#CORRELATION_ID_HEADER} header. The id is in the MDC because the
+     * record interceptor put it there for this consumed record, so it rides on to
+     * notification-service and the whole chain — HTTP write → transaction → risk → notification —
+     * stays one searchable trace.
+     */
+    ProducerRecord<String, RiskDetectedEvent> toRecord(String key, RiskDetectedEvent risk) {
+        ProducerRecord<String, RiskDetectedEvent> record = new ProducerRecord<>(riskTopic, key, risk);
+        String correlationId = MDC.get(CorrelationIdFilter.CORRELATION_ID_MDC_KEY);
+        if (correlationId != null) {
+            record.headers().add(CorrelationIdFilter.CORRELATION_ID_HEADER,
+                    correlationId.getBytes(StandardCharsets.UTF_8));
+        }
+        return record;
     }
 }

@@ -168,7 +168,15 @@ that reads `X-Correlation-ID`, or mints a UUID when the header is absent, puts i
 the request, echoes it on the response, and clears it on the way out. api-gateway establishes the
 id at the edge and forwards it to the service it proxies to; dashboard-service relays it on its
 BFF fan-out. So one browser request is one id from edge to database, greppable in Loki.
-The id does **not** currently cross the Kafka boundary — an async consumer logs under its own id.
+
+The id also crosses the **Kafka boundary**. Producers put it on an `X-Correlation-ID` record
+header: transaction-service's outbox stores it on the row (`outbox.correlation_id`, `V12`) because
+`OutboxRelay` publishes on the scheduler thread, long after the request's MDC is gone, while
+budget-service's and risk-service's direct producers read it from the MDC at send time. On the
+other side every consumer service registers a `logging/CorrelationIdRecordInterceptor`, which lifts
+the header into the MDC for the duration of one record and clears it afterwards (listener threads
+are pooled — a leaked id would mislabel the next record). A missing header yields a fresh id rather
+than an unlabelled line. Net effect: `HTTP write → transaction → risk → notification` is one id.
 
 ```mermaid
 graph LR
