@@ -9,13 +9,15 @@ dashboard, risk, notification, analytics) + frontend `web/` (mục 10).
 
 TỔNG QUAN CON SỐ
 --------------------------------------------------------------------------------
-- Tổng số test method (@Test / @ParameterizedTest):  470
-- Tổng số lớp test:                                  102 (+ vài lớp base/support)
+- Tổng số test method (@Test / @ParameterizedTest):  501
+- Tổng số lớp test:                                  108 (+ vài lớp base/support)
 - Trong đó:
-    * Unit / component test (chạy KHÔNG cần Docker):  ~289
+    * Unit / component test (chạy KHÔNG cần Docker):  ~320
     * Integration test (cần Docker – Testcontainers): ~181
-- Frontend (Vitest, ngoài con số 470 ở trên):          29 test / 3 file
-- Framework: JUnit 5 (Jupiter) + Mockito + AssertJ; frontend dùng Vitest.
+- Frontend (Vitest, ngoài con số 501 ở trên):          54 test / 7 file
+- Frontend E2E (Playwright, cần stack đang chạy):       3 test / 1 file (mục 11)
+- Framework: JUnit 5 (Jupiter) + Mockito + AssertJ; frontend dùng Vitest +
+  React Testing Library (jsdom) và Playwright cho E2E trình duyệt.
 - Integration test dùng Testcontainers (MySQL 8, Kafka KRaft, Redis) và WireMock
   (giả lập HTTP upstream), Awaitility (chờ bất đồng bộ).
 
@@ -258,11 +260,19 @@ Quy ước chung của test:
    - payoutArithmetic            (mọi payout không phải basket = (36−n)/n)
    - spinStaysOnTheWheel
 
-[UNIT] OutboxRelayTest — 4 test  (transactional outbox → Kafka đáng tin cậy)
+[UNIT] OutboxRelayTest — 7 test  (transactional outbox → Kafka đáng tin cậy)
    - publishesEveryRowThenDeletesThemInOneBatch
    - stopsAtFirstFailure_deletesOnlyRowsPublishedBefore_andNeverReordersAhead
    - disabled_doesNotTouchTheDatabaseOrBroker
    - emptyBatch_sendsNothingAndDeletesNothing
+   - replaysTheStoredCorrelationIdOntoTheRecordHeader
+   - addsNoHeaderWhenTheRowHasNoCorrelationId
+   - restoresTheCorrelationIdInTheMdcWhilePublishing_andClearsItAfterwards
+
+[UNIT] OutboxWriterTest — 3 test  (ghi outbox trong cùng transaction nghiệp vụ)
+   - serializesThePayloadAndCarriesTheRoutingFieldsThrough
+   - capturesTheRequestsCorrelationIdFromTheMdc
+   - storesNoCorrelationIdWhenTheEventIsProducedOutsideARequest
 
 [UNIT] JwtServiceTest — 5 test  (bộ chuẩn validTokenAccepted/wrongIssuer/...)
 [UNIT] CorrelationIdFilterTest — 4 test  (bộ chuẩn correlation id — xem GHI CHÚ CUỐI)
@@ -378,12 +388,18 @@ Quy ước chung của test:
    - publishesWhenKafkaEnabled
    - skipsPublishWhenKafkaDisabled
 
+[UNIT] KafkaBudgetEventPublisherTest — 3 test  (định tuyến + correlation id lên header)
+   - sendsToTheConfiguredTopicKeyedByUserId
+   - carriesTheCurrentCorrelationIdAsARecordHeader
+   - addsNoHeaderWhenThereIsNoCorrelationIdInScope
+
 [UNIT] KafkaConsumerConfigTest — 2 test  (metric thất bại consumer)
    - counterRegisteredAtZeroBeforeAnyFailure
    - eachRecoveredRecordIncrementsFailedOnce
 
 [UNIT] JwtServiceTest — 5 test  (bộ chuẩn)
 [UNIT] CorrelationIdFilterTest — 4 test  (bộ chuẩn correlation id — xem GHI CHÚ CUỐI)
+[UNIT] CorrelationIdRecordInterceptorTest — 5 test  (correlation id qua Kafka — xem GHI CHÚ CUỐI)
 
 [INTEGRATION] BudgetApiCrudIntegrationTest — 10 test  (MySQL)
    - createReturnsCreatedBudget / getByIdReturnsBudget / updateAppliesPartialChanges
@@ -547,9 +563,12 @@ Quy ước chung của test:
    - doesNotFireBelowThreeTimesAverage
    - ignoresNonExpenseEvents
 
-[UNIT] RiskEventConsumerTest — 4 test / BudgetEventConsumerTest — 3 test
+[UNIT] RiskEventConsumerTest — 6 test / BudgetEventConsumerTest — 3 test
+   (2 test mới: carriesTheConsumedCorrelationIdOntoTheRiskEvent,
+    addsNoCorrelationHeaderWhenTheMdcHasNoId)
 [UNIT] KafkaConsumerConfigTest — 2 test  (metric thất bại consumer)
 [UNIT] CorrelationIdFilterTest — 4 test  (bộ chuẩn correlation id — xem GHI CHÚ CUỐI)
+[UNIT] CorrelationIdRecordInterceptorTest — 5 test  (correlation id qua Kafka — xem GHI CHÚ CUỐI)
 
 [INTEGRATION] RiskDetectionIntegrationTest — 4 test  (Kafka + MySQL)
    - highAmountExpensePublishesRiskDetected
@@ -607,6 +626,7 @@ Quy ước chung của test:
 
 [UNIT] KafkaConsumerConfigTest — 2 test / JwtServiceTest — 5 test
 [UNIT] CorrelationIdFilterTest — 4 test  (bộ chuẩn correlation id — xem GHI CHÚ CUỐI)
+[UNIT] CorrelationIdRecordInterceptorTest — 5 test  (correlation id qua Kafka — xem GHI CHÚ CUỐI)
 
 [INTEGRATION] NotificationApiCrudIntegrationTest — 4 test  (MySQL)
    - listsNotificationsNewestFirstAndReportsUnreadCount
@@ -650,14 +670,17 @@ Quy ước chung của test:
    - reportsNoActivityWhenEmpty
 
 [UNIT] CorrelationIdFilterTest — 4 test  (bộ chuẩn correlation id — xem GHI CHÚ CUỐI)
+[UNIT] CorrelationIdRecordInterceptorTest — 5 test  (correlation id qua Kafka — xem GHI CHÚ CUỐI)
 
 
 ================================================================================
-10) FRONTEND `web/` (React + Vite) — VITEST, TOÀN UNIT TEST
+10) FRONTEND `web/` (React + Vite) — VITEST: LOGIC THUẦN + COMPONENT/HOOK
 ================================================================================
 Chạy bằng `npm test --prefix web` (= `vitest run`), không cần Docker, không cần
-backend. Nằm trong CI ở `.github/workflows/frontend.yml`. Phạm vi cố ý giới hạn ở
-logic thuần — chưa có component/hook/E2E test.
+backend. Nằm trong CI ở `.github/workflows/frontend.yml`. Môi trường `jsdom`
+(một project duy nhất cho cả hai loại), setup ở `src/test/setup.ts` (jest-dom
+matchers + cleanup sau mỗi test vì Vitest chạy không có globals).
+Test trình duyệt thật nằm ở mục 11.
 
 [UNIT] src/lib/format.test.ts — 11 test  (định dạng tiền và input tiền)
    - money: formats a USD amount with symbol, thousands and 2 decimals
@@ -698,17 +721,77 @@ logic thuần — chưa có component/hook/E2E test.
 Bất biến `(36 - n)/n` ở đây soi gương `RouletteTest` phía transaction-service:
 cùng một luật chi trả, kiểm ở cả hai đầu.
 
+[COMPONENT] src/auth/AuthContext.test.tsx — 7 test  (claim → quyền, và lưu token)
+   - starts signed out when no token is stored
+   - reads the role and email out of a token already in storage
+   - lets admins into LuckyMe as well as gamers, and nobody else
+   - signIn persists both tokens and re-derives the claims
+   - signOut clears both tokens from storage
+   - refuses to be used outside the provider
+   - treats a malformed token as signed in but role-less rather than crashing
+
+[COMPONENT] src/components/routeGuards.test.tsx — 7 test  (3 guard, chạy qua
+AuthProvider thật chứ không stub context — chỗ dễ vỡ chính là ánh xạ claim → quyền)
+   - ProtectedRoute: sends a signed-out visitor to the login page
+   - ProtectedRoute: lets any signed-in user through
+   - AdminRoute: sends a non-admin home rather than to login
+   - AdminRoute: lets an admin through
+   - LuckyMeRoute: lets a gamer through / lets an admin through too
+   - LuckyMeRoute: sends an ordinary user home
+
+[COMPONENT] src/theme/index.test.tsx — 6 test  (chọn theme + phản chiếu lên <html>)
+   - follows the OS when nothing has been chosen
+   - prefers the saved choice over the OS setting
+   - falls back to dark when storage or matchMedia is unavailable
+   - toggling flips the theme and persists it
+   - mirrors the theme onto <html> so the dark: variant and CSS variables follow
+   - refuses to be used outside the provider
+
+[COMPONENT] src/pages/Login.test.tsx — 5 test  (form ↔ auth ↔ router; chỉ mock
+lời gọi mạng, phần còn lại là thật)
+   - renders the sign-in form
+   - submits the typed credentials, stores the tokens and lands on the dashboard
+   - shows the API error message and stays on the page when sign-in is rejected
+   - treats a 200 without a token as a failed sign-in
+     (soi gương: /register của auth-service trả 200 mà KHÔNG có token)
+   - disables the submit button while the request is in flight
+
+
+================================================================================
+11) FRONTEND E2E `web/e2e/` — PLAYWRIGHT (CẦN STACK ĐANG CHẠY)
+================================================================================
+Chạy bằng `npm run test:e2e --prefix web`. KHÔNG tự dựng backend: cần
+`docker compose up -d` (hoặc stack ephemeral trong `.github/workflows/staging.yml`)
+để `/api` có gateway trả lời. Frontend do `vite preview` phục vụ — tức là **bản
+build production**, proxy `/api` → gateway giống hệt vai trò của Caddy trên prod.
+Mỗi lần chạy tự đăng ký tài khoản riêng nên không phụ thuộc dữ liệu seed.
+
+[E2E] e2e/journey.spec.ts — 3 test  (chromium)
+   - a new user can sign up, record income and find it in their history
+     (đăng ký → bỏ qua tour → /transactions → tạo INCOME → thấy dòng trong lịch sử
+      → dashboard qua BFF cũng thấy)
+   - a signed-out visitor is sent to the login page
+   - wrong credentials are rejected with the API error, not a blank page
+
+k6 (`load-test/`) đã phủ đúng những journey này ở tầng API; phần Playwright thêm
+vào là nửa mà k6 không thấy: UI có render và nối dây đúng hay không.
+
 
 ================================================================================
 GHI CHÚ CUỐI
 ================================================================================
-- Một số lớp base/support không phải test (không tính vào 434): AbstractMySql/
+- Một số lớp base/support không phải test (không tính vào 501): AbstractMySql/
   MockMvc/IntegrationTest, JwtTestTokens, TestUpstreamCalls...
 - Bộ "CorrelationIdFilterTest" (4 test) lặp lại giống nhau ở **cả 9 service**: giữ nguyên
   X-Correlation-ID đến từ upstream, sinh UUID khi thiếu/rỗng, echo lên response, và xoá
   MDC khi request kết thúc (id rò rỉ sẽ dán nhầm sang request kế tiếp trên cùng thread của
   pool). Mỗi service có bản sao filter của riêng nó vì monorepo không có module dùng chung —
   cùng lý do với JwtServiceTest bên dưới.
+- Bộ "CorrelationIdRecordInterceptorTest" (5 test) lặp lại ở **4 service consumer**
+  (budget, risk, notification, analytics): lấy id từ header X-Correlation-ID của record vào
+  MDC, sinh id mới khi header thiếu/rỗng/toàn khoảng trắng, trả record nguyên vẹn, và xoá MDC
+  ở afterRecord (thread listener dùng chung — id rò rỉ sẽ dán nhầm sang record kế tiếp).
+  Đây là nửa còn lại của CorrelationIdFilter: filter lo hop HTTP, interceptor lo hop Kafka.
 - Bộ "JwtServiceTest" (5 test) lặp lại giống nhau ở 5 service (auth, user,
   transaction, budget, dashboard, notification) vì mỗi service tự xác thực token
   cục bộ bằng public key — đây là chủ đích thiết kế (gateway có thể gỡ bỏ, service

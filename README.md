@@ -197,9 +197,12 @@ probes at `/actuator/health/{liveness,readiness}`.
   dependency). Each carries `service.name` and a **`correlationId`**: a `CorrelationIdFilter`
   reuses an inbound `X-Correlation-ID` or mints one, api-gateway sets it at the edge and forwards
   it downstream, and dashboard-service relays it across its BFF fan-out — so one request is one id
-  across every service it touches, and the id comes back on the response header. Under the
-  `monitoring` profile **Loki + Promtail** make that searchable in Grafana (see
-  [`docs/runbook.md`](docs/runbook.md) §5.1). The id does not cross the Kafka boundary yet.
+  across every service it touches, and the id comes back on the response header. It crosses the
+  **Kafka boundary** too: producers attach it as an `X-Correlation-ID` record header (the outbox
+  stores it per row, because the relay publishes off the request thread) and consumers lift it back
+  into the MDC, so budget/risk/analytics/notification lines join the trace of the write that caused
+  them. Under the `monitoring` profile **Loki + Promtail** make that searchable in Grafana (see
+  [`docs/runbook.md`](docs/runbook.md) §5.1).
 - **Alertmanager** — <http://localhost:9093> — receives firing alerts from Prometheus. Rules in
   `docker/prometheus/alerts.yml`: service down, 5xx rate, JVM heap, Kafka consumer lag, dashboard
   circuit-breaker open. Locally no delivery channel is configured (a Slack/email/webhook stub is in
@@ -332,11 +335,12 @@ newly-disclosed CVE turns the build red even when no code changed:
 
 **Ephemeral staging** (`.github/workflows/staging.yml`) — the single 8 GB prod VPS has no room for
 a parallel stack, so "staging" is *ephemeral*: on PRs that touch `services/`, `docker-compose.yml`,
-or `load-test/` (and nightly), it stands up the **whole compose stack** on a throwaway runner,
-waits for the gateway to report healthy, runs the k6 **smoke** then **load** test
-([`load-test/`](load-test/)), and tears it down. A failed smoke or a missed latency/error SLO fails
-the job — the first time a PR is exercised **whole-stack** (gateway → services → Kafka), not just
-per-service in isolation.
+`web/` or `load-test/` (and nightly), it stands up the **whole compose stack** on a throwaway
+runner, waits for the gateway to report healthy, runs the k6 **smoke** then **load** test
+([`load-test/`](load-test/)), then drives the UI in a real browser with **Playwright**
+([`web/e2e/`](web/e2e/)) against the production bundle, and tears it all down. A failed smoke, a
+missed latency/error SLO or a broken journey fails the job — the first time a PR is exercised
+**whole-stack** (browser → gateway → services → Kafka), not just per-service in isolation.
 
 **Gated production deploy** (`.github/workflows/deploy-prod.yml`) — a **manual**,
 environment-gated deploy (no auto-deploy on merge). You dispatch it and pick the ref; if the
@@ -368,9 +372,12 @@ touches `web/`, the React/Vite SPA is installed (`npm ci`), linted (ESLint), uni
 (**Vitest** — `npm test`), then type-checked and bundled (`tsc -b && vite build`). This closes the
 previous gap where frontend changes reached production checked only by hand. The Vitest suite covers
 the pure logic — money/number formatting, client-side JWT decode, and the roulette payout maths
-(the `(36 − n)/n` invariant, mirroring the backend `RouletteTest`). (New React-Compiler-era lint
-rules that fire on existing code are set to `warn` in `web/eslint.config.js`, so the job fails on
-genuine errors, not on those advisories.)
+(the `(36 − n)/n` invariant, mirroring the backend `RouletteTest`) — **plus component and hook
+render tests** (jsdom + React Testing Library): the auth context's claim-to-permission mapping, the
+three route guards, the theme provider, and the sign-in form's success/failure wiring. Browser
+journeys are one level up, in the Playwright suite the staging workflow runs. (New
+React-Compiler-era lint rules that fire on existing code are set to `warn` in
+`web/eslint.config.js`, so the job fails on genuine errors, not on those advisories.)
 
 ## End-to-end validation
 
@@ -404,19 +411,5 @@ These are **absent from the codebase** — do not assume they exist:
   (Vault/KMS). The live demo runs Docker Compose on a single VPS behind Caddy with TLS; secrets
   are **SOPS/age-encrypted at rest** and injected into the process environment at launch, which
   is a real improvement over a plaintext `.env` but still not a managed secrets manager.
-- **SAST** (CodeQL/Semgrep/SpotBugs) — secret and dependency scanning *are* wired
-  (see [Continuous Integration](#continuous-integration)); static analysis of the code is not.
-- **Frontend CI** — `web/` is not built, linted, or type-checked by any workflow, and has no
-  automated tests.
-- **Log aggregation** — metrics (Prometheus) and traces (Tempo) are wired; there is no Loki/ELK,
-  so log inspection is per-container.
-- **Load/performance testing** — no k6/Gatling/JMeter suite and no published baseline.
-- **Whole-stack E2E in CI** — the matrix builds and tests each service in isolation; nothing
-  exercises browser → gateway → Kafka → risk end to end on every PR.
-- **Frontend component / E2E tests** — the frontend now has unit tests (Vitest, wired into CI) for
-  pure logic, but no component-render, hook, or browser E2E coverage yet.
-- **Correlation across the async boundary** — the correlation id follows a request through every
-  synchronous hop, but it is not carried on Kafka messages, so a consumer's log lines cannot be
-  tied back to the request that produced the event.
-- **Continuous deployment** — deployment is a manual `ssh` + `scripts/prod-compose.sh up -d --build`;
-  no workflow deploys on merge.
+- **Deployment on merge** — a deploy workflow exists but is deliberately **manual and
+  environment-gated** (`deploy-prod.yml`); nothing ships automatically when a PR lands.
