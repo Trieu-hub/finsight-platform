@@ -12,6 +12,13 @@ Every implemented Kafka event is listed here. Conventions shared by all three:
 - **Temporals are strings** (`occurredAt`, dates) so the wire shape is independent of the
   producer's Jackson date configuration.
 - **Delivery:** at-least-once; published `AFTER_COMMIT`. Consumers are idempotent.
+- **Headers:** the payload carries no metadata, but every record does carry one header —
+  `X-Correlation-ID`, the id of the HTTP request that ultimately caused the event. It is for
+  log correlation only: never branch on it, and never let a missing header change behaviour
+  (consumers mint a fresh id in that case). Producers set it from the MDC at send time, except
+  transaction-service's outbox, which persists it per row (`outbox.correlation_id`) because the
+  relay publishes after the request thread is gone. Consumers lift it back into the MDC via
+  `logging/CorrelationIdRecordInterceptor`.
 
 | Event | Topic | Producer | Consumer(s) |
 |---|---|---|---|

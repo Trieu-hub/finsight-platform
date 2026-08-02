@@ -1,6 +1,7 @@
 package com.pm.riskservice.config;
 
 import com.pm.riskservice.event.BudgetChangedEvent;
+import com.pm.riskservice.logging.CorrelationIdRecordInterceptor;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -17,6 +18,7 @@ import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.core.MicrometerConsumerListener;
 import org.springframework.kafka.listener.ConsumerRecordRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
+import org.springframework.kafka.listener.RecordInterceptor;
 import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
 import org.springframework.kafka.support.serializer.JsonDeserializer;
 import org.springframework.util.backoff.FixedBackOff;
@@ -51,6 +53,17 @@ import java.util.Map;
 public class KafkaConsumerConfig {
 
     private static final Logger log = LoggerFactory.getLogger(KafkaConsumerConfig.class);
+
+    /**
+     * Carries the producer's correlation id from the record header into the MDC for the duration of
+     * each consumed record. Boot applies a single {@code RecordInterceptor} bean to the
+     * auto-configured (TransactionCreated) factory; the hand-built budget factory below is outside
+     * Boot's reach, so it sets its own instance — the class is stateless, sharing is not required.
+     */
+    @Bean
+    public RecordInterceptor<Object, Object> correlationIdRecordInterceptor() {
+        return new CorrelationIdRecordInterceptor<>();
+    }
 
     @Bean
     public DefaultErrorHandler kafkaErrorHandler(MeterRegistry meterRegistry) {
@@ -118,6 +131,10 @@ public class KafkaConsumerConfig {
                 new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(consumerFactory);
         factory.setCommonErrorHandler(kafkaErrorHandler);
+        // Boot's configurer never touches this factory, so the correlation-id interceptor has to be
+        // attached by hand — otherwise BudgetChanged would be the one consumed event whose log lines
+        // fall out of the trace.
+        factory.setRecordInterceptor(new CorrelationIdRecordInterceptor<>());
         return factory;
     }
 }

@@ -1,5 +1,6 @@
 package com.pm.analyticsservice.config;
 
+import com.pm.analyticsservice.logging.CorrelationIdRecordInterceptor;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
@@ -9,6 +10,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.listener.ConsumerRecordRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
+import org.springframework.kafka.listener.RecordInterceptor;
 import org.springframework.util.backoff.FixedBackOff;
 
 /**
@@ -27,6 +29,16 @@ import org.springframework.util.backoff.FixedBackOff;
 public class KafkaConsumerConfig {
 
     private static final Logger log = LoggerFactory.getLogger(KafkaConsumerConfig.class);
+
+    /**
+     * Carries the producer's correlation id from the record header into the MDC for the duration of
+     * each consumed record. Boot applies a single {@code RecordInterceptor} bean to the
+     * auto-configured listener container factory, which is the one the rollup listener uses.
+     */
+    @Bean
+    public RecordInterceptor<Object, Object> correlationIdRecordInterceptor() {
+        return new CorrelationIdRecordInterceptor<>();
+    }
 
     @Bean
     public DefaultErrorHandler kafkaErrorHandler(MeterRegistry meterRegistry) {

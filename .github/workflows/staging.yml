@@ -2,11 +2,12 @@ name: Staging (ephemeral)
 
 # The project's "staging" is ephemeral, not a standing server: stand up the WHOLE compose
 # stack on a throwaway runner, prove it works end to end (k6 smoke), measure it under load
-# (k6 load), then tear it down. $0, no extra box to maintain — the single 8 GB prod VPS has no
-# room for a parallel stack, so staging lives here instead. A failed smoke or a missed SLO
-# fails the job, giving a merge/deploy gate that exercises the real containers over real HTTP.
+# (k6 load), drive the UI through a real browser (Playwright), then tear it down. $0, no extra
+# box to maintain — the single 8 GB prod VPS has no room for a parallel stack, so staging lives
+# here instead. A failed smoke, a missed SLO or a broken journey fails the job, giving a
+# merge/deploy gate that exercises the real containers over real HTTP.
 #
-# Runs on PRs that change the runtime (services / compose / the load scripts) and nightly.
+# Runs on PRs that change the runtime (services / compose / web / the load scripts) and nightly.
 # Deliberately NOT on every push: building nine Maven images is minutes of work, so it is
 # scoped to changes that could actually affect runtime behaviour.
 
@@ -16,6 +17,7 @@ on:
       - "services/**"
       - "docker-compose.yml"
       - "load-test/**"
+      - "web/**"
       - ".github/workflows/staging.yml"
   schedule:
     - cron: "0 3 * * *" # 03:00 UTC nightly — a daily health/perf signal independent of PRs.
@@ -110,6 +112,44 @@ jobs:
             -e BASE_URL=http://localhost:8080 \
             -e VUS=5 -e DURATION=30s -e P95_MS=0 -e ERROR_RATE=0.05 -e CHECK_RATE=0.95 \
             -v "$PWD/load-test:/scripts" grafana/k6 run /scripts/load.js
+
+      # Browser E2E last: k6 has already proved the API layer, so a failure here is unambiguously
+      # the UI. It drives the production bundle (vite preview over dist/) whose proxy forwards /api
+      # to the same gateway, which is how Caddy routes it in production.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web dependencies
+        run: npm ci
+        working-directory: web
+
+      - name: Build the web bundle
+        run: npm run build
+        working-directory: web
+
+      # --with-deps pulls the system libraries the browser needs on a bare runner; only Chromium
+      # is installed (the projects list has one browser — downloading the other two is dead weight).
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: web
+
+      - name: Playwright E2E
+        run: npm run test:e2e
+        working-directory: web
+        env:
+          API_TARGET: http://localhost:8080
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: web/playwright-report/
+          retention-days: 7
 
       # When something fails, the container logs are the first thing you want.
       - name: Dump stack logs on failure

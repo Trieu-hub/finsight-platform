@@ -314,8 +314,11 @@ DTOs are Lombok classes, not records — match the surrounding style.
   host. Its `/api/v1/{risks,insights,anomalies}` controllers are unauthenticated by design.
 - **Every service carries `logging/CorrelationIdFilter`** (registered at `HIGHEST_PRECEDENCE` by
   `config/CorrelationIdFilterConfig`) and sets `LOGGING_STRUCTURED_FORMAT_CONSOLE: ecs` in compose.
-  A new service needs both, or its lines drop out of a cross-service log trace. The id is
-  HTTP-only — it does not travel on Kafka messages.
+  A new service needs both, or its lines drop out of a cross-service log trace. The id also
+  travels **on Kafka**: producers put it on an `X-Correlation-ID` record header (the outbox
+  persists it per row, since the relay publishes off the request thread) and every consumer
+  service registers a `logging/CorrelationIdRecordInterceptor` that lifts it back into the MDC.
+  A new consumer needs that interceptor too.
 
 ## Event backbone
 

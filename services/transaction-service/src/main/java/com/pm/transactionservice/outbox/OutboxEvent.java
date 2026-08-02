@@ -56,6 +56,14 @@ public class OutboxEvent {
     @Column(nullable = false, length = 4000)
     private String payload;
 
+    /**
+     * Correlation id of the request that produced the event, captured from the MDC at write time.
+     * The relay replays it onto the Kafka record header so consumer logs join the same trace.
+     * Null when the event was produced outside a request (or written before the column existed).
+     */
+    @Column(name = "correlation_id", length = 64)
+    private String correlationId;
+
     @CreatedDate
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;

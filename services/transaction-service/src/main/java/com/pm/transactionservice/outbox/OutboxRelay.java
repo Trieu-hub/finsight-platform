@@ -1,7 +1,10 @@
 package com.pm.transactionservice.outbox;
 
+import com.pm.transactionservice.logging.CorrelationIdFilter;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
@@ -9,6 +12,7 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -65,9 +69,13 @@ public class OutboxRelay {
 
         List<Long> published = new ArrayList<>(batch.size());
         for (OutboxEvent event : batch) {
+            // Runs on the scheduler thread, whose MDC is empty: restore the writing request's id so
+            // the relay's own lines about this event sit in that request's trace too.
+            if (event.getCorrelationId() != null) {
+                MDC.put(CorrelationIdFilter.CORRELATION_ID_MDC_KEY, event.getCorrelationId());
+            }
             try {
-                kafkaTemplate.send(event.getTopic(), event.getPartitionKey(), event.getPayload())
-                        .get(sendTimeoutMs, TimeUnit.MILLISECONDS);
+                kafkaTemplate.send(toRecord(event)).get(sendTimeoutMs, TimeUnit.MILLISECONDS);
                 published.add(event.getId());
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -79,6 +87,8 @@ public class OutboxRelay {
                 log.warn("Outbox relay: failed to publish eventId={} to {}, will retry",
                         event.getEventId(), event.getTopic(), e);
                 break;
+            } finally {
+                MDC.remove(CorrelationIdFilter.CORRELATION_ID_MDC_KEY);
             }
         }
 
@@ -88,5 +98,21 @@ public class OutboxRelay {
                 log.debug("Outbox relay published and cleared {} event(s)", published.size());
             }
         }
+    }
+
+    /**
+     * The record to publish: payload verbatim, keyed as before, plus the stored correlation id as a
+     * {@value CorrelationIdFilter#CORRELATION_ID_HEADER} header when the writing request had one.
+     * The header is the only thing that lets a consumer's log lines rejoin that request's trace —
+     * the JSON payload is a stable public contract and must not grow a tracing field.
+     */
+    static ProducerRecord<String, String> toRecord(OutboxEvent event) {
+        ProducerRecord<String, String> record =
+                new ProducerRecord<>(event.getTopic(), event.getPartitionKey(), event.getPayload());
+        if (event.getCorrelationId() != null) {
+            record.headers().add(CorrelationIdFilter.CORRELATION_ID_HEADER,
+                    event.getCorrelationId().getBytes(StandardCharsets.UTF_8));
+        }
+        return record;
     }
 }

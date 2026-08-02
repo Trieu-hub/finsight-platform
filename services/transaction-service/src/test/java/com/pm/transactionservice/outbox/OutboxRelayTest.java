@@ -1,15 +1,22 @@
 package com.pm.transactionservice.outbox;
 
+import com.pm.transactionservice.logging.CorrelationIdFilter;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.slf4j.MDC;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicReference;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -24,14 +31,24 @@ class OutboxRelayTest {
     @SuppressWarnings("unchecked")
     private final KafkaTemplate<String, String> kafkaTemplate = mock(KafkaTemplate.class);
 
+    @AfterEach
+    void clearMdc() {
+        MDC.clear();
+    }
+
     private OutboxRelay relay(boolean enabled) {
         return new OutboxRelay(repository, kafkaTemplate, enabled, 100, 5000);
     }
 
     private static OutboxEvent event(long id, String topic) {
+        return event(id, topic, null);
+    }
+
+    private static OutboxEvent event(long id, String topic, String correlationId) {
         return OutboxEvent.builder()
                 .id(id).eventId("evt-" + id).topic(topic).partitionKey("7")
                 .eventType("TransactionCreated").payload("{\"id\":" + id + "}")
+                .correlationId(correlationId)
                 .build();
     }
 
@@ -43,17 +60,30 @@ class OutboxRelayTest {
         return CompletableFuture.failedFuture(new RuntimeException("broker down"));
     }
 
+    @SuppressWarnings("unchecked")
+    private ArgumentCaptor<ProducerRecord<String, String>> captureSends(int expected) {
+        ArgumentCaptor<ProducerRecord<String, String>> captor = ArgumentCaptor.forClass(ProducerRecord.class);
+        verify(kafkaTemplate, times(expected)).send(captor.capture());
+        return captor;
+    }
+
+    private static String header(ProducerRecord<String, String> record) {
+        var header = record.headers().lastHeader(CorrelationIdFilter.CORRELATION_ID_HEADER);
+        return header == null ? null : new String(header.value(), StandardCharsets.UTF_8);
+    }
+
     @Test
     void publishesEveryRowThenDeletesThemInOneBatch() {
-        OutboxEvent e1 = event(1, "t1");
-        OutboxEvent e2 = event(2, "t2");
-        when(repository.findBatch(any())).thenReturn(List.of(e1, e2));
-        when(kafkaTemplate.send(any(), any(), any())).thenReturn(ok());
+        when(repository.findBatch(any())).thenReturn(List.of(event(1, "t1"), event(2, "t2")));
+        when(kafkaTemplate.send(any(ProducerRecord.class))).thenReturn(ok());
 
         relay(true).flush();
 
-        verify(kafkaTemplate).send("t1", "7", "{\"id\":1}");
-        verify(kafkaTemplate).send("t2", "7", "{\"id\":2}");
+        List<ProducerRecord<String, String>> sent = captureSends(2).getAllValues();
+        assertThat(sent).extracting(ProducerRecord::topic).containsExactly("t1", "t2");
+        assertThat(sent).extracting(ProducerRecord::key).containsExactly("7", "7");
+        assertThat(sent).extracting(ProducerRecord::value)
+                .containsExactly("{\"id\":1}", "{\"id\":2}");
         verify(repository).deleteAllByIdInBatch(List.of(1L, 2L));
     }
 
@@ -63,14 +93,15 @@ class OutboxRelayTest {
         OutboxEvent e2 = event(2, "t2"); // this send fails
         OutboxEvent e3 = event(3, "t3"); // must NOT be attempted (would reorder the user's stream)
         when(repository.findBatch(any())).thenReturn(List.of(e1, e2, e3));
-        when(kafkaTemplate.send(eq("t1"), any(), any())).thenReturn(ok());
-        when(kafkaTemplate.send(eq("t2"), any(), any())).thenReturn(failed());
+        when(kafkaTemplate.send(any(ProducerRecord.class))).thenAnswer(invocation -> {
+            ProducerRecord<?, ?> record = invocation.getArgument(0);
+            return "t2".equals(record.topic()) ? failed() : ok();
+        });
 
         relay(true).flush();
 
-        verify(kafkaTemplate).send(eq("t1"), any(), any());
-        verify(kafkaTemplate).send(eq("t2"), any(), any());
-        verify(kafkaTemplate, never()).send(eq("t3"), any(), any());
+        assertThat(captureSends(2).getAllValues()).extracting(ProducerRecord::topic)
+                .containsExactly("t1", "t2");
         // Only the row confirmed before the failure is cleared; e2/e3 stay for the next tick.
         verify(repository).deleteAllByIdInBatch(List.of(1L));
     }
@@ -85,7 +116,44 @@ class OutboxRelayTest {
     void emptyBatch_sendsNothingAndDeletesNothing() {
         when(repository.findBatch(any())).thenReturn(List.of());
         relay(true).flush();
-        verify(kafkaTemplate, never()).send(any(), any(), any());
+        verify(kafkaTemplate, never()).send(any(ProducerRecord.class));
         verify(repository, never()).deleteAllByIdInBatch(any());
+    }
+
+    @Test
+    void replaysTheStoredCorrelationIdOntoTheRecordHeader() {
+        when(repository.findBatch(any())).thenReturn(List.of(event(1, "t1", "corr-42")));
+        when(kafkaTemplate.send(any(ProducerRecord.class))).thenReturn(ok());
+
+        relay(true).flush();
+
+        assertThat(header(captureSends(1).getValue())).isEqualTo("corr-42");
+    }
+
+    @Test
+    void addsNoHeaderWhenTheRowHasNoCorrelationId() {
+        when(repository.findBatch(any())).thenReturn(List.of(event(1, "t1", null)));
+        when(kafkaTemplate.send(any(ProducerRecord.class))).thenReturn(ok());
+
+        relay(true).flush();
+
+        assertThat(header(captureSends(1).getValue())).isNull();
+    }
+
+    @Test
+    void restoresTheCorrelationIdInTheMdcWhilePublishing_andClearsItAfterwards() {
+        // The relay runs on the scheduler thread: its own log lines only join the originating
+        // request's trace if the MDC is restored around the send — and only that send.
+        AtomicReference<String> duringSend = new AtomicReference<>();
+        when(repository.findBatch(any())).thenReturn(List.of(event(1, "t1", "corr-42")));
+        when(kafkaTemplate.send(any(ProducerRecord.class))).thenAnswer(invocation -> {
+            duringSend.set(MDC.get(CorrelationIdFilter.CORRELATION_ID_MDC_KEY));
+            return ok();
+        });
+
+        relay(true).flush();
+
+        assertThat(duringSend.get()).isEqualTo("corr-42");
+        assertThat(MDC.get(CorrelationIdFilter.CORRELATION_ID_MDC_KEY)).isNull();
     }
 }

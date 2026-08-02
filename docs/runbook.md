@@ -183,6 +183,12 @@ followed across services with a single query:
 {compose_service=~".+"} | json | correlationId = "<id from the X-Correlation-ID response header>"
 ```
 
+That query spans the **async** hops too, not just the HTTP ones: the id rides on an
+`X-Correlation-ID` Kafka record header, so the budget/risk/analytics/notification lines produced
+seconds later by consuming the event come back under the same id as the write that caused it. If a
+consumer's lines are missing from the result, check that its `KafkaConsumerConfig` registers the
+`RecordInterceptor` bean — without it that service logs under a fresh id per record.
+
 Config lives in `docker/loki/loki.yml` and `docker/promtail/promtail.yml`; retention is 7 days on
 the local filesystem.
 

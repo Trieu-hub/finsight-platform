@@ -2,6 +2,8 @@ package com.pm.transactionservice.outbox;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.pm.transactionservice.logging.CorrelationIdFilter;
+import org.slf4j.MDC;
 import org.springframework.stereotype.Component;
 
 /**
@@ -45,6 +47,9 @@ public class OutboxWriter {
                 .partitionKey(key)
                 .eventType(eventType)
                 .payload(json)
+                // Captured here, on the request thread, because the relay publishes later on the
+                // scheduler thread where the MDC is empty.
+                .correlationId(MDC.get(CorrelationIdFilter.CORRELATION_ID_MDC_KEY))
                 .build());
     }
 }

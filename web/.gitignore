@@ -12,6 +12,12 @@ dist
 dist-ssr
 *.local
 
+# Playwright output: HTML report, traces/screenshots from failed runs, downloaded browsers.
+playwright-report
+test-results
+blob-report
+.playwright
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
