@@ -503,11 +503,12 @@ decrypts its own `secrets.env`.
 - **`staging.yml` (ephemeral staging)** — the single 8 GB VPS has no room for a parallel
   stack, so "staging" is *ephemeral*, not a standing server: the workflow stands up the **whole
   compose stack** on a throwaway runner, waits for the gateway to report healthy, runs the k6
-  **smoke** then **load** test (`load-test/`), and tears it down. Runs on PRs that touch
-  `services/`, `docker-compose.yml`, or `load-test/`, and nightly. A failed smoke or a missed
-  SLO fails the job. This is the load-test home — and it satisfies §7.4 ("never load-test prod")
-  by construction: the k6 scripts refuse an `https://`/`vernfy.com` target
-  (`load-test/README.md`).
+  **smoke** then **load** test (`load-test/`), then drives the UI through a real browser with
+  **Playwright** (`web/e2e/`, served by `vite preview` over the production bundle), and tears it
+  down. Runs on PRs that touch `services/`, `docker-compose.yml`, `web/`, or `load-test/`, and
+  nightly. A failed smoke, a missed SLO or a broken browser journey fails the job. This is the
+  load-test home — and it satisfies §7.4 ("never load-test prod") by construction: the k6 scripts
+  refuse an `https://`/`vernfy.com` target (`load-test/README.md`).
 - **`deploy-prod.yml` (gated CD)** — a **manual**, environment-gated deploy (no auto-deploy on
   merge). You click *Run workflow* and pick the ref; if the `production` Environment has
   required reviewers, a second person approves. The runner then SSHes into the VPS and runs the
