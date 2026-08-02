@@ -14,7 +14,7 @@ TỔNG QUAN CON SỐ
 - Trong đó:
     * Unit / component test (chạy KHÔNG cần Docker):  ~320
     * Integration test (cần Docker – Testcontainers): ~181
-- Frontend (Vitest, ngoài con số 501 ở trên):          54 test / 7 file
+- Frontend (Vitest, ngoài con số 501 ở trên):          57 test / 8 file
 - Frontend E2E (Playwright, cần stack đang chạy):       3 test / 1 file (mục 11)
 - Framework: JUnit 5 (Jupiter) + Mockito + AssertJ; frontend dùng Vitest +
   React Testing Library (jsdom) và Playwright cho E2E trình duyệt.
@@ -755,6 +755,15 @@ lời gọi mạng, phần còn lại là thật)
    - treats a 200 without a token as a failed sign-in
      (soi gương: /register của auth-service trả 200 mà KHÔNG có token)
    - disables the submit button while the request is in flight
+
+[COMPONENT] src/pages/Transactions.test.tsx — 3 test  (bất biến category ↔ type
+của form; chỉ mock lời gọi mạng)
+   - defaults the category to one of the current type
+   - moves the category to the new type instead of keeping a contradictory pair
+   - still posts a real category when the type changed before the categories arrived
+     (hồi quy: đổi type lúc category chưa về thì ô category rỗng, mà value rỗng
+      không khớp <option> nào nên trình duyệt VẪN hiển thị option đầu — form trông
+      như đã điền nhưng post categoryId 0 và API từ chối)
 
 
 ================================================================================
