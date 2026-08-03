@@ -26,11 +26,14 @@ Numeric thresholds below are the constants in code at the time of writing.
 
 ## Risk Monitoring
 
-Evaluated by `RiskRuleEngine` on each consumed **EXPENSE**. The expense is first recorded into
-`observed_expenses` idempotently (keyed by the source event id), so the windowed rules see it
-and a redelivered event is neither double-counted nor re-alerted.
+Evaluated by `RiskRuleEngine` on each consumed **EXPENSE** and **INCOME** — an expense tracker
+should be as suspicious of unexplained money arriving as of money leaving. TRANSFER moves money
+between a user's own wallets and is neither, so it is skipped entirely and never recorded. The
+event is recorded into `observed_expenses` idempotently (keyed by the source event id) before the
+rules run, so the windowed rules see it and a redelivered event is neither double-counted nor
+re-alerted.
 
-**Shared behavior for all three rules:**
+**Shared behavior for all seven rules:**
 - **Generated artifact:** a `RiskDetected` event on `finsight.risk.detected` (keyed by `userId`,
   consumed by notification-service) **and** a durable `risk_alerts` row.
 - **Persistence:** `risk_alerts` (id = the `RiskDetected` event id). Effectively idempotent —
@@ -40,11 +43,51 @@ and a redelivered event is neither double-counted nor re-alerted.
 - **Metrics:** `finsight.risk.events.detected{type,severity}` per detection;
   `finsight.risk.events.processed` counts every consumed event.
 
+### The monetary bar is per person
+
+The four amount-based rules are **not** judged against a platform-wide constant. Each draws its
+threshold from the user's own history:
+
+```
+bar = enough history ? max(their mean × 5, flat ÷ 10) : flat
+```
+
+- **their mean** — `avg(amount)` over the user's prior observations of the same transaction type,
+  strictly before this event (the triggering event never feeds its own bar). For the daily rules
+  it is the mean of their prior **daily totals**: total ÷ the number of distinct days they
+  transacted on, so quiet days do not drag the bar down.
+- **enough history** — at least **10** prior observations (prior *days*, for the daily rules).
+  Below that, the flat threshold applies unchanged, so a new user is protected from their first
+  transaction rather than from their tenth.
+- **the floor** (`flat ÷ 10`) stops a user whose whole financial life is small amounts from
+  getting a HIGH-severity alert over a cup of coffee.
+
+Why: a flat 10,000,000 is noise to someone who spends that weekly and silence to someone whose
+largest ever expense is a tenth of it. The count-based rules stay absolute — five transactions in
+ten minutes is a shape of behaviour, not an amount, and does not scale with wealth.
+
+The **5×** multiple deliberately sits above the anomaly detector's 3× (see
+[Anomaly Detection](#anomaly-detection)): the two are tiers of one idea, and at the same multiple
+they would be one rule wearing two names. 3× is worth recording; 5× is worth interrupting someone
+over.
+
 | Rule | Trigger condition | Severity |
 |---|---|---|
-| **HIGH_AMOUNT_EXPENSE** | This EXPENSE's `amount` ≥ **10,000,000**. | HIGH |
+| **HIGH_AMOUNT_EXPENSE** | This EXPENSE's `amount` ≥ the user's expense bar (flat **10,000,000**; floor **1,000,000**). | HIGH |
 | **RAPID_SPENDING** | This event is the **5th** EXPENSE for the user within a **10-minute** window (`count == 5`) — fires once per burst, not on every later event. | MEDIUM |
-| **LARGE_DAILY_SPEND** | This event pushes the user's EXPENSE total for the calendar day from ≤ **20,000,000** to > 20,000,000 (a single crossing per day). | HIGH |
+| **LARGE_DAILY_SPEND** | This event pushes the user's EXPENSE total for the calendar day from ≤ their daily bar to > it (flat **20,000,000**; floor **2,000,000**) — a single crossing per day. | HIGH |
+
+The INCOME family is symmetric. Its flat thresholds sit higher than the expense ones because a
+salary is legitimately large and reusing the expense numbers would alert on every payday — but for
+an established user the bar comes from their own income history, so the flat figures matter only
+during cold start.
+
+| Rule | Trigger condition | Severity |
+|---|---|---|
+| **HIGH_AMOUNT_INCOME** | This INCOME's `amount` ≥ the user's income bar (flat **50,000,000**; floor **5,000,000**). | MEDIUM |
+| **RAPID_INCOME** | This event is the **5th** INCOME for the user within a **10-minute** window. | MEDIUM |
+| **LARGE_DAILY_INCOME** | This event pushes the user's INCOME total for the calendar day from ≤ their daily income bar to > it (flat **100,000,000**; floor **10,000,000**). | MEDIUM |
+| **INCOME_SPIKE** | This INCOME ≥ **3×** the user's mean prior income, once **10** prior incomes exist. Already relative before the change above — it is the pattern the other rules were brought in line with. | HIGH |
 
 ---
 

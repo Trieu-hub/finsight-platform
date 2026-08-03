@@ -173,10 +173,47 @@ public interface ObservedExpenseRepository extends JpaRepository<ExpenseObservat
     ExpenseBaseline incomeBaselineBefore(@Param("userId") Long userId,
                                          @Param("before") Instant before);
 
+    /**
+     * The LARGE_DAILY_SPEND baseline: how much a user spent in total, and on how many distinct
+     * calendar days, strictly before {@code beforeDate} — so the day being judged never feeds its
+     * own bar.
+     *
+     * <p>Returned as total + day count rather than a mean because JPQL cannot nest {@code avg()}
+     * over {@code sum()}; dividing the two gives exactly the mean of the daily totals, without
+     * dropping to a native query for one arithmetic step.
+     */
+    @Query("""
+            select coalesce(sum(e.amount), 0) as total, count(distinct e.transactionDate) as days
+            from ExpenseObservation e
+            where e.userId = :userId
+              and e.transactionType = 'EXPENSE'
+              and e.transactionDate < :beforeDate
+            """)
+    DailyBaseline dailyExpenseBaselineBefore(@Param("userId") Long userId,
+                                             @Param("beforeDate") LocalDate beforeDate);
+
+    /** The LARGE_DAILY_INCOME baseline. Mirrors {@link #dailyExpenseBaselineBefore}. */
+    @Query("""
+            select coalesce(sum(e.amount), 0) as total, count(distinct e.transactionDate) as days
+            from ExpenseObservation e
+            where e.userId = :userId
+              and e.transactionType = 'INCOME'
+              and e.transactionDate < :beforeDate
+            """)
+    DailyBaseline dailyIncomeBaselineBefore(@Param("userId") Long userId,
+                                            @Param("beforeDate") LocalDate beforeDate);
+
     /** Projection for {@link #expenseBaselineBefore} — prior-expense count and average amount. */
     interface ExpenseBaseline {
         long getCount();
 
         BigDecimal getAverage();
+    }
+
+    /** Projection for the daily baselines — prior total and the number of days it spans. */
+    interface DailyBaseline {
+        long getDays();
+
+        BigDecimal getTotal();
     }
 }

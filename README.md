@@ -153,11 +153,16 @@ Triggers, severities, persistence, and metrics are detailed in
 **Risk Monitoring** → persisted to `risk_alerts`, published as `RiskDetected`, exposed at
 `GET /api/v1/risks`; metric `finsight.risk.events.detected{type,severity}`:
 
+The monetary rules are scaled to the person: the bar is **5× that user's own mean**, floored, and
+falls back to the flat figure below until they have 10 observations to average. A fixed
+10,000,000 is noise to someone who spends it weekly and silence to someone whose largest ever
+expense is a tenth of it. Full formula in [docs/intelligence.md](docs/intelligence.md).
+
 | Rule | Trigger | Severity |
 |---|---|---|
-| `HIGH_AMOUNT_EXPENSE` | A single EXPENSE ≥ 10,000,000 | HIGH |
+| `HIGH_AMOUNT_EXPENSE` | A single EXPENSE ≥ the user's own bar (flat 10,000,000 until they have a history) | HIGH |
 | `RAPID_SPENDING` | 5th EXPENSE for a user within a 10-minute window | MEDIUM |
-| `LARGE_DAILY_SPEND` | Daily EXPENSE total crosses above 20,000,000 | HIGH |
+| `LARGE_DAILY_SPEND` | Daily EXPENSE total crosses above the user's own daily bar (flat 20,000,000) | HIGH |
 
 **Behavioral Insights** → persisted to `insights` (one per scope per month), exposed at
 `GET /api/v1/insights`; metric `finsight.insights.generated{type}`:
@@ -409,7 +414,9 @@ These are **absent from the codebase** — do not assume they exist:
 - **Webhook delivery, and digests** — an alert reaches the user in-app (bell + SSE), by **web
   push** and by **email**, but there is no outbound webhook and no batching: one alert is one
   delivery, however many arrive at once.
-- **ML-based intelligence** — current rules are deterministic and threshold-based.
+- **ML-based intelligence** — the rules are deterministic. They are no longer one-size-fits-all
+  (the monetary thresholds are drawn from each user's own history), but that is an average, not a
+  model: there is no training, no prediction, and no seasonality or category-level personalisation.
 - **An orchestrated deployment target** (Kubernetes/ECS) **and a managed secrets store**
   (Vault/KMS). The live demo runs Docker Compose on a single VPS behind Caddy with TLS; secrets
   are **SOPS/age-encrypted at rest** and injected into the process environment at launch, which
