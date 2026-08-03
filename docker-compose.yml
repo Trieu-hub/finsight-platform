@@ -332,6 +332,18 @@ services:
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_BASE_URL: ${LLM_BASE_URL:-https://api.groq.com/openai/v1}
       LLM_MODEL: ${LLM_MODEL:-llama-3.1-8b-instant}
+      # Web push (VAPID). Empty => the channel is inert and the SPA hides its switch, so the
+      # stack still runs with the in-app bell alone. Generate with scripts/gen-vapid-keys.sh.
+      PUSH_VAPID_PUBLIC_KEY: ${PUSH_VAPID_PUBLIC_KEY:-}
+      PUSH_VAPID_PRIVATE_KEY: ${PUSH_VAPID_PRIVATE_KEY:-}
+      PUSH_VAPID_SUBJECT: ${PUSH_VAPID_SUBJECT:-https://vernfy.com}
+      # Email alerts. MAIL_HOST empty => Spring builds no JavaMailSender => channel off. Any
+      # SMTP provider works; the sending domain needs SPF/DKIM (docs/deploy.md) or mail is spam.
+      MAIL_HOST: ${MAIL_HOST:-}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-Vernfy <noreply@vernfy.com>}
       # Native Spring Boot 4 structured logging: ECS JSON on stdout, carrying service.name and
       # the correlationId MDC key. Unset (local/CI) => plain text, unchanged.
       LOGGING_STRUCTURED_FORMAT_CONSOLE: ecs

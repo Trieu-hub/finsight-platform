@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import DeliverySettings from './DeliverySettings'
 import type { Notification, NotificationSeverity } from '../api/types'
 import {
   listNotifications,
@@ -170,6 +171,11 @@ export default function NotificationBell() {
               </button>
             )}
           </div>
+
+          {/* Delivery settings sit in the bell because this is where a user already comes to deal
+              with alerts — a separate settings page for two toggles would only hide them. Each row
+              renders nothing unless that channel can actually work. */}
+          <DeliverySettings />
 
           <div className="max-h-96 overflow-y-auto">
             {loading ? (

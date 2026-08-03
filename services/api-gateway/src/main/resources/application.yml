@@ -38,6 +38,9 @@ gateway:
       uri: ${DASHBOARD_SERVICE_URI:http://localhost:8085}
     - prefix: /api/v1/notifications
       uri: ${NOTIFICATION_SERVICE_URI:http://localhost:8087}
+    # Web push subscriptions live with the service that sends the pushes.
+    - prefix: /api/v1/push
+      uri: ${NOTIFICATION_SERVICE_URI:http://localhost:8087}
     - prefix: /api/v1/analytics
       uri: ${ANALYTICS_SERVICE_URI:http://localhost:8088}
   # Routes that bypass edge authentication. Frozen in docs/ADR-0002 §4: the auth entry

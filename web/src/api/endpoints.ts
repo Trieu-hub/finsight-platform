@@ -155,6 +155,50 @@ export async function markAllNotificationsRead(): Promise<void> {
   await api.patch('/notifications/read-all')
 }
 
+export interface NotificationPreferences {
+  emailEnabled: boolean
+  email: string | null
+  emailConfigured: boolean
+}
+
+export async function notificationPreferences(): Promise<NotificationPreferences> {
+  const { data } = await api.get<ApiResponse<NotificationPreferences>>('/notifications/preferences')
+  return data.data
+}
+
+// No address is sent: the server takes it from the JWT, so a caller cannot redirect another
+// account's alerts to a mailbox they own.
+export async function setEmailAlerts(emailEnabled: boolean): Promise<NotificationPreferences> {
+  const { data } = await api.put<ApiResponse<NotificationPreferences>>(
+    '/notifications/preferences',
+    { emailEnabled },
+  )
+  return data.data
+}
+
+// ---- Web push (notification-service). The subscription belongs to this browser, not to the
+// account: signing in elsewhere does not carry it over, and each browser subscribes once.
+export async function pushConfig(): Promise<{ enabled: boolean; publicKey: string }> {
+  const { data } = await api.get<ApiResponse<{ enabled: boolean; publicKey: string }>>(
+    '/push/public-key',
+  )
+  return data.data
+}
+
+export async function subscribeToPush(body: {
+  endpoint: string
+  p256dh: string
+  auth: string
+}): Promise<void> {
+  await api.post('/push/subscriptions', body)
+}
+
+export async function unsubscribeFromPush(endpoint: string): Promise<void> {
+  // A body on DELETE: the endpoint is a long URL and would be awkward (and logged) as a query
+  // parameter. axios needs it under `data`.
+  await api.delete('/push/subscriptions', { data: { endpoint } })
+}
+
 // ---- LuckyMe games (transaction-service; a round settles to a real net transaction) ----
 // The server spins, settles and moves the money: the client sends only which pockets each chip
 // covers, never an outcome and never a bet type — so it cannot pick the winner or its own payout.

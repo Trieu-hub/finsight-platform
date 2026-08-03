@@ -134,8 +134,11 @@ strings.
 | `finsight.risk.detected` | risk-service | notification-service | `RiskDetected` |
 
 Each topic is owned by exactly one producer. `RiskDetected` is consumed by notification-service,
-which materializes per-user in-app notifications (idempotent inbox). Full payloads are
-in [event-catalog.md](event-catalog.md).
+which materializes per-user in-app notifications (idempotent inbox) and then hands them to its
+**delivery channels** — SSE to an open tab, **web push** to subscribed browsers, **email** over
+SMTP. Channels run after the commit and swallow their own failures, so a dead SMTP server or push
+service can never make the consumer replay the event. Both are off until configured. Full payloads
+are in [event-catalog.md](event-catalog.md).
 
 **Delivery semantics:** at-least-once. Producers publish `@TransactionalEventListener(AFTER_COMMIT)`
 (only after the DB commit; a failed send is logged, not rethrown — the accepted dual-write gap,
@@ -264,8 +267,8 @@ These are **absent from the codebase** and must not be implied as present:
 
 - **Full gRPC migration** — gRPC *is* present as one representative internal call (dashboard→
   user-service, via Spring gRPC); the other internal calls (transaction/budget) are still REST.
-- **External notification delivery** — notification-service creates **in-app** notifications from
-  `RiskDetected`; email/push/webhook delivery and an LLM-backed message narrator are not built.
+- **Webhook delivery and digests** — `RiskDetected` reaches the user in-app (bell + SSE), by web
+  push and by email; outbound webhooks and any batching of alerts are not built.
 - **Edge rate limiting**, **distributed tracing**, **alerting** (Prometheus has no alert rules).
 - **JWKS / JWT key rotation** — signing is RS256 asymmetric (auth signs with the private key,
   services verify with the public key), but there is no published JWKS endpoint or rotation flow.

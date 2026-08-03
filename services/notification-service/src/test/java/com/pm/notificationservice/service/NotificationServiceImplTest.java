@@ -12,6 +12,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.transaction.PlatformTransactionManager;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -39,9 +40,11 @@ class NotificationServiceImplTest {
         // Real narrator: deterministic, no need to mock.
         // The SSE stream is mocked: publishing to live browsers is a side channel, and this test
         // is about what gets persisted.
+        // No delivery channels: this test is about what gets persisted, and the channels are a
+        // best-effort side path that runs after the commit.
         service = new NotificationServiceImpl(
                 notificationRepository, processedEventRepository, new TemplateNarrator(),
-                mock(NotificationStream.class), txManager);
+                mock(NotificationStream.class), List.of(), txManager);
     }
 
     @Test

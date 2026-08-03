@@ -5,6 +5,21 @@ spring:
   application:
     name: notification-service
 
+  mail:
+    # Unset by default => Spring builds no JavaMailSender => the email channel stays inert and the
+    # SPA hides its switch. Any provider that speaks SMTP works (Resend, SendGrid, Brevo, ...).
+    # The sending domain still needs SPF/DKIM or the mail lands in spam: see docs/deploy.md.
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${MAIL_SMTP_AUTH:true}
+          starttls:
+            enable: ${MAIL_SMTP_STARTTLS:true}
+
   datasource:
     url: ${DB_URL:jdbc:mysql://localhost:3306/notification_db}
     username: ${DB_USERNAME:root}
@@ -64,6 +79,20 @@ finsight:
       model: ${LLM_MODEL:llama-3.1-8b-instant}
       timeout-ms: ${FINSIGHT_NARRATOR_AI_TIMEOUT_MS:6000}
       max-tokens: ${FINSIGHT_NARRATOR_AI_MAX_TOKENS:200}
+  push:
+    # Web push (VAPID). Both keys empty => the channel is inert and the SPA hides its control,
+    # so a fresh checkout still works with the in-app bell alone. Generate a pair with
+    # `scripts/gen-vapid-keys.sh` and set both env vars; see docs/deploy.md.
+    public-key: ${PUSH_VAPID_PUBLIC_KEY:}
+    private-key: ${PUSH_VAPID_PRIVATE_KEY:}
+    # VAPID `sub`: a real contact point for whoever operates this sender.
+    subject: ${PUSH_VAPID_SUBJECT:https://vernfy.com}
+    ttl-seconds: ${PUSH_TTL_SECONDS:86400}
+    timeout-ms: ${PUSH_TIMEOUT_MS:5000}
+  email:
+    # Wording around the alert itself. The SMTP connection is `spring.mail.*` below, and its
+    # presence is what enables the channel — there is no separate on/off flag.
+    from: ${MAIL_FROM:Vernfy <noreply@vernfy.com>}
 
 management:
   # Metrics are exported by Prometheus scrape (/actuator/prometheus). Turn OFF the OTLP
