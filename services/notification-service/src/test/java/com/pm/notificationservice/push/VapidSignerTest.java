@@ -7,6 +7,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.interfaces.ECPrivateKey;
@@ -71,6 +72,21 @@ class VapidSignerTest {
         // The audience must be the origin: a token minted for Chrome's push service is then
         // useless against Firefox's, and it does not leak which subscription it was for.
         assertThat(claims.getAudience()).containsExactly("https://fcm.googleapis.com");
+    }
+
+    @Test
+    void writesTheAudienceAsAStringBecauseFcmRejectsAOneElementArray() {
+        String token = tokenFrom(new VapidSigner(properties).authorizationHeader(ENDPOINT));
+
+        String payload = new String(
+                Base64.getUrlDecoder().decode(token.split("\\.")[1]), StandardCharsets.UTF_8);
+
+        // Measured against a real FCM subscription: `"aud":"https://fcm.googleapis.com"` is
+        // accepted with 201, `"aud":["https://fcm.googleapis.com"]` comes back 403 "permission
+        // denied: invalid aud claim". Parsing normalises both into a Set, so the assertion above
+        // passes either way — only the raw payload tells them apart, which is why this test reads
+        // the JSON rather than the Claims.
+        assertThat(payload).contains("\"aud\":\"https://fcm.googleapis.com\"");
     }
 
     @Test

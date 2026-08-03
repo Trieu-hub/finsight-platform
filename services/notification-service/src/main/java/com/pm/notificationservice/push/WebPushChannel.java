@@ -95,7 +95,10 @@ public class WebPushChannel implements DeliveryChannel {
                 log.debug("Dropped expired push subscription for user {}", subscription.getUserId());
             } else {
                 failed.increment();
-                log.warn("Web push rejected with {} for user {}", status, subscription.getUserId());
+                // The body is where a push service says *why*. Dropping it once turned a one-line
+                // VAPID bug ("invalid aud claim") into a hunt across the keypair and the endpoint.
+                log.warn("Web push rejected with {} for user {}: {}", status,
+                        subscription.getUserId(), e.getResponseBodyAsString());
             }
         } catch (Exception e) {
             failed.increment();

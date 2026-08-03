@@ -9,12 +9,12 @@ dashboard, risk, notification, analytics) + frontend `web/` (mục 10).
 
 TỔNG QUAN CON SỐ
 --------------------------------------------------------------------------------
-- Tổng số test method (@Test / @ParameterizedTest):  513
+- Tổng số test method (@Test / @ParameterizedTest):  514
 - Tổng số lớp test:                                  111 (+ vài lớp base/support)
 - Trong đó:
     * Unit / component test (chạy KHÔNG cần Docker):  ~332
     * Integration test (cần Docker – Testcontainers): ~181
-- Frontend (Vitest, ngoài con số 513 ở trên):          62 test / 9 file
+- Frontend (Vitest, ngoài con số 514 ở trên):          62 test / 9 file
 - Frontend E2E (Playwright, cần stack đang chạy):       3 test / 1 file (mục 11)
 - Framework: JUnit 5 (Jupiter) + Mockito + AssertJ; frontend dùng Vitest +
   React Testing Library (jsdom) và Playwright cho E2E trình duyệt.
@@ -639,11 +639,15 @@ Quy ước chung của test:
    - rejectsExpiredToken
    - cannotMarkAnotherUsersNotificationRead
 
-[UNIT] VapidSignerTest — 4 test  (header Authorization của web push, RFC 8292)
+[UNIT] VapidSignerTest — 5 test  (header Authorization của web push, RFC 8292)
    - producesAVapidHeaderCarryingTheConfiguredPublicKey
    - signsATokenTheMatchingPublicKeyCanVerify
      (verify bằng nửa public — khoá bị cắt cụt VẪN ký được, chỉ assert này bắt được)
    - scopesTheTokenToThePushServiceOriginNotTheFullEndpoint
+   - writesTheAudienceAsAStringBecauseFcmRejectsAOneElementArray
+     (hồi quy đo được trên FCM thật: aud chuỗi → 201, aud mảng → 403 "permission
+      denied: invalid aud claim". Parse lại thì cả hai đều thành Set nên assert
+      trên Claims không phân biệt được — test này đọc JSON thô của payload)
    - failsLoudlyOnATruncatedKeyInsteadOfSigningWithIt
      (hồi quy: gen-vapid-keys.sh từng rụng octet cuối → 31 byte; triệu chứng duy nhất
       lẽ ra là push service trả 401 trên prod)

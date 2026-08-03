@@ -44,6 +44,7 @@ public class VapidSigner {
      * @param endpoint the subscription endpoint the push will be POSTed to
      * @return the value for the {@code Authorization} header
      */
+    @SuppressWarnings("deprecation") // single(): see the comment on the audience below
     public String authorizationHeader(String endpoint) {
         // The token is bound to the push service's origin, not to the full endpoint: a token
         // minted for Chrome's service is useless against Firefox's.
@@ -51,7 +52,12 @@ public class VapidSigner {
         String origin = uri.getScheme() + "://" + uri.getAuthority();
 
         String token = Jwts.builder()
-                .audience().add(origin).and()
+                // `aud` must be a bare string. jjwt deprecates single() because RFC 7519 prefers
+                // the array form, but FCM rejects an array outright — measured against a real
+                // subscription: string => 201 Created, ["..."] => 403 "permission denied: invalid
+                // aud claim". Parsing normalises both back to a Set, so only the wire form tells
+                // them apart; the regression test asserts on the raw payload JSON for that reason.
+                .audience().single(origin)
                 .subject(properties.getSubject())
                 .expiration(Date.from(Instant.now().plusSeconds(TOKEN_TTL_SECONDS)))
                 .signWith(privateKey(), Jwts.SIG.ES256)
