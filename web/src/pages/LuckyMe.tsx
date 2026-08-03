@@ -336,9 +336,33 @@ export default function LuckyMe() {
                       <span className="inline-flex w-fit rounded-full border border-emerald-500/40 bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-300">
                         {t('luckyme.games.available')}
                       </span>
-                      <span className="text-xs font-semibold text-emerald-400 opacity-0 transition group-hover:opacity-100">
+                      {/*
+                        The real control. The card around it is a clickable <article>, which is a
+                        mouse-only affordance: it takes no focus and never reaches the
+                        accessibility tree, so until this button existed a keyboard or
+                        screen-reader user could not open a game at all.
+
+                        aria-label names the game, because "Play" repeated on every card tells a
+                        screen-reader user nothing about which one they are on. It still contains
+                        the visible word, so speech control ("click Play") keeps working.
+
+                        focus-visible:opacity-100 is not decoration: the label is hidden until
+                        hover, and a focusable control that stays invisible while focused is a
+                        keyboard trap in all but name.
+                      */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          // The card's own onClick would fire straight after this one. Harmless
+                          // (same state, same value) but stopping it keeps one click one action.
+                          e.stopPropagation()
+                          setGame(g.key)
+                        }}
+                        aria-label={`${t('luckyme.games.play')} ${t(`luckyme.game.${g.key}.name`)}`}
+                        className="rounded text-xs font-semibold text-emerald-400 opacity-0 transition group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
+                      >
                         {t('luckyme.games.play')} →
-                      </span>
+                      </button>
                     </div>
                   ) : (
                     <span className="mt-1 inline-flex w-fit rounded-full border border-neutral-700 bg-neutral-800/80 px-3 py-1 text-xs font-medium text-neutral-400">
