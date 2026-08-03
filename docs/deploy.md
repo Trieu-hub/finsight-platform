@@ -501,20 +501,87 @@ scripts/prod-compose.sh up -d notification-service
 Requires HTTPS (already true here) and a service worker at `/sw.js` (shipped in the web image).
 iOS Safari only delivers push once the site has been **added to the home screen**.
 
-**Email.** Any SMTP provider works — setting `MAIL_HOST` is what switches the channel on:
+When a push does not arrive, read the **body** the push service returned — `WebPushChannel` logs it
+next to the status, and it names the cause outright (an early `aud`-shaped bug showed up only as
+`403 permission denied: invalid aud claim`). `finsight_notifications_push_{sent,failed,expired}_total`
+separate "accepted", "rejected" and "that browser is gone" so a silent channel is never ambiguous.
+
+**Email.** Any SMTP provider works — setting `MAIL_HOST` is what switches the channel on. Do the
+DNS first: without it the channel "works" and every alert still lands in spam.
+
+> ⚠️ **`vernfy.com` publishes no TXT, no MX and no DMARC today** — verified 2026-08-03:
+> `Resolve-DnsName vernfy.com -Type TXT` and `-Type MX` both return nothing. Mail sent from the
+> domain right now is unauthenticated and will be filtered.
+
+*1 — verify the domain with the provider.* Add `vernfy.com` in the Resend dashboard and open its
+**Records** tab. Resend generates three records, and the values are **per domain** — copy them from
+that tab, never from a guide (this one included):
+
+| Kind | Goes on | What it does |
+|---|---|---|
+| TXT | `resend._domainkey` | **DKIM** — the public key recipients check the signature against |
+| TXT | the `send` subdomain | **SPF** — authorises the provider's sending IPs |
+| MX | the `send` subdomain | return path, so bounces come back to the provider |
+
+In Cloudflare, enter the **name relative to the zone** (`resend._domainkey`, not the FQDN — the
+zone is appended for you). TXT and MX are never proxied, so the orange-cloud toggle does not apply
+and the Full (strict) posture in §1 is unaffected. If Cloudflare **Email Routing** is switched on
+it owns the apex `MX`; Resend's MX sits on a subdomain, so the two do not collide — but check
+before adding.
+
+*2 — confirm propagation before touching the box.* From anywhere:
+
+```bash
+dig +short TXT resend._domainkey.vernfy.com   # DKIM public key
+dig +short TXT send.vernfy.com                # v=spf1 include:...
+dig +short MX  send.vernfy.com
+```
+
+Only once Resend reports the domain **Verified** is it worth going on.
+
+*3 — set the secrets and restart.* Username and password are literal: the username is the string
+`resend`, the password is the API key.
 
 ```bash
 sops set secrets.env '["MAIL_HOST"]' '"smtp.resend.com"'
+sops set secrets.env '["MAIL_PORT"]' '"587"'
 sops set secrets.env '["MAIL_USERNAME"]' '"resend"'
 sops set secrets.env '["MAIL_PASSWORD"]' '"re_..."'
 sops set secrets.env '["MAIL_FROM"]' '"Vernfy <alerts@vernfy.com>"'
+scripts/prod-compose.sh up -d notification-service
 ```
 
-> ⚠️ **`vernfy.com` publishes no TXT records today** (`dig TXT vernfy.com` returns nothing), so
-> mail sent from it will be filtered as spam. Before turning this on, add the provider's **SPF**
-> and **DKIM** records in Cloudflare DNS — with the proxy **off** for those records; they are TXT,
-> not proxied. A `DMARC` record (`_dmarc.vernfy.com`) is the third one worth adding once SPF and
-> DKIM pass.
+> ⚠️ **`MAIL_FROM` must be at the verified domain.** DKIM aligns the signature with the `From:`
+> header, so a `From:` at any other domain fails alignment and lands in spam even with the records
+> correct.
+
+*4 — add DMARC last.* Once SPF and DKIM both pass, add `_dmarc.vernfy.com` TXT starting at
+`v=DMARC1; p=none;` and only tighten `p=` after the reports come back clean.
+
+*5 — prove it end to end.* Turn email alerts on in the notification bell, then record an expense
+large enough to trip a rule and check the counters:
+
+```bash
+docker run --rm --network container:finsight-notification-service curlimages/curl:latest \
+  -s http://localhost:8087/actuator/prometheus | grep finsight_notifications_email
+```
+
+`finsight_notifications_email_sent_total` rises and `..._failed_total` stays at zero.
+
+> 💡 **Rehearse locally with no provider and no DNS.** Run an SMTP catcher on the compose network
+> and point the service at it — the whole path (preference → `JavaMailSender` → SMTP → wording) is
+> then exercised without an account:
+>
+> ```bash
+> docker run -d --name finsight-mailpit --network finsight_default \
+>   -e MP_SMTP_AUTH_ACCEPT_ANY=1 -e MP_SMTP_AUTH_ALLOW_INSECURE=1 \
+>   -p 8025:8025 axllent/mailpit
+> MAIL_HOST=finsight-mailpit MAIL_PORT=1025 MAIL_USERNAME=dev MAIL_PASSWORD=dev \
+>   docker compose up -d notification-service      # env via the shell, .env untouched
+> ```
+>
+> Read what arrived at <http://localhost:8025>. Worth pairing with a control: a second account that
+> never opted in must produce a notification but **no** mail.
 
 The address alerts go to is the `email` claim of the user's own JWT, captured when they switch the
 channel on — nothing is emailed to a user who never opted in, and there is no admin path to set
