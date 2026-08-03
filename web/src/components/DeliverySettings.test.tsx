@@ -60,6 +60,15 @@ describe('DeliverySettings', () => {
     expect(screen.queryByText('Browser notifications')).not.toBeInTheDocument()
   })
 
+  it('hides the push row when the probe never got an answer', async () => {
+    vi.mocked(useWebPush).mockReturnValue(push('error'))
+
+    renderIt()
+
+    expect(await screen.findByText('Email alerts')).toBeInTheDocument()
+    expect(screen.queryByText('Browser notifications')).not.toBeInTheDocument()
+  })
+
   it('hides the email row when the server cannot send mail', async () => {
     vi.mocked(notificationPreferences).mockResolvedValue(prefs({ emailConfigured: false }))
 

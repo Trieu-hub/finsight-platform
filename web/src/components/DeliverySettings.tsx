@@ -45,7 +45,10 @@ export default function DeliverySettings() {
     }
   }
 
-  const pushHidden = state === 'unsupported' || state === 'unconfigured'
+  // 'error' hides the row the same way 'unsupported' does — we never found out whether push works
+  // here, so offering the switch would be a guess — but the hook keeps the two apart, and logs
+  // which one it was.
+  const pushHidden = state === 'unsupported' || state === 'unconfigured' || state === 'error'
   if (pushHidden && !emailConfigured) return null
 
   return (

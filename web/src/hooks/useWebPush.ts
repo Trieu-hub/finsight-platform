@@ -11,9 +11,13 @@ import { tokenStore } from '../api/client'
  *    has been added to the home screen),
  *  - the server has a VAPID keypair (otherwise there is nothing to subscribe against),
  *  - the user has granted notification permission and this browser holds a subscription.
+ *
+ * `error` is deliberately not folded into `unsupported`: both end up hiding the switch, but one
+ * means "this browser will never do push" and the other "we could not find out". Reporting them
+ * as the same thing once turned a dev server that had died mid-session into a hunt for an app bug.
  */
 
-export type PushState = 'unsupported' | 'unconfigured' | 'denied' | 'off' | 'on'
+export type PushState = 'unsupported' | 'unconfigured' | 'denied' | 'off' | 'on' | 'error'
 
 /**
  * The Push API wants the server key as bytes, not as the base64url string the API returns.
@@ -39,6 +43,15 @@ function keyOf(subscription: PushSubscription, name: 'p256dh' | 'auth'): string 
 
 const supported = () =>
   typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window
+
+/**
+ * Every failure here is swallowed on purpose — none of this is load-bearing for the bell or the
+ * SSE stream. Swallowing it *silently* is the part that cost debugging time, so the cause always
+ * reaches the console even though the UI stays calm.
+ */
+function swallow(what: string, cause: unknown) {
+  console.warn(`[push] ${what}`, cause)
+}
 
 export function useWebPush() {
   const [state, setState] = useState<PushState>('unsupported')
@@ -74,9 +87,10 @@ export function useWebPush() {
         const registration = await register()
         const existing = await registration.pushManager.getSubscription()
         if (!cancelled) setState(existing ? 'on' : 'off')
-      } catch {
+      } catch (cause) {
         // A failed probe must not break the page: the bell and the SSE stream are unaffected.
-        if (!cancelled) setState('unsupported')
+        swallow('probe failed', cause)
+        if (!cancelled) setState('error')
       }
     })()
     return () => {
@@ -111,7 +125,10 @@ export function useWebPush() {
         auth: keyOf(subscription, 'auth'),
       })
       setState('on')
-    } catch {
+    } catch (cause) {
+      // Back to 'off' rather than 'error': the user just pressed this switch, so it has to stay
+      // on screen to be pressed again. The console carries the reason it did not take.
+      swallow('subscribe failed', cause)
       setState('off')
     } finally {
       setBusy(false)
@@ -130,7 +147,8 @@ export function useWebPush() {
         await subscription.unsubscribe()
       }
       setState('off')
-    } catch {
+    } catch (cause) {
+      swallow('unsubscribe failed', cause)
       setState('off')
     } finally {
       setBusy(false)

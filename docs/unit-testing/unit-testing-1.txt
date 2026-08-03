@@ -14,7 +14,7 @@ TỔNG QUAN CON SỐ
 - Trong đó:
     * Unit / component test (chạy KHÔNG cần Docker):  ~332
     * Integration test (cần Docker – Testcontainers): ~181
-- Frontend (Vitest, ngoài con số 514 ở trên):          62 test / 9 file
+- Frontend (Vitest, ngoài con số 514 ở trên):          69 test / 10 file
 - Frontend E2E (Playwright, cần stack đang chạy):       3 test / 1 file (mục 11)
 - Framework: JUnit 5 (Jupiter) + Mockito + AssertJ; frontend dùng Vitest +
   React Testing Library (jsdom) và Playwright cho E2E trình duyệt.
@@ -783,15 +783,29 @@ lời gọi mạng, phần còn lại là thật)
      (soi gương: /register của auth-service trả 200 mà KHÔNG có token)
    - disables the submit button while the request is in flight
 
-[COMPONENT] src/components/DeliverySettings.test.tsx — 5 test  (kênh gửi cảnh báo:
+[COMPONENT] src/components/DeliverySettings.test.tsx — 6 test  (kênh gửi cảnh báo:
 web push + email; quy tắc "ẩn hẳn cái không dùng được" thay vì hiện rồi vô hiệu)
    - renders nothing when neither channel can deliver
    - hides the push row when the server has no VAPID keypair
+   - hides the push row when the probe never got an answer
    - hides the email row when the server cannot send mail
    - explains a browser-level block instead of offering a button that cannot work
    - turns email alerts on and reflects what the server stored
      (hai nút cùng hiện chữ "Turn on" → phân biệt bằng aria-label + aria-pressed,
       chính test này phát hiện ra chúng vốn không phân biệt được)
+
+[HOOK] src/hooks/useWebPush.test.ts — 6 test  (5 kết cục của việc dò khả năng
+push; jsdom không có service worker lẫn PushManager nên phải dựng tay)
+   - stays unsupported when the browser has no Push API, without asking the server
+   - tells a failed probe apart from an unsupported browser, and keeps the cause
+     (chính là nợ kỹ thuật ghi ở phiên 2026-08-02: catch cũ gộp mọi lỗi thành
+      'unsupported' nên "trình duyệt không hỗ trợ" và "API hỏng" trông giống hệt
+      nhau — đã chứng minh test đỏ khi gỡ bản vá ra)
+   - reports a server without a VAPID keypair as unconfigured
+   - reports a browser-level denial, which the page cannot undo
+   - is off without a subscription and on with one
+   - keeps the switch on screen when subscribing fails
+     ('error' sẽ ẩn mất chính cái nút vừa bấm → thất bại lúc subscribe vẫn về 'off')
 
 [COMPONENT] src/pages/Transactions.test.tsx — 3 test  (bất biến category ↔ type
 của form; chỉ mock lời gọi mạng)
