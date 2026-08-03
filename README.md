@@ -31,7 +31,7 @@ coupling is asynchronous over Kafka.
 | [`docs/deploy.md`](docs/deploy.md) | Production deployment on a single VPS (Caddy, TLS, SOPS secrets) |
 | [`docs/security/jwt-key-rotation.md`](docs/security/jwt-key-rotation.md) | Zero-downtime RS256 signing-key rotation |
 | [`docs/ADR-0004-budget-utilization-via-events.md`](docs/ADR-0004-budget-utilization-via-events.md) | Why budget utilization is event-driven (and its accepted drift) |
-| [`services/api-gateway/docs/`](services/api-gateway/docs/) | ADR-0001/0002/0003/0005 — gateway contract, identity freeze, BFF token relay, RS256 |
+| [`docs/ADR-0001`](docs/ADR-0001-gateway-v1-contract.md) · [`0002`](docs/ADR-0002-identity-auth-contract-freeze.md) · [`0003`](docs/ADR-0003-dashboard-bff-token-relay.md) · [`0005`](docs/ADR-0005-rs256-asymmetric-jwt-signing.md) | Gateway V1 contract, identity/auth freeze, BFF token relay, RS256 signing |
 | [`docs/brand.md`](docs/brand.md) | Logo files, palette, and the reasoning behind the mark |
 | [`docs/unit-testing/unit-testing-1.txt`](docs/unit-testing/unit-testing-1.txt) | Full test-suite catalog — every test class (unit vs integration), count, and what it verifies (513 backend tests across 9 services, plus the 62 frontend Vitest tests and the 3 Playwright journeys) |
 
@@ -153,11 +153,16 @@ Triggers, severities, persistence, and metrics are detailed in
 **Risk Monitoring** → persisted to `risk_alerts`, published as `RiskDetected`, exposed at
 `GET /api/v1/risks`; metric `finsight.risk.events.detected{type,severity}`:
 
+The monetary rules are scaled to the person: the bar is **5× that user's own mean**, floored, and
+falls back to the flat figure below until they have 10 observations to average. A fixed
+10,000,000 is noise to someone who spends it weekly and silence to someone whose largest ever
+expense is a tenth of it. Full formula in [docs/intelligence.md](docs/intelligence.md).
+
 | Rule | Trigger | Severity |
 |---|---|---|
-| `HIGH_AMOUNT_EXPENSE` | A single EXPENSE ≥ 10,000,000 | HIGH |
+| `HIGH_AMOUNT_EXPENSE` | A single EXPENSE ≥ the user's own bar (flat 10,000,000 until they have a history) | HIGH |
 | `RAPID_SPENDING` | 5th EXPENSE for a user within a 10-minute window | MEDIUM |
-| `LARGE_DAILY_SPEND` | Daily EXPENSE total crosses above 20,000,000 | HIGH |
+| `LARGE_DAILY_SPEND` | Daily EXPENSE total crosses above the user's own daily bar (flat 20,000,000) | HIGH |
 
 **Behavioral Insights** → persisted to `insights` (one per scope per month), exposed at
 `GET /api/v1/insights`; metric `finsight.insights.generated{type}`:
@@ -409,7 +414,9 @@ These are **absent from the codebase** — do not assume they exist:
 - **Webhook delivery, and digests** — an alert reaches the user in-app (bell + SSE), by **web
   push** and by **email**, but there is no outbound webhook and no batching: one alert is one
   delivery, however many arrive at once.
-- **ML-based intelligence** — current rules are deterministic and threshold-based.
+- **ML-based intelligence** — the rules are deterministic. They are no longer one-size-fits-all
+  (the monetary thresholds are drawn from each user's own history), but that is an average, not a
+  model: there is no training, no prediction, and no seasonality or category-level personalisation.
 - **An orchestrated deployment target** (Kubernetes/ECS) **and a managed secrets store**
   (Vault/KMS). The live demo runs Docker Compose on a single VPS behind Caddy with TLS; secrets
   are **SOPS/age-encrypted at rest** and injected into the process environment at launch, which

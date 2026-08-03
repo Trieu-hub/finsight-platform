@@ -8,18 +8,18 @@ package com.pm.riskservice.rule;
  */
 public enum RiskRule {
 
-    /** A single EXPENSE at or above a high amount. */
+    /** A single EXPENSE at or above a high amount for that user (see {@code RiskRuleEngine}). */
     HIGH_AMOUNT_EXPENSE("HIGH"),
     /** Many EXPENSE transactions for one user in a short window. */
     RAPID_SPENDING("MEDIUM"),
-    /** A user's EXPENSE total for a single day exceeding a threshold. */
+    /** A user's EXPENSE total for a single day exceeding their own daily bar. */
     LARGE_DAILY_SPEND("HIGH"),
 
-    /** A single INCOME at or above a high amount — unexplained money arriving. */
+    /** A single INCOME at or above a high amount for that user — unexplained money arriving. */
     HIGH_AMOUNT_INCOME("MEDIUM"),
     /** Many INCOME transactions for one user in a short window. */
     RAPID_INCOME("MEDIUM"),
-    /** A user's INCOME total for a single day exceeding a threshold. */
+    /** A user's INCOME total for a single day exceeding their own daily bar. */
     LARGE_DAILY_INCOME("MEDIUM"),
     /**
      * An INCOME far above the user's own historical average — the income-side mirror of

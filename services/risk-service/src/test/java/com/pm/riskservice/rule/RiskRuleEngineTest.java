@@ -137,6 +137,94 @@ class RiskRuleEngineTest {
         assertThat(engine.evaluate(income(50L, "3000000"))).isEmpty();
     }
 
+    // --- The bar is the person, not a number -----------------------------------------------
+    // Every test above leaves the baselines unstubbed, so they report "no history" and the engine
+    // uses the flat thresholds — which is exactly the cold-start contract. These set a history and
+    // check that the bar moves with it, in both directions.
+
+    @Test
+    void aHeavySpenderIsJudgedAgainstTheirOwnMeanNotAFlatTenMillion() {
+        // Mean expense 5M over 12 observations => bar 25M. 15M clears the old flat 10M and would
+        // have alerted before; for this user it is an ordinary Tuesday.
+        stubWindow(1, "15000000");
+        stubExpenseBaseline(12, "5000000");
+        assertThat(engine.evaluate(expense(50L, "15000000"))).isEmpty();
+    }
+
+    @Test
+    void andFiresOnceThatHigherBarIsPassed() {
+        stubWindow(1, "25000000");
+        stubExpenseBaseline(12, "5000000");
+        stubDailyExpenseBaseline(20, "200000000"); // 10M/day mean => daily bar 50M, stays quiet
+        assertThat(engine.evaluate(expense(50L, "25000000")))
+                .containsExactly(RiskRule.HIGH_AMOUNT_EXPENSE);
+    }
+
+    @Test
+    void aLightSpenderIsAlertedWellBelowTheFlatThreshold() {
+        // Mean 300k => bar 1.5M. A 2M expense is a big deal for this person and the flat 10M
+        // threshold would never once have told them so.
+        stubWindow(1, "2000000");
+        stubExpenseBaseline(12, "300000");
+        assertThat(engine.evaluate(expense(50L, "2000000")))
+                .containsExactly(RiskRule.HIGH_AMOUNT_EXPENSE);
+    }
+
+    @Test
+    void theFloorStopsATinyBaselineFromAlertingOnACupOfCoffee() {
+        // Mean 50k would put the bar at 250k. The floor (a tenth of the flat threshold) holds it
+        // at 1M, so a 300k expense stays a HIGH-severity alert nobody wanted.
+        stubWindow(1, "300000");
+        stubExpenseBaseline(12, "50000");
+        assertThat(engine.evaluate(expense(50L, "300000"))).isEmpty();
+    }
+
+    @Test
+    void tooLittleHistoryFallsBackToTheFlatThreshold() {
+        // Same light-spender mean, but four observations is not a baseline. The flat 10M applies,
+        // so a new user is protected from their first transaction rather than from their tenth.
+        stubWindow(1, "2000000");
+        stubExpenseBaseline(4, "300000");
+        assertThat(engine.evaluate(expense(50L, "2000000"))).isEmpty();
+    }
+
+    @Test
+    void theAlertBarSitsAboveTheAnomalyDetectorsThreeTimes() {
+        // 3x the user's mean is what UNUSUAL_TRANSACTION_AMOUNT records. Deliberately not enough
+        // to raise a HIGH risk alert as well, or the two would be one rule wearing two names.
+        stubWindow(1, "3000000");
+        stubExpenseBaseline(12, "1000000");
+        assertThat(engine.evaluate(expense(50L, "3000000"))).isEmpty();
+    }
+
+    @Test
+    void largeDailySpendUsesTheUsersOwnDailyMean() {
+        // 20M over 20 spending days => 1M/day mean => bar 5M. This 3M expense takes the day from
+        // 3M to 6M and crosses it, at less than a third of the flat 20M.
+        stubWindow(1, "6000000");
+        stubDailyExpenseBaseline(20, "20000000");
+        assertThat(engine.evaluate(expense(50L, "3000000")))
+                .containsExactly(RiskRule.LARGE_DAILY_SPEND);
+    }
+
+    @Test
+    void theDailyBarNeedsEnoughDaysBeforeItReplacesTheFlatOne() {
+        // Three spending days is not a habit yet, so the flat 20M still applies and 6M is quiet.
+        stubWindow(1, "6000000");
+        stubDailyExpenseBaseline(3, "3000000");
+        assertThat(engine.evaluate(expense(50L, "3000000"))).isEmpty();
+    }
+
+    @Test
+    void incomeIsScaledToThePersonToo() {
+        // Mean income 2M => bar 10M, far under the flat 50M. 12M clears both that and the 3x
+        // spike factor, so the two income rules fire together — they answer different questions.
+        stubIncomeWindow(1, "12000000");
+        stubIncomeBaseline(12, "2000000");
+        assertThat(engine.evaluate(income(50L, "12000000")))
+                .containsExactly(RiskRule.HIGH_AMOUNT_INCOME, RiskRule.INCOME_SPIKE);
+    }
+
     // --- Shared ---------------------------------------------------------------------------
 
     @Test
@@ -169,12 +257,40 @@ class RiskRuleEngineTest {
         stubIncomeBaseline(0, null);
     }
 
-    private void stubIncomeBaseline(long count, String average) {
+    // The projection mock is always built into a local first: Mockito's when() is stateful, and
+    // stubbing the projection *inside* when(repository...) leaves the outer stubbing unfinished.
+
+    /** Prior EXPENSE count and mean — what the per-transaction bar is derived from. */
+    private void stubExpenseBaseline(long count, String average) {
+        var stub = baseline(count, average);
+        when(repository.expenseBaselineBefore(any(), any())).thenReturn(stub);
+    }
+
+    /** Prior EXPENSE total and the number of days it spans — the daily bar's input. */
+    private void stubDailyExpenseBaseline(long days, String total) {
+        var stub = dailyBaseline(days, total);
+        when(repository.dailyExpenseBaselineBefore(any(), any())).thenReturn(stub);
+    }
+
+    private static ObservedExpenseRepository.ExpenseBaseline baseline(long count, String average) {
         ObservedExpenseRepository.ExpenseBaseline baseline =
                 mock(ObservedExpenseRepository.ExpenseBaseline.class);
         when(baseline.getCount()).thenReturn(count);
         when(baseline.getAverage()).thenReturn(average == null ? null : new BigDecimal(average));
-        when(repository.incomeBaselineBefore(any(), any())).thenReturn(baseline);
+        return baseline;
+    }
+
+    private static ObservedExpenseRepository.DailyBaseline dailyBaseline(long days, String total) {
+        ObservedExpenseRepository.DailyBaseline baseline =
+                mock(ObservedExpenseRepository.DailyBaseline.class);
+        when(baseline.getDays()).thenReturn(days);
+        when(baseline.getTotal()).thenReturn(total == null ? null : new BigDecimal(total));
+        return baseline;
+    }
+
+    private void stubIncomeBaseline(long count, String average) {
+        var stub = baseline(count, average);
+        when(repository.incomeBaselineBefore(any(), any())).thenReturn(stub);
     }
 
     private TransactionCreatedEvent expense(long userId, String amount) {

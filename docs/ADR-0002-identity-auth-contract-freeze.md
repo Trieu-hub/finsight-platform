@@ -77,7 +77,7 @@ supposed to end. With discovery, only auth-service restarts.
 (signs and verifies) and the outgoing one (verifies only) — for one access-token lifetime, so
 tokens minted seconds before the switch are not mass-invalidated. `JWT_PREVIOUS_PUBLIC_KEYS`
 holds the outgoing key for that window and is empty at steady state. Procedure:
-[docs/security/jwt-key-rotation.md](../../../docs/security/jwt-key-rotation.md).
+[docs/security/jwt-key-rotation.md](security/jwt-key-rotation.md).
 
 **Failure posture:** a validator that cannot reach the JWK Set keeps its last known good keys
 (falling back to the configured `JWT_PUBLIC_KEY` if it never fetched one), rather than
