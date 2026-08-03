@@ -48,4 +48,4 @@ Spring Boot 4.0.6 / Java 21 microservice handling authentication for the `finsig
 
 - `ddl-auto: validate` means a missing or mismatched Flyway migration will crash startup.
 - The private key never leaves this service. Never add an endpoint, log line, or response that could emit it — `/.well-known/jwks.json` publishes public keys only, and `JwtKeyRegistry` renders it through `Jwks.json(PublicJwk)` so leaking private material is a compile error.
-- `RS256` is pinned by [ADR-0002](../api-gateway/docs/ADR-0002-identity-auth-contract-freeze.md); the claim set (`sub`/`userId`/`email`/`role`/`iss`/`aud`) is frozen there too. Adding or renaming a claim breaks all seven validators at once.
+- `RS256` is pinned by [ADR-0002](../../docs/ADR-0002-identity-auth-contract-freeze.md); the claim set (`sub`/`userId`/`email`/`role`/`iss`/`aud`) is frozen there too. Adding or renaming a claim breaks all seven validators at once.
