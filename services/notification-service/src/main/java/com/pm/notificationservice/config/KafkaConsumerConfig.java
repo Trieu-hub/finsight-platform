@@ -1,17 +1,30 @@
 package com.pm.notificationservice.config;
 
+import com.pm.notificationservice.event.BudgetExceededEvent;
+import com.pm.notificationservice.event.RiskDetectedEvent;
 import com.pm.notificationservice.logging.CorrelationIdRecordInterceptor;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.common.serialization.StringDeserializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
+import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
+import org.springframework.kafka.core.MicrometerConsumerListener;
 import org.springframework.kafka.listener.ConsumerRecordRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.listener.RecordInterceptor;
+import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
+import org.springframework.kafka.support.serializer.JsonDeserializer;
 import org.springframework.util.backoff.FixedBackOff;
+
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Error handling for the Kafka listener. Boot's auto-configuration picks this
@@ -41,10 +54,55 @@ public class KafkaConsumerConfig {
      * Carries the producer's correlation id from the record header into the MDC for the duration of
      * each consumed record. Boot applies a single {@code RecordInterceptor} bean to the
      * auto-configured listener container factory, which is the one the RiskDetected listener uses.
+     * The hand-built BudgetExceeded factory below is outside Boot's reach and sets its own.
      */
     @Bean
     public RecordInterceptor<Object, Object> correlationIdRecordInterceptor() {
         return new CorrelationIdRecordInterceptor<>();
+    }
+
+    /**
+     * Dedicated factory for {@code BudgetExceeded}: a second topic carrying a different type, and
+     * the wire format is headerless — one JSON default type per consumer factory — so it cannot
+     * share the auto-configured one, which is pinned to {@link RiskDetectedEvent}.
+     *
+     * <p>Its own consumer group, so budget alerts track offsets independently of risk alerts and a
+     * replay of one never replays the other.
+     */
+    @Bean
+    public ConcurrentKafkaListenerContainerFactory<String, BudgetExceededEvent>
+            budgetExceededListenerContainerFactory(
+                    @Value("${spring.kafka.bootstrap-servers}") String bootstrapServers,
+                    DefaultErrorHandler kafkaErrorHandler,
+                    MeterRegistry meterRegistry) {
+
+        Map<String, Object> props = new HashMap<>();
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        props.put(ConsumerConfig.GROUP_ID_CONFIG, "notification-service-budgets");
+        props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
+        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
+        props.put(ErrorHandlingDeserializer.KEY_DESERIALIZER_CLASS, StringDeserializer.class);
+        props.put(ErrorHandlingDeserializer.VALUE_DESERIALIZER_CLASS, JsonDeserializer.class);
+        props.put(JsonDeserializer.VALUE_DEFAULT_TYPE, BudgetExceededEvent.class.getName());
+        props.put(JsonDeserializer.USE_TYPE_INFO_HEADERS, false);
+        props.put(JsonDeserializer.TRUSTED_PACKAGES, "com.pm.notificationservice.event");
+
+        DefaultKafkaConsumerFactory<String, BudgetExceededEvent> consumerFactory =
+                new DefaultKafkaConsumerFactory<>(props);
+        // Boot's metrics customizer only reaches the auto-configured factory, so bind the native
+        // client metrics (consumer lag included) for this group explicitly.
+        consumerFactory.addListener(new MicrometerConsumerListener<>(meterRegistry));
+
+        ConcurrentKafkaListenerContainerFactory<String, BudgetExceededEvent> factory =
+                new ConcurrentKafkaListenerContainerFactory<>();
+        factory.setConsumerFactory(consumerFactory);
+        factory.setCommonErrorHandler(kafkaErrorHandler);
+        // Attached by hand for the same reason as risk-service's budget factory: Boot's configurer
+        // never touches this one, and without it BudgetExceeded would be the single consumed event
+        // whose log lines drop out of the cross-service trace.
+        factory.setRecordInterceptor(new CorrelationIdRecordInterceptor<>());
+        return factory;
     }
 
     @Bean

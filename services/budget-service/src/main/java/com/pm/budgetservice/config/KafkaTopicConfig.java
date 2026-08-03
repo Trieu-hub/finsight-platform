@@ -24,4 +24,12 @@ public class KafkaTopicConfig {
                 .replicas(1)
                 .build();
     }
+
+    @Bean
+    public NewTopic budgetExceededTopic(@Value("${finsight.kafka.topics.budget-exceeded}") String name) {
+        return TopicBuilder.name(name)
+                .partitions(1)
+                .replicas(1)
+                .build();
+    }
 }

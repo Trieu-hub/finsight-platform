@@ -33,7 +33,7 @@ coupling is asynchronous over Kafka.
 | [`docs/ADR-0004-budget-utilization-via-events.md`](docs/ADR-0004-budget-utilization-via-events.md) | Why budget utilization is event-driven (and its accepted drift) |
 | [`docs/ADR-0001`](docs/ADR-0001-gateway-v1-contract.md) · [`0002`](docs/ADR-0002-identity-auth-contract-freeze.md) · [`0003`](docs/ADR-0003-dashboard-bff-token-relay.md) · [`0005`](docs/ADR-0005-rs256-asymmetric-jwt-signing.md) | Gateway V1 contract, identity/auth freeze, BFF token relay, RS256 signing |
 | [`docs/brand.md`](docs/brand.md) | Logo files, palette, and the reasoning behind the mark |
-| [`docs/unit-testing/unit-testing-1.txt`](docs/unit-testing/unit-testing-1.txt) | Full test-suite catalog — every test class (unit vs integration), count, and what it verifies (513 backend tests across 9 services, plus the 62 frontend Vitest tests and the 3 Playwright journeys) |
+| [`docs/unit-testing/unit-testing-1.txt`](docs/unit-testing/unit-testing-1.txt) | Full test-suite catalog — every test class (unit vs integration), count, and what it verifies (531 backend tests across 9 services, plus the 69 frontend Vitest tests and the 3 Playwright journeys) |
 
 ## Tech stack
 
@@ -69,6 +69,7 @@ coupling is asynchronous over Kafka.
                        ┌───────────── Kafka ───────────────┐
                        │ finsight.transactions.created      │
                        │ finsight.budgets.changed           │
+                       │ finsight.budgets.exceeded          │
                        │ finsight.risk.detected             │
                        └───────────────┬───────────────────┘
                                        ▼
@@ -90,7 +91,9 @@ coupling is asynchronous over Kafka.
   service calls another at runtime.
 - **Asynchronous** (Kafka): transaction-service produces `TransactionCreated`; budget-service,
   risk-service **and analytics-service** consume it; budget-service produces `BudgetChanged`
-  (consumed by risk-service); risk-service produces `RiskDetected`, consumed by
+  (consumed by risk-service) **and `BudgetExceeded`** (consumed by notification-service — the
+  over-budget alert, raised from the authoritative `spent_amount` this service owns);
+  risk-service produces `RiskDetected`, consumed by
   notification-service, which materializes per-user in-app notifications and delivers them by
   SSE, **web push** and **email** (both optional, off until configured). analytics-service
   folds `TransactionCreated` into a per-month rollup read model.
@@ -110,10 +113,10 @@ gateway).
 | `auth-service` | 8081 | `auth_db` | HTTP | Register, login, refresh, account lockout; Redis-backed tokens |
 | `user-service` | 8082 | `user_db` | HTTP | User profile data |
 | `transaction-service` | 8083 | `transaction_db` | HTTP | Transactions (INCOME/EXPENSE/TRANSFER), categories, wallets (accounts + balances), summaries; **produces** `TransactionCreated` |
-| `budget-service` | 8084 | `budget_db` | HTTP, Kafka | Budget definitions + utilization; **consumes** `TransactionCreated`, **produces** `BudgetChanged` |
+| `budget-service` | 8084 | `budget_db` | HTTP, Kafka | Budget definitions + utilization; **consumes** `TransactionCreated`, **produces** `BudgetChanged` and `BudgetExceeded` (raised once, on the expense that crosses a limit) |
 | `dashboard-service` | 8085 | _(none, BFF)_ | HTTP | Read-only aggregation over user/transaction/budget; relays JWT; fail-fast |
 | `risk-service` | 8086 (internal) | `risk_db` | Kafka | Risk rules, behavioral insights, anomaly detection; **consumes** `TransactionCreated` + `BudgetChanged`, **produces** `RiskDetected`; read APIs. Port not host-published (SE-2) |
-| `notification-service` | 8087 | `notification_db` | HTTP, Kafka | In-app notifications; **consumes** `RiskDetected`; user-scoped read/mark-read API; optional **LLM narrator** (OpenAI-compatible, Groq free tier by default, off unless configured) |
+| `notification-service` | 8087 | `notification_db` | HTTP, Kafka | In-app notifications; **consumes** `RiskDetected` + `BudgetExceeded`; user-scoped read/mark-read API; optional **LLM narrator** (OpenAI-compatible, Groq free tier by default, off unless configured) |
 | `analytics-service` | 8088 | `analytics_db` | HTTP, Kafka | Per-user monthly **rollup read model**; **consumes** `TransactionCreated`; overview / categories / forecast APIs; optional **AI monthly summary** (OpenAI-compatible, Groq free tier by default, off unless configured) |
 
 ## Databases
@@ -141,6 +144,7 @@ with idempotent consumers. Full payloads in [`docs/event-catalog.md`](docs/event
 |---|---|---|
 | `finsight.transactions.created` | transaction-service | budget-service, risk-service, analytics-service |
 | `finsight.budgets.changed` | budget-service | risk-service |
+| `finsight.budgets.exceeded` | budget-service | notification-service |
 | `finsight.risk.detected` | risk-service | notification-service |
 
 ## Implemented intelligence

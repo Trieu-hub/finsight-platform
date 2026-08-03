@@ -36,4 +36,17 @@ public class BudgetEventListener {
         }
         publisher.publish(event);
     }
+
+    /**
+     * Same after-commit rule, and it matters more here: this event becomes a notification the user
+     * actually sees, so emitting it for a spend that then rolled back would alarm someone about
+     * money they never spent.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onBudgetExceeded(BudgetExceededEvent event) {
+        if (!kafkaEnabled) {
+            return;
+        }
+        publisher.publishExceeded(event);
+    }
 }

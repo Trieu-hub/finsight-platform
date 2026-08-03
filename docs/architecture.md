@@ -131,6 +131,7 @@ strings.
 |---|---|---|---|
 | `finsight.transactions.created` | transaction-service | budget-service, risk-service | `TransactionCreated` |
 | `finsight.budgets.changed` | budget-service | risk-service | `BudgetChanged` |
+| `finsight.budgets.exceeded` | budget-service | notification-service | `BudgetExceeded` |
 | `finsight.risk.detected` | risk-service | notification-service | `RiskDetected` |
 
 Each topic is owned by exactly one producer. `RiskDetected` is consumed by notification-service,

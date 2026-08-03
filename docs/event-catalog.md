@@ -2,7 +2,7 @@
 
 _Last updated: 2026-06-14 · Source of truth: the producer-side event records under `services/`._
 
-Every implemented Kafka event is listed here. Conventions shared by all three:
+Every implemented Kafka event is listed here. Conventions shared by all four:
 
 - **Serialization:** JSON, **no** Jackson type headers (language-neutral; consumers
   deserialize by the documented schema and a per-consumer default type).
@@ -24,6 +24,7 @@ Every implemented Kafka event is listed here. Conventions shared by all three:
 |---|---|---|---|
 | `TransactionCreated` | `finsight.transactions.created` | transaction-service | budget-service, risk-service |
 | `BudgetChanged` | `finsight.budgets.changed` | budget-service | risk-service |
+| `BudgetExceeded` | `finsight.budgets.exceeded` | budget-service | notification-service |
 | `RiskDetected` | `finsight.risk.detected` | risk-service | notification-service |
 
 ---
@@ -126,7 +127,56 @@ Every implemented Kafka event is listed here. Conventions shared by all three:
 
 ---
 
-## 3. RiskDetected
+## 3. BudgetExceeded
+
+- **Topic:** `finsight.budgets.exceeded`
+- **Producer:** budget-service — `BudgetExceededEvent`, published by `KafkaBudgetEventPublisher`
+  from `BudgetEventListener` (AFTER_COMMIT, so a rolled-back spend never alarms anyone).
+- **Consumer:** notification-service (`BudgetExceededConsumer`, dedicated listener container
+  factory and its own consumer group) — one notification per event, then the same fan-out as any
+  alert: bell, SSE, web push, email.
+- **Purpose:** tell the user they have overspent, from the **authoritative** figure.
+  budget-service owns `spent_amount` and it is the number the Budgets page renders, so the alert
+  cannot contradict the UI. risk-service's `BUDGET_RISK` insight answers a different question
+  ("approaching the limit", 80%) from its own eventually-consistent read-model.
+
+> **Fire once per crossing.** Emitted only by the expense that takes a budget from at-or-below its
+> limit to above it — the same crossing rule the risk engine uses. Without it every later expense
+> on a blown budget would produce another push, another email and another bell entry. Reaching the
+> limit exactly is not exceeding it, and reversals (`applyDelete`, and the reverse leg of
+> `applyUpdate`) never emit: an edit is not a new spend.
+
+**Payload**
+
+| Field | Type | Notes |
+|---|---|---|
+| `eventId` | UUID | de-dup key (notification-service's inbox) |
+| `eventType` | string | `"BudgetExceeded"` |
+| `occurredAt` | string | ISO-8601 instant |
+| `budgetId` | UUID | which budget was blown |
+| `userId` | number (Long) | partition key |
+| `categoryId` | number (Long) | |
+| `currency` | string | ISO 4217 |
+| `limitAmount` | number (BigDecimal) | the limit at the moment of crossing |
+| `spentAmount` | number (BigDecimal) | total after this expense; strictly greater than the limit |
+
+```json
+{
+  "eventId": "11111111-2222-3333-4444-555555555555",
+  "eventType": "BudgetExceeded",
+  "occurredAt": "2026-08-03T09:00:00.000Z",
+  "budgetId": "99999999-8888-7777-6666-555555555555",
+  "userId": 4242,
+  "categoryId": 7,
+  "currency": "VND",
+  "limitAmount": 1000000.00,
+  "spentAmount": 1250000.00
+}
+```
+
+---
+
+## 4. RiskDetected
 
 - **Topic:** `finsight.risk.detected`
 - **Producer:** risk-service — `RiskDetectedEvent`, published by `RiskEventConsumer` for each

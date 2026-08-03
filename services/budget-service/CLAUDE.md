@@ -34,7 +34,15 @@ remain — budget-slot edits, retry-exhaustion loss, and no backfill — so dash
 live computation over transaction-service summaries is still the authoritative view. Don't
 "fix" those residual items casually.
 
-Deliberately deferred: alerts/notifications, dashboards/analytics rollups, recurring
+**Over-budget alerting now lives here.** When `applyExpense` takes a budget from at-or-below its
+limit to above it, the service publishes `BudgetExceededEvent` on `finsight.budgets.exceeded`
+(AFTER_COMMIT, like `BudgetChanged`), consumed by notification-service. It belongs here and not in
+risk-service because this service owns `spent_amount` — the figure the Budgets page renders — so
+the alert can never contradict the UI. **Fire once per crossing**: reaching the limit exactly is
+not exceeding it, and reversals never emit (`applyDelete`, and the reverse leg of `applyUpdate`,
+which would otherwise look like a fresh crossing on a budget that was already over).
+
+Deliberately deferred: dashboards/analytics rollups, recurring
 auto-generation, overall (all-category) budgets, cross-service category validation,
 and FX conversion (the consumer matches on exact currency only).
 

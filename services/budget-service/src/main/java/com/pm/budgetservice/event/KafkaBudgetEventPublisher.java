@@ -26,26 +26,39 @@ public class KafkaBudgetEventPublisher implements BudgetEventPublisher {
 
     private static final Logger log = LoggerFactory.getLogger(KafkaBudgetEventPublisher.class);
 
-    private final KafkaTemplate<String, BudgetChangedEvent> kafkaTemplate;
-    private final String topic;
+    private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final String changedTopic;
+    private final String exceededTopic;
 
-    public KafkaBudgetEventPublisher(KafkaTemplate<String, BudgetChangedEvent> kafkaTemplate,
-                                     @Value("${finsight.kafka.topics.budget-changed}") String topic) {
+    public KafkaBudgetEventPublisher(KafkaTemplate<String, Object> kafkaTemplate,
+                                     @Value("${finsight.kafka.topics.budget-changed}") String changedTopic,
+                                     @Value("${finsight.kafka.topics.budget-exceeded}") String exceededTopic) {
         this.kafkaTemplate = kafkaTemplate;
-        this.topic = topic;
+        this.changedTopic = changedTopic;
+        this.exceededTopic = exceededTopic;
     }
 
     @Override
     public void publish(BudgetChangedEvent event) {
-        String key = String.valueOf(event.userId());
-        kafkaTemplate.send(toRecord(key, event)).whenComplete((result, ex) -> {
+        send(changedTopic, String.valueOf(event.userId()), event,
+                "BudgetChanged", event.eventId(), event.budgetId());
+    }
+
+    @Override
+    public void publishExceeded(BudgetExceededEvent event) {
+        send(exceededTopic, String.valueOf(event.userId()), event,
+                "BudgetExceeded", event.eventId(), event.budgetId());
+    }
+
+    private void send(String topic, String key, Object event,
+                      String name, java.util.UUID eventId, java.util.UUID budgetId) {
+        kafkaTemplate.send(toRecord(topic, key, event)).whenComplete((result, ex) -> {
             if (ex != null) {
-                log.error("Failed to publish BudgetChanged event eventId={} budgetId={}",
-                        event.eventId(), event.budgetId(), ex);
+                log.error("Failed to publish {} event eventId={} budgetId={}", name, eventId, budgetId, ex);
             } else if (log.isDebugEnabled()) {
                 var md = result.getRecordMetadata();
-                log.debug("Published BudgetChanged event eventId={} budgetId={} to {}-{}@{}",
-                        event.eventId(), event.budgetId(), md.topic(), md.partition(), md.offset());
+                log.debug("Published {} event eventId={} budgetId={} to {}-{}@{}",
+                        name, eventId, budgetId, md.topic(), md.partition(), md.offset());
             }
         });
     }
@@ -58,8 +71,8 @@ public class KafkaBudgetEventPublisher implements BudgetEventPublisher {
      * the request thread, after commit) or by the record interceptor when the change was itself
      * driven by a consumed event. Null when neither applies; then no header is added.
      */
-    ProducerRecord<String, BudgetChangedEvent> toRecord(String key, BudgetChangedEvent event) {
-        ProducerRecord<String, BudgetChangedEvent> record = new ProducerRecord<>(topic, key, event);
+    ProducerRecord<String, Object> toRecord(String topic, String key, Object event) {
+        ProducerRecord<String, Object> record = new ProducerRecord<>(topic, key, event);
         String correlationId = MDC.get(CorrelationIdFilter.CORRELATION_ID_MDC_KEY);
         if (correlationId != null) {
             record.headers().add(CorrelationIdFilter.CORRELATION_ID_HEADER,

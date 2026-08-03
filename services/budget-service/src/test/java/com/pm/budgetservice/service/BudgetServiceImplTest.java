@@ -6,6 +6,7 @@ import com.pm.budgetservice.dto.CreateBudgetRequest;
 import com.pm.budgetservice.dto.UpdateBudgetRequest;
 import com.pm.budgetservice.entity.Budget;
 import com.pm.budgetservice.enums.BudgetPeriod;
+import com.pm.budgetservice.event.BudgetExceededEvent;
 import com.pm.budgetservice.exception.BudgetConflictException;
 import com.pm.budgetservice.exception.BudgetNotFoundException;
 import com.pm.budgetservice.exception.InvalidBudgetDataException;
@@ -209,6 +210,103 @@ class BudgetServiceImplTest {
         assertThat(applied).isFalse();
         verify(processedEventRepository, never()).save(any());
         verify(budgetRepository, never()).applyExpense(anyLong(), any(), any());
+    }
+
+    // --- BudgetExceeded: fire on the crossing, and only on the crossing ---------------------
+    // This event becomes a notification the user actually sees, so "once per crossing" is the
+    // whole contract. Emitting it per expense while a budget stays over would mean a push, an
+    // email and a bell entry for every coffee bought after the limit was passed.
+
+    @Test
+    void applyExpensePublishesBudgetExceededOnTheEventThatCrossesTheLimit() {
+        UUID eventId = UUID.randomUUID();
+        UUID budgetId = UUID.randomUUID();
+        when(processedEventRepository.existsById(eventId)).thenReturn(false);
+        // After the increment the budget reads 1,200 against a 1,000 limit; this 300 expense took
+        // it from 900 (at or below) to over.
+        when(budgetRepository.findByIdAndUserIdAndIsDeletedFalse(budgetId, USER_ID))
+                .thenReturn(Optional.of(budgetWith("1000", "1200", budgetId)));
+
+        budgetService.applyExpense(eventId, USER_ID, budgetId, new BigDecimal("300"));
+
+        ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertThat(captor.getValue()).isInstanceOf(BudgetExceededEvent.class);
+        BudgetExceededEvent published = (BudgetExceededEvent) captor.getValue();
+        assertThat(published.budgetId()).isEqualTo(budgetId);
+        assertThat(published.userId()).isEqualTo(USER_ID);
+        assertThat(published.spentAmount()).isEqualByComparingTo("1200");
+        assertThat(published.limitAmount()).isEqualByComparingTo("1000");
+    }
+
+    @Test
+    void applyExpenseStaysSilentOnceTheBudgetIsAlreadyOver() {
+        UUID eventId = UUID.randomUUID();
+        UUID budgetId = UUID.randomUUID();
+        when(processedEventRepository.existsById(eventId)).thenReturn(false);
+        // 1,500 after a 300 expense means it was already 1,200 — over the 1,000 limit before this.
+        when(budgetRepository.findByIdAndUserIdAndIsDeletedFalse(budgetId, USER_ID))
+                .thenReturn(Optional.of(budgetWith("1000", "1500", budgetId)));
+
+        budgetService.applyExpense(eventId, USER_ID, budgetId, new BigDecimal("300"));
+
+        verify(eventPublisher, never()).publishEvent(any(BudgetExceededEvent.class));
+    }
+
+    @Test
+    void applyExpenseStaysSilentWhileTheBudgetIsStillWithinItsLimit() {
+        UUID eventId = UUID.randomUUID();
+        UUID budgetId = UUID.randomUUID();
+        when(processedEventRepository.existsById(eventId)).thenReturn(false);
+        when(budgetRepository.findByIdAndUserIdAndIsDeletedFalse(budgetId, USER_ID))
+                .thenReturn(Optional.of(budgetWith("1000", "900", budgetId)));
+
+        budgetService.applyExpense(eventId, USER_ID, budgetId, new BigDecimal("300"));
+
+        verify(eventPublisher, never()).publishEvent(any(BudgetExceededEvent.class));
+    }
+
+    @Test
+    void reachingTheLimitExactlyIsNotExceedingIt() {
+        UUID eventId = UUID.randomUUID();
+        UUID budgetId = UUID.randomUUID();
+        when(processedEventRepository.existsById(eventId)).thenReturn(false);
+        // Spending the budget down to zero remaining is hitting the target, not overshooting it.
+        when(budgetRepository.findByIdAndUserIdAndIsDeletedFalse(budgetId, USER_ID))
+                .thenReturn(Optional.of(budgetWith("1000", "1000", budgetId)));
+
+        budgetService.applyExpense(eventId, USER_ID, budgetId, new BigDecimal("300"));
+
+        verify(eventPublisher, never()).publishEvent(any(BudgetExceededEvent.class));
+    }
+
+    @Test
+    void reversingAnExpenseNeverAnnouncesAnExceededBudget() {
+        // applyDelete negates the amount. A reversal can only lower spend, so treating it as a
+        // crossing would be nonsense — and the negative-amount guard is what stops it.
+        UUID eventId = UUID.randomUUID();
+        UUID budgetId = UUID.randomUUID();
+        when(processedEventRepository.existsById(eventId)).thenReturn(false);
+
+        budgetService.applyDelete(eventId, USER_ID, budgetId, new BigDecimal("300"));
+
+        verify(eventPublisher, never()).publishEvent(any(BudgetExceededEvent.class));
+        verify(budgetRepository, never()).findByIdAndUserIdAndIsDeletedFalse(any(), anyLong());
+    }
+
+    private static Budget budgetWith(String limit, String spent, UUID id) {
+        return Budget.builder()
+                .id(id)
+                .userId(USER_ID)
+                .categoryId(1L)
+                .currency("VND")
+                .limitAmount(new BigDecimal(limit))
+                .spentAmount(new BigDecimal(spent))
+                .periodType(BudgetPeriod.MONTHLY)
+                .startDate(LocalDate.of(2026, 8, 1))
+                .endDate(LocalDate.of(2026, 8, 31))
+                .isDeleted(false)
+                .build();
     }
 
     @Test

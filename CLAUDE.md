@@ -328,6 +328,7 @@ Single-node KRaft Kafka. JSON without type headers, keyed by `userId`, at-least-
 |---|---|---|
 | `finsight.transactions.created` | transaction-service | budget, risk, analytics |
 | `finsight.budgets.changed` | budget-service | risk |
+| `finsight.budgets.exceeded` | budget-service | notification |
 | `finsight.risk.detected` | risk-service | notification |
 
 - Producers use a **transactional outbox** — `OutboxWriter` writes inside the business
