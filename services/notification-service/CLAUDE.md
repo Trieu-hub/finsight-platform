@@ -24,6 +24,15 @@ one notification per detection. notification-service is the **first consumer** o
 topic — before it, `RiskDetected` was produced with no consumer. There are no
 cross-service runtime calls.
 
+Also consumes **`BudgetExceeded`** (on `finsight.budgets.exceeded`, owned by budget-service) —
+the over-budget alert, raised once per crossing from the authoritative `spent_amount`. Both feeds
+converge on the same private `create(...)` in `NotificationServiceImpl`: same inbox, same
+transaction, same after-commit fan-out. It needs its **own listener container factory**
+(`budgetExceededListenerContainerFactory`) because the wire format is headerless — one JSON
+default type per factory — and the auto-configured one is pinned to `RiskDetectedEvent`. That
+factory is outside Boot's reach, so the `CorrelationIdRecordInterceptor` is attached by hand;
+forget it and this is the one consumed event whose log lines fall out of the trace.
+
 The message wording comes from an `AlertNarrator`. The default `TemplateNarrator` is rule-based
 and always on. An optional `LlmAlertNarrator` (off by default, `finsight.narrator.ai.enabled`)
 phrases the alert with an LLM over any **OpenAI-compatible** Chat Completions API — default Groq

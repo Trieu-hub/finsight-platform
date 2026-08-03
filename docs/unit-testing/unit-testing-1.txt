@@ -9,12 +9,12 @@ dashboard, risk, notification, analytics) + frontend `web/` (mục 10).
 
 TỔNG QUAN CON SỐ
 --------------------------------------------------------------------------------
-- Tổng số test method (@Test / @ParameterizedTest):  523
+- Tổng số test method (@Test / @ParameterizedTest):  531
 - Tổng số lớp test:                                  111 (+ vài lớp base/support)
 - Trong đó:
     * Unit / component test (chạy KHÔNG cần Docker):  ~332
     * Integration test (cần Docker – Testcontainers): ~181
-- Frontend (Vitest, ngoài con số 523 ở trên):          69 test / 10 file
+- Frontend (Vitest, ngoài con số 531 ở trên):          70 test / 11 file
 - Frontend E2E (Playwright, cần stack đang chạy):       3 test / 1 file (mục 11)
 - Framework: JUnit 5 (Jupiter) + Mockito + AssertJ; frontend dùng Vitest +
   React Testing Library (jsdom) và Playwright cho E2E trình duyệt.
@@ -349,7 +349,7 @@ Quy ước chung của test:
 5) BUDGET-SERVICE  (định nghĩa ngân sách + tiêu thụ từ sự kiện Kafka)
 ================================================================================
 
-[UNIT] BudgetServiceImplTest — 15 test
+[UNIT] BudgetServiceImplTest — 20 test
    - createPersistsBudgetScopedToTokenUserId
    - createRejectsNonPositiveLimit
    - createRejectsEndBeforeStart
@@ -365,6 +365,14 @@ Quy ước chung của test:
    - applyUpdateWithNullApplyOnlyReversesTheOldSlot
    - applyUpdateSkipsDuplicateEventWithoutTouchingBudgets
    - deleteSoftDeletesOwnedBudget
+   Nhóm BudgetExceeded — "bắn đúng một lần lúc vượt" (5 test):
+   - applyExpensePublishesBudgetExceededOnTheEventThatCrossesTheLimit
+   - applyExpenseStaysSilentOnceTheBudgetIsAlreadyOver
+     (nếu thiếu: mọi khoản chi sau khi vượt đều đẻ thêm 1 push + 1 email + 1 dòng chuông)
+   - applyExpenseStaysSilentWhileTheBudgetIsStillWithinItsLimit
+   - reachingTheLimitExactlyIsNotExceedingIt (tiêu đúng hạn mức không phải là vượt)
+   - reversingAnExpenseNeverAnnouncesAnExceededBudget
+     (applyDelete phủ định số tiền; sửa giao dịch không phải là chi mới)
 
 [UNIT] TransactionEventConsumerTest — 13 test  (idempotency + khớp sự kiện)
    - appliedExpenseCountsAsProcessed
@@ -388,8 +396,11 @@ Quy ước chung của test:
    - publishesWhenKafkaEnabled
    - skipsPublishWhenKafkaDisabled
 
-[UNIT] KafkaBudgetEventPublisherTest — 3 test  (định tuyến + correlation id lên header)
+[UNIT] KafkaBudgetEventPublisherTest — 4 test  (định tuyến + correlation id lên header)
    - sendsToTheConfiguredTopicKeyedByUserId
+   - sendsBudgetExceededToItsOwnTopicStillKeyedByUserId
+     (topic khác nhưng cùng key userId → cảnh báo của một người vẫn giữ thứ tự
+      với các sự kiện ngân sách khác của chính họ, không đua nhau qua partition)
    - carriesTheCurrentCorrelationIdAsARecordHeader
    - addsNoHeaderWhenThereIsNoCorrelationIdInScope
 
@@ -620,9 +631,13 @@ về mốc cứng — tức chính hợp đồng cold-start. Đã chứng minh 9
 8) NOTIFICATION-SERVICE  (thông báo trong app từ RiskDetected + narrator LLM tùy chọn)
 ================================================================================
 
-[UNIT] NotificationServiceImplTest — 4 test
+[UNIT] NotificationServiceImplTest — 6 test
    - createFromEventPersistsNotificationAndInboxRowForNewEvent
    - createFromEventSkipsWhenAlreadyProcessed
+   - createFromBudgetExceededSpellsOutTheOverspendUsingBudgetServicesOwnFigures
+     (type BUDGET_EXCEEDED, severity HIGH, số tiền nhóm hàng nghìn và độc lập locale;
+      nêu thẳng phần vượt thay vì bắt người đọc tự trừ hai số)
+   - createFromBudgetExceededIsGuardedByTheSameInbox
    - markReadThrowsWhenNotFoundForUser
    - markReadSetsReadFlagWhenFound
 
@@ -825,6 +840,15 @@ push; jsdom không có service worker lẫn PushManager nên phải dựng tay)
    - is off without a subscription and on with one
    - keeps the switch on screen when subscribing fails
      ('error' sẽ ẩn mất chính cái nút vừa bấm → thất bại lúc subscribe vẫn về 'off')
+
+[COMPONENT] src/pages/LuckyMe.test.tsx — 1 test  (lối vào game phải bấm được bằng
+bàn phím; useAuth mock thành admin vì đồng xu chỉ rigged xanh cho admin)
+   - offers each playable game as a real button named after that game
+     (hồi quy a11y: card game vốn là `<article onClick>` — không nhận focus, KHÔNG
+      nằm trong cây a11y, nên trước bản vá người dùng bàn phím/screen reader không
+      mở được game nào. Assert bằng ROLE chứ không bằng text, vì role đúng là thứ
+      bàn phím/screen reader với tới được. Tên nút kèm tên game: "Play" lặp trên
+      mọi card thì screen reader không biết đang ở card nào)
 
 [COMPONENT] src/pages/Transactions.test.tsx — 3 test  (bất biến category ↔ type
 của form; chỉ mock lời gọi mạng)

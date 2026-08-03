@@ -9,6 +9,7 @@ import com.pm.budgetservice.entity.Budget;
 import com.pm.budgetservice.entity.ProcessedEvent;
 import com.pm.budgetservice.enums.BudgetPeriod;
 import com.pm.budgetservice.event.BudgetChangedEvent;
+import com.pm.budgetservice.event.BudgetExceededEvent;
 import com.pm.budgetservice.exception.BudgetConflictException;
 import com.pm.budgetservice.exception.BudgetNotFoundException;
 import com.pm.budgetservice.exception.InvalidBudgetDataException;
@@ -161,6 +162,7 @@ public class BudgetServiceImpl implements BudgetService {
 
         // Same DB transaction as the inbox row: both commit or neither does.
         budgetRepository.applyExpense(userId, budgetId, amount);
+        publishIfJustExceeded(userId, budgetId, amount);
         return true;
     }
 
@@ -196,6 +198,35 @@ public class BudgetServiceImpl implements BudgetService {
             budgetRepository.applyExpense(userId, apply.budgetId(), apply.amount());
         }
         return true;
+    }
+
+    /**
+     * Emits {@link BudgetExceededEvent} only on the expense that takes a budget from at-or-below
+     * its limit to above it — the same "fire on crossing" rule the risk rules use. Without it,
+     * every further expense on an already-blown budget would produce another notification.
+     *
+     * <p>Called only from {@code applyExpense}. Deliberately not from {@code applyUpdate}: that
+     * reverses the old line before applying the new one, so an edit on a budget that was already
+     * over would look like a fresh crossing. An edit is not a new spend.
+     *
+     * <p>The read after the atomic increment is what makes {@code before} exact — the repository
+     * update flushes and clears, so this sees the committed-to-be value rather than a stale entity.
+     */
+    private void publishIfJustExceeded(Long userId, UUID budgetId, BigDecimal amount) {
+        if (amount == null || amount.signum() <= 0) {
+            return;
+        }
+        budgetRepository.findByIdAndUserIdAndIsDeletedFalse(budgetId, userId).ifPresent(budget -> {
+            BigDecimal limit = budget.getLimitAmount();
+            BigDecimal after = budget.getSpentAmount();
+            if (limit == null || limit.signum() <= 0 || after == null) {
+                return;
+            }
+            BigDecimal before = after.subtract(amount);
+            if (before.compareTo(limit) <= 0 && after.compareTo(limit) > 0) {
+                eventPublisher.publishEvent(BudgetExceededEvent.of(budget, after));
+            }
+        });
     }
 
     /**

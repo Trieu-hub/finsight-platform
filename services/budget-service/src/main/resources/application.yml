@@ -66,6 +66,9 @@ finsight:
       transaction-deleted: finsight.transactions.deleted
       # Produced: owned by this service (Phase E.2), consumed by risk-service.
       budget-changed: finsight.budgets.changed
+      # Produced: owned by this service, consumed by notification-service. Emitted once per
+      # crossing, from the authoritative spent_amount this service maintains.
+      budget-exceeded: finsight.budgets.exceeded
 
 management:
   # Metrics are exported by Prometheus scrape (/actuator/prometheus). Turn OFF the OTLP

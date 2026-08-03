@@ -8,4 +8,7 @@ public interface BudgetEventPublisher {
 
     /** Publishes a {@link BudgetChangedEvent} to the event backbone. */
     void publish(BudgetChangedEvent event);
+
+    /** Publishes a {@link BudgetExceededEvent} to the event backbone. */
+    void publishExceeded(BudgetExceededEvent event);
 }

@@ -1,6 +1,7 @@
 package com.pm.notificationservice.service;
 
 import com.pm.notificationservice.entity.Notification;
+import com.pm.notificationservice.event.BudgetExceededEvent;
 import com.pm.notificationservice.event.RiskDetectedEvent;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -16,6 +17,13 @@ public interface NotificationService {
      *         had already been processed (idempotency inbox hit)
      */
     boolean createFromEvent(RiskDetectedEvent event);
+
+    /**
+     * Materializes the notification for a budget that has just gone over its limit.
+     *
+     * @return {@code false} when the idempotency inbox has already seen this event id
+     */
+    boolean createFromBudgetExceeded(BudgetExceededEvent event);
 
     /** A page of the user's notifications, newest first; optionally unread-only. */
     Page<Notification> list(Long userId, boolean unreadOnly, Pageable pageable);

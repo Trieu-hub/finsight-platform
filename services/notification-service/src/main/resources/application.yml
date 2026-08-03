@@ -65,6 +65,8 @@ finsight:
     # the default test profile, which has no broker).
     enabled: true
     topics:
+      # Consumed: owned by budget-service — the authoritative over-budget signal.
+      budget-exceeded: finsight.budgets.exceeded
       # Consumed: owned by risk-service. notification-service is the first consumer of
       # this topic — it turns each detected risk into a user-facing in-app notification.
       risk-detected: finsight.risk.detected
