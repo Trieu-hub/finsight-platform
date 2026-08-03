@@ -19,7 +19,7 @@
         <testcontainers.version>2.0.5</testcontainers.version>
         <!-- Kept in sync with the versions the Spring Boot 4.1 BOM manages (grpc-bom / protobuf),
              so the protobuf-maven-plugin downloads matching protoc / protoc-gen-grpc-java binaries. -->
-        <grpc.version>1.83.0</grpc.version>
+        <grpc.version>1.83.1</grpc.version>
         <protobuf-java.version>4.34.2</protobuf-java.version>
     </properties>
 
