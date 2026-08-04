@@ -22,7 +22,7 @@ explicitly under [Not yet built](#not-yet-built).
 | `budget-service` | 8084 | `budget_db` | HTTP, Kafka | Budget definitions + utilization (`spent_amount`); **consumes** `TransactionCreated`, **produces** `BudgetChanged` |
 | `dashboard-service` | 8085 | _(none, BFF)_ | HTTP | Read-only aggregation over user/transaction/budget; relays the caller's JWT; fail-fast |
 | `risk-service` | 8086 | `risk_db` | Kafka | Risk rules, behavioral insights, anomaly detection; **consumes** `TransactionCreated` + `BudgetChanged`, **produces** `RiskDetected`; read APIs for risks/insights/anomalies |
-| `notification-service` | 8087 | `notification_db` | HTTP, Kafka | In-app notifications; **consumes** `RiskDetected`, idempotency inbox; user-scoped read/mark-read API |
+| `notification-service` | 8087 | `notification_db` | HTTP, Kafka | In-app notifications; **consumes** `RiskDetected` + `BudgetExceeded`, idempotency inbox; user-scoped read/mark-read API |
 
 Shared infrastructure (not application services): a single **MySQL 8** instance hosting six
 logical databases, **Redis** (used only by auth-service), a single-node **Kafka** (KRaft)
@@ -134,8 +134,9 @@ strings.
 | `finsight.budgets.exceeded` | budget-service | notification-service | `BudgetExceeded` |
 | `finsight.risk.detected` | risk-service | notification-service | `RiskDetected` |
 
-Each topic is owned by exactly one producer. `RiskDetected` is consumed by notification-service,
-which materializes per-user in-app notifications (idempotent inbox) and then hands them to its
+Each topic is owned by exactly one producer. `RiskDetected` **and `BudgetExceeded`** are both
+consumed by notification-service, which materializes per-user in-app notifications (one idempotent
+inbox shared by both feeds, and one code path after that) and then hands them to its
 **delivery channels** — SSE to an open tab, **web push** to subscribed browsers, **email** over
 SMTP. Channels run after the commit and swallow their own failures, so a dead SMTP server or push
 service can never make the consumer replay the event. Both are off until configured. Full payloads

@@ -114,6 +114,13 @@ produces no insight directly.
 | **BUDGET_RISK** | For a budget matching the event (user + category + exact currency, txn date within `[start,end]`) with limit > 0, utilization `spent/limit×100` **> 80%** while the period is still open. | budget id |
 | **LOW_SAVINGS_RATE** | Current-month income **> 0** and current-month expenses **≥ 80%** of that income. | user (`-`), one per month |
 
+> **`BUDGET_RISK` is "approaching", not "over".** Actually exceeding a budget is not detected here
+> at all: budget-service owns `spent_amount` and publishes `BudgetExceeded` itself (see
+> [event-catalog](event-catalog.md#3-budgetexceeded)), which becomes a user-facing notification.
+> The split is deliberate — this insight is an advisory signal computed from risk-service's own
+> eventually-consistent read-model, while an over-budget alert has to agree with the figure the
+> Budgets page renders, and only budget-service knows that one.
+
 `BUDGET_RISK` reads the `budget_snapshots` read-model maintained from `BudgetChanged`;
 `current_amount`/`previous_amount` carry the spent amount and the limit, and `increase_pct`
 carries the utilization percentage (e.g. `85.00`). `LOW_SAVINGS_RATE` stores income as

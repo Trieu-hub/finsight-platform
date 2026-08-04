@@ -96,11 +96,12 @@ done
 Kafka has no published host port; run commands inside the broker container (`finsight-kafka`).
 
 ```bash
-# List topics — expect the three FinSight topics to appear once producers have run
+# List topics — expect the four FinSight topics to appear once producers have run
 docker compose exec kafka /opt/kafka/bin/kafka-topics.sh \
   --bootstrap-server localhost:9092 --list
 # finsight.transactions.created
 # finsight.budgets.changed
+# finsight.budgets.exceeded
 # finsight.risk.detected
 
 # Tail a topic from the beginning (Ctrl-C to stop)
