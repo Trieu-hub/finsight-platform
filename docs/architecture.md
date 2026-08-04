@@ -22,7 +22,7 @@ explicitly under [Not yet built](#not-yet-built).
 | `budget-service` | 8084 | `budget_db` | HTTP, Kafka | Budget definitions + utilization (`spent_amount`); **consumes** `TransactionCreated`, **produces** `BudgetChanged` |
 | `dashboard-service` | 8085 | _(none, BFF)_ | HTTP | Read-only aggregation over user/transaction/budget; relays the caller's JWT; fail-fast |
 | `risk-service` | 8086 | `risk_db` | Kafka | Risk rules, behavioral insights, anomaly detection; **consumes** `TransactionCreated` + `BudgetChanged`, **produces** `RiskDetected`; read APIs for risks/insights/anomalies |
-| `notification-service` | 8087 | `notification_db` | HTTP, Kafka | In-app notifications; **consumes** `RiskDetected` + `BudgetExceeded`, idempotency inbox; user-scoped read/mark-read API |
+| `notification-service` | 8087 | `notification_db` | HTTP, Kafka | In-app notifications; **consumes** `RiskDetected` + `BudgetExceeded`, idempotency inbox; user-scoped read/mark-read API; delivery channels (SSE, web push, email, signed webhook) with per-user digest batching |
 
 Shared infrastructure (not application services): a single **MySQL 8** instance hosting six
 logical databases, **Redis** (used only by auth-service), a single-node **Kafka** (KRaft)
@@ -109,7 +109,7 @@ One MySQL 8 instance, one logical database per owning service (DB-per-service is
 | `transaction_db` | transaction-service | transactions, categories |
 | `budget_db` | budget-service | budgets (incl. `spent_amount`), `processed_events` (idempotency inbox) |
 | `risk_db` | risk-service | `risk_alerts`, `observed_expenses`, `insights`, `budget_snapshots`, `anomalies` |
-| `notification_db` | notification-service | `notifications`, `processed_events` (idempotency inbox) |
+| `notification_db` | notification-service | `notifications`, `processed_events` (idempotency inbox), `push_subscriptions`, `notification_preferences` (email/webhook destination + digest mode) |
 
 `dashboard-service` owns **no** database — it composes other services' data on read.
 **Redis** backs only auth-service (refresh tokens + brute-force lockout counters).
@@ -138,9 +138,28 @@ Each topic is owned by exactly one producer. `RiskDetected` **and `BudgetExceede
 consumed by notification-service, which materializes per-user in-app notifications (one idempotent
 inbox shared by both feeds, and one code path after that) and then hands them to its
 **delivery channels** — SSE to an open tab, **web push** to subscribed browsers, **email** over
-SMTP. Channels run after the commit and swallow their own failures, so a dead SMTP server or push
-service can never make the consumer replay the event. Both are off until configured. Full payloads
-are in [event-catalog.md](event-catalog.md).
+SMTP, and an outbound **signed webhook** to a URL the user nominated. Channels run after the commit
+and swallow their own failures, so a dead SMTP server, push service or receiver can never make the
+consumer replay the event. All are off until configured. Full payloads are in
+[event-catalog.md](event-catalog.md).
+
+**Digests.** Each user picks how often the *content-carrying* channels (email, webhook) fire:
+`IMMEDIATE` (the default), `HOURLY` or `DAILY`. Under a digest, `createFromEvent` leaves
+`notifications.digested_at` null and a `@Scheduled` flush sends one delivery covering everything in
+the window — due when the **oldest** pending alert is older than the window, so a quiet user is
+never woken by an empty digest and no "last sent" column is needed. The bell, SSE and web push
+always fire immediately; push carries no payload, so batching it would delay the nudge without
+sparing the user anything to read. The scheduler is **single-instance**, the same constraint as the
+SSE registry: two would each claim the same pending rows.
+
+**Webhook egress is a security boundary.** It is the one place a user chooses an address the
+*server* connects to, from inside a network where risk-service answers unauthenticated and MySQL,
+Redis and Kafka are reachable by name. `WebhookUrlValidator` therefore allows **https only** and
+refuses any host that resolves to a loopback, private, link-local (cloud metadata), CGNAT or IPv6
+unique-local address — checked when the URL is saved *and* again before every delivery, since DNS
+can be repointed afterwards. Redirects are not followed, because a 302 is the cheap way to smuggle
+in an address the validator never saw. Payloads are signed `X-Vernfy-Signature: t=…,v1=…`
+(HMAC-SHA256 over `"<t>.<body>"`, the Stripe/GitHub scheme) with a per-user secret shown once.
 
 **Delivery semantics:** at-least-once. Producers publish `@TransactionalEventListener(AFTER_COMMIT)`
 (only after the DB commit; a failed send is logged, not rethrown — the accepted dual-write gap,
@@ -269,8 +288,6 @@ These are **absent from the codebase** and must not be implied as present:
 
 - **Full gRPC migration** — gRPC *is* present as one representative internal call (dashboard→
   user-service, via Spring gRPC); the other internal calls (transaction/budget) are still REST.
-- **Webhook delivery and digests** — `RiskDetected` reaches the user in-app (bell + SSE), by web
-  push and by email; outbound webhooks and any batching of alerts are not built.
 - **Edge rate limiting**, **distributed tracing**, **alerting** (Prometheus has no alert rules).
 - **JWKS / JWT key rotation** — signing is RS256 asymmetric (auth signs with the private key,
   services verify with the public key), but there is no published JWKS endpoint or rotation flow.

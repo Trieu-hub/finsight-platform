@@ -134,7 +134,8 @@ Every implemented Kafka event is listed here. Conventions shared by all four:
   from `BudgetEventListener` (AFTER_COMMIT, so a rolled-back spend never alarms anyone).
 - **Consumer:** notification-service (`BudgetExceededConsumer`, dedicated listener container
   factory and its own consumer group) — one notification per event, then the same fan-out as any
-  alert: bell, SSE, web push, email.
+  alert: bell, SSE, web push, email, webhook. The last two follow the user's digest setting and may
+  go out batched rather than at once.
 - **Purpose:** tell the user they have overspent, from the **authoritative** figure.
   budget-service owns `spent_amount` and it is the number the Budgets page renders, so the alert
   cannot contradict the UI. risk-service's `BUDGET_RISK` insight answers a different question

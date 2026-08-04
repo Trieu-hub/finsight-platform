@@ -155,10 +155,18 @@ export async function markAllNotificationsRead(): Promise<void> {
   await api.patch('/notifications/read-all')
 }
 
+export type DigestMode = 'IMMEDIATE' | 'HOURLY' | 'DAILY'
+
 export interface NotificationPreferences {
   emailEnabled: boolean
   email: string | null
   emailConfigured: boolean
+  webhookEnabled: boolean
+  webhookUrl: string | null
+  // Present on exactly one response: the one that generated it. Every later read is null, so the
+  // UI has to show it the moment it arrives or the user has to change the URL to get a new one.
+  webhookSecret: string | null
+  digestMode: DigestMode
 }
 
 export async function notificationPreferences(): Promise<NotificationPreferences> {
@@ -172,6 +180,27 @@ export async function setEmailAlerts(emailEnabled: boolean): Promise<Notificatio
   const { data } = await api.put<ApiResponse<NotificationPreferences>>(
     '/notifications/preferences',
     { emailEnabled },
+  )
+  return data.data
+}
+
+// url: null clears the webhook and its secret. The server rejects anything that is not a public
+// https address (HTTP 400, INVALID_WEBHOOK_URL) — it will be POSTing from inside the private network.
+export async function setWebhook(
+  url: string | null,
+  enabled: boolean,
+): Promise<NotificationPreferences> {
+  const { data } = await api.put<ApiResponse<NotificationPreferences>>(
+    '/notifications/preferences/webhook',
+    { url, enabled },
+  )
+  return data.data
+}
+
+export async function setDigestMode(digestMode: DigestMode): Promise<NotificationPreferences> {
+  const { data } = await api.put<ApiResponse<NotificationPreferences>>(
+    '/notifications/preferences/digest',
+    { digestMode },
   )
   return data.data
 }

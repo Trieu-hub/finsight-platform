@@ -95,7 +95,8 @@ coupling is asynchronous over Kafka.
   over-budget alert, raised from the authoritative `spent_amount` this service owns);
   risk-service produces `RiskDetected`, consumed by
   notification-service, which materializes per-user in-app notifications and delivers them by
-  SSE, **web push** and **email** (both optional, off until configured). analytics-service
+  SSE, **web push**, **email** and an outbound **signed webhook** (all optional, off until
+  configured), immediately or **batched into an hourly/daily digest**. analytics-service
   folds `TransactionCreated` into a per-month rollup read model.
 
 Full diagrams (Mermaid) are in [`docs/architecture.md`](docs/architecture.md).
@@ -258,6 +259,12 @@ stay in the backend.
   consumer that writes a notification also pushes it to every open connection that user has, so it
   appears immediately. A long-interval poll of `GET /api/v1/notifications/unread-count` remains as
   a fallback.
+- **Delivery settings** (inside the bell): browser notifications, email, an outbound **webhook**,
+  and how often the content-carrying channels fire — *as they happen*, *hourly* or *daily*. The
+  webhook takes a public **https** URL only, because the server is the one connecting and it sits
+  on a private network; each saved URL gets an HMAC-SHA256 signing secret that is shown **once**.
+  The bell and browser notifications stay instant whatever the digest setting: batching a
+  payload-free ping would delay the nudge without sparing anyone any reading.
 - **Dev proxy**: Vite forwards `/api` → `http://localhost:8080`, so the browser stays
   same-origin and no backend CORS configuration is needed (a reverse proxy plays this role in
   production).
@@ -346,7 +353,9 @@ newly-disclosed CVE turns the build red even when no code changed:
   HIGH/CRITICAL and `--ignore-unfixed`. Report-only (`continue-on-error`) — findings surface in the
   log and Dependabot opens the PRs that fix them.
 - **Dependabot** (`.github/dependabot.yml`) — weekly, grouped, across the nine Maven modules, npm
-  `web/`, and the workflows themselves.
+  `web/`, and the workflows themselves. Major `typescript` bumps are held back: typescript-eslint
+  declares a peer range that a new major falls outside of, so the bump breaks `npm ci` rather than
+  the build.
 
 **Ephemeral staging** (`.github/workflows/staging.yml`) — the single 8 GB prod VPS has no room for
 a parallel stack, so "staging" is *ephemeral*: on PRs that touch `services/`, `docker-compose.yml`,
@@ -415,9 +424,6 @@ runtime is captured by the committed Grafana dashboard screenshots above.
 
 These are **absent from the codebase** — do not assume they exist:
 
-- **Webhook delivery, and digests** — an alert reaches the user in-app (bell + SSE), by **web
-  push** and by **email**, but there is no outbound webhook and no batching: one alert is one
-  delivery, however many arrive at once.
 - **ML-based intelligence** — the rules are deterministic. They are no longer one-size-fits-all
   (the monetary thresholds are drawn from each user's own history), but that is an average, not a
   model: there is no training, no prediction, and no seasonality or category-level personalisation.

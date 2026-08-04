@@ -36,7 +36,7 @@ class WebPushChannelTest {
         WebPushChannel channel = new WebPushChannel(
                 repository, properties, new VapidSigner(properties), new SimpleMeterRegistry());
 
-        channel.deliver(notification(7L));
+        channel.deliver(7L, List.of(notification(7L)));
 
         verify(repository, never()).findByUserId(any());
     }
@@ -48,7 +48,7 @@ class WebPushChannelTest {
         WebPushChannel channel = new WebPushChannel(
                 repository, properties, new VapidSigner(properties), new SimpleMeterRegistry());
 
-        channel.deliver(notification(7L));
+        channel.deliver(7L, List.of(notification(7L)));
 
         verify(repository, never()).delete(any());
     }
@@ -64,7 +64,7 @@ class WebPushChannelTest {
         WebPushChannel channel = new WebPushChannel(
                 repository, properties, new VapidSigner(properties), new SimpleMeterRegistry());
 
-        channel.deliver(notification(7L));
+        channel.deliver(7L, List.of(notification(7L)));
 
         verify(repository, never()).delete(any());
     }

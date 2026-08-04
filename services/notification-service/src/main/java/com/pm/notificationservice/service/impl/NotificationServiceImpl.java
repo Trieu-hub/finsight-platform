@@ -1,6 +1,7 @@
 package com.pm.notificationservice.service.impl;
 
 import com.pm.notificationservice.delivery.DeliveryChannel;
+import com.pm.notificationservice.entity.DigestMode;
 import com.pm.notificationservice.entity.Notification;
 import com.pm.notificationservice.entity.ProcessedEvent;
 import com.pm.notificationservice.event.BudgetExceededEvent;
@@ -10,6 +11,7 @@ import com.pm.notificationservice.narrator.AlertContent;
 import com.pm.notificationservice.narrator.AlertNarrator;
 import com.pm.notificationservice.repository.NotificationRepository;
 import com.pm.notificationservice.repository.ProcessedEventRepository;
+import com.pm.notificationservice.service.NotificationPreferenceService;
 import com.pm.notificationservice.service.NotificationService;
 import com.pm.notificationservice.stream.NotificationStream;
 import org.slf4j.Logger;
@@ -50,6 +52,7 @@ public class NotificationServiceImpl implements NotificationService {
     private final AlertNarrator narrator;
     private final NotificationStream notificationStream;
     private final List<DeliveryChannel> deliveryChannels;
+    private final NotificationPreferenceService preferences;
     private final TransactionTemplate transactionTemplate;
 
     public NotificationServiceImpl(NotificationRepository notificationRepository,
@@ -57,12 +60,14 @@ public class NotificationServiceImpl implements NotificationService {
                                    AlertNarrator narrator,
                                    NotificationStream notificationStream,
                                    List<DeliveryChannel> deliveryChannels,
+                                   NotificationPreferenceService preferences,
                                    PlatformTransactionManager transactionManager) {
         this.notificationRepository = notificationRepository;
         this.processedEventRepository = processedEventRepository;
         this.narrator = narrator;
         this.notificationStream = notificationStream;
         this.deliveryChannels = deliveryChannels;
+        this.preferences = preferences;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -118,6 +123,10 @@ public class NotificationServiceImpl implements NotificationService {
             return false;
         }
 
+        // Read outside the transaction, like the narration above: it decides only how this alert
+        // is delivered, and a stale read costs at most one alert landing on the previous schedule.
+        DigestMode digestMode = preferences.get(userId).getDigestMode();
+
         Notification created = transactionTemplate.execute(status -> {
             if (processedEventRepository.existsById(eventId)) {
                 return null;
@@ -134,6 +143,9 @@ public class NotificationServiceImpl implements NotificationService {
                     .sourceEventId(eventId)
                     .read(false)
                     .createdAt(now)
+                    // Stamped now for an immediate user, so a null digestedAt always means "still
+                    // owed a delivery" rather than "created before digests existed".
+                    .digestedAt(digestMode.isDeferred() ? null : now)
                     .build();
             notificationRepository.save(notification);
 
@@ -152,18 +164,31 @@ public class NotificationServiceImpl implements NotificationService {
         // fallback poll interval.
         notificationStream.publish(created);
 
-        // Same rule for the external channels, with one addition: a channel that threw must not
-        // propagate. Failing here would fail the Kafka listener, the event would be redelivered,
-        // and every user who *did* get their alert would get it again.
+        deliver(userId, List.of(created), digestMode.isDeferred());
+        return true;
+    }
+
+    /**
+     * Hands a batch to the delivery channels, best-effort.
+     *
+     * <p>A channel that threw must not propagate. Failing here would fail the Kafka listener, the
+     * event would be redelivered, and every user who *did* get their alert would get it again.
+     *
+     * @param deferred when true the channels that carry the alert text are skipped — the digest
+     *                 scheduler owns them for this user. The payload-free push still goes now.
+     */
+    void deliver(Long userId, List<Notification> batch, boolean deferred) {
         for (DeliveryChannel channel : deliveryChannels) {
+            if (deferred && channel.respectsDigest()) {
+                continue;
+            }
             try {
-                channel.deliver(created);
+                channel.deliver(userId, batch);
             } catch (RuntimeException e) {
-                log.warn("Delivery channel {} failed for notification {}: {}",
-                        channel.getClass().getSimpleName(), created.getId(), e.toString());
+                log.warn("Delivery channel {} failed for user {}: {}",
+                        channel.getClass().getSimpleName(), userId, e.toString());
             }
         }
-        return true;
     }
 
     @Override

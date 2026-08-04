@@ -40,10 +40,16 @@ phrases the alert with an LLM over any **OpenAI-compatible** Chat Completions AP
 and falls back to `TemplateNarrator` on any error, so the pipeline never depends on the API.
 
 Alerts also leave the app through **delivery channels** (`delivery/DeliveryChannel`): **web push**
-to subscribed browsers and **email** over SMTP. Both are configuration-gated and inert by default,
-so a fresh checkout still behaves exactly as before — in-app bell + SSE only.
+to subscribed browsers, **email** over SMTP, and an outbound **signed webhook** to a URL the user
+nominated. All are configuration-gated and inert by default, so a fresh checkout still behaves
+exactly as before — in-app bell + SSE only.
 
-Deliberately deferred: webhooks, and any digest/batching (one alert = one delivery).
+Each user also chooses a **digest mode** (`IMMEDIATE` | `HOURLY` | `DAILY`) that batches the
+content-carrying channels; `delivery/DigestScheduler` sends what the create path deliberately held
+back.
+
+Deliberately deferred: retry/backoff for a failed webhook (one attempt, best-effort like every
+other channel), and per-alert-type or per-severity channel routing.
 
 ## Commands
 
@@ -116,14 +122,22 @@ Layering is strict and one-directional: `controller → service → repository`.
   `PATCH /api/v1/notifications/{id}/read`, `PATCH /api/v1/notifications/read-all`,
   `GET /api/v1/notifications/stream` (SSE),
   `GET|PUT /api/v1/notifications/preferences`,
+  `PUT /api/v1/notifications/preferences/webhook`, `PUT /api/v1/notifications/preferences/digest`,
   `GET /api/v1/push/public-key`, `POST|DELETE /api/v1/push/subscriptions`.
   The gateway routes `/api/v1/push` here as well as `/api/v1/notifications`.
+  `SecurityConfig` ends in `anyRequest().authenticated()`, so a new endpoint is covered without
+  touching it — check that still holds before assuming it for anything public.
 
 ### Delivery channels
 - `DeliveryChannel` implementations run in `NotificationServiceImpl.createFromEvent` **after the
   commit**, next to the SSE publish, and each one **swallows its own failures**. A throw would fail
   the Kafka listener, the event would be redelivered, and every user who already got their alert
   would get it again.
+- The interface takes a **batch** (`deliver(userId, List<Notification>)`), not one notification.
+  The immediate path is a batch of one; a digest is a batch of many. That keeps the
+  immediate-vs-deferred decision with the caller instead of teaching every channel about
+  scheduling. `respectsDigest()` marks the channels a digest holds back (email, webhook); web push
+  leaves it false.
 - **Web push** (`push/`): pushes carry **no payload** — the service worker fetches the notification
   over the normal API instead. That keeps the alert text out of Google's and Mozilla's push
   infrastructure and, because RFC 8291 content encryption is then unnecessary, keeps the crypto
@@ -140,6 +154,38 @@ Layering is strict and one-directional: `controller → service → repository`.
   `email` claim of the caller's own token, captured when they switch email alerts on. That keeps
   the copy an explicit consequence of opting in, and `EmailPreferenceRequest` deliberately has no
   address field — accepting one would let a caller redirect another account's alerts.
+- **Webhook** (`webhook/`): POSTs the alert text — unlike push, the destination is a system the
+  user controls, so withholding the content would leave them a ping they cannot act on. The payload
+  is **always** `{deliveredAt, count, alerts:[…]}`, an array even for one alert, so switching a user
+  to a digest does not silently break their integration.
+  - `WebhookUrlValidator` is the **SSRF boundary**, not a niceness check: https only, and every
+    resolved address must be publicly routable (loopback / RFC 1918 / link-local / CGNAT / IPv6
+    ULA all refused). Validated on save *and* before each delivery, because DNS can be repointed;
+    redirects are disabled in the client because a 302 smuggles in an unvetted address. Read the
+    class comment before relaxing any of it.
+  - `WebhookSigner` signs `"<t>.<body>"` — the timestamp is *inside* the MAC so a receiver can
+    reject stale replays and know `t` was not rewritten. Serialise once and sign those exact bytes;
+    a second serialisation can drift and every signature then reads as invalid.
+  - The secret is returned on **exactly one** response, the one that minted it. A changed URL mints
+    a new one; toggling the same URL keeps it.
+  - Uses the injected **Jackson 3** mapper (`tools.jackson.databind.ObjectMapper`). Boot 4
+    autoconfigures no `com.fasterxml` (Jackson 2) mapper bean even though that jar is on the
+    classpath — asking for one fails context startup.
+
+### Digests
+- `DigestMode` on `notification_preferences`: `IMMEDIATE` (default), `HOURLY`, `DAILY`.
+- `notifications.digested_at` null means **still owed an outbound delivery**. Rows for an immediate
+  user are stamped as they are created, so null never means "old" — `V4` backfills the history for
+  the same reason.
+- `DigestScheduler` polls (`finsight.digest.poll-ms`, 5 min) and flushes a user when their
+  **oldest** pending alert is older than the window. Poll interval is resolution, not window.
+- It **stamps before delivering**: channels are best-effort, and stamping afterwards would turn one
+  broken receiver into the same digest resent every five minutes forever.
+- Rows are stamped **by id**, never by "everything pending for this user" — an alert arriving
+  mid-flush would otherwise be marked delivered without being sent.
+- Changing digest mode writes off whatever is pending: a mode change starts a fresh window rather
+  than stranding a partial one or resending what was already delivered.
+- **Single instance**, like the SSE registry. Two schedulers would each claim the same rows.
 
 ### Live push (SSE)
 - `NotificationStream` holds the open `SseEmitter`s in a per-user, **in-process** registry.

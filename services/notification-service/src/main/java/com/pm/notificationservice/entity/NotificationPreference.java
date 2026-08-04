@@ -2,6 +2,8 @@ package com.pm.notificationservice.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
@@ -34,6 +36,25 @@ public class NotificationPreference {
 
     @Column(name = "email_enabled", nullable = false)
     private boolean emailEnabled;
+
+    /** Where an alert is POSTed, if the user pointed us at something. HTTPS only — see the validator. */
+    @Column(name = "webhook_url", length = 2048)
+    private String webhookUrl;
+
+    @Column(name = "webhook_enabled", nullable = false)
+    private boolean webhookEnabled;
+
+    /**
+     * HMAC key for the signature header. Held in the clear because signing needs the raw key; it is
+     * shown to the user once, when it is minted, and never read back out over the API.
+     */
+    @Column(name = "webhook_secret", length = 64)
+    private String webhookSecret;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "digest_mode", nullable = false, length = 16)
+    @Builder.Default
+    private DigestMode digestMode = DigestMode.IMMEDIATE;
 
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;

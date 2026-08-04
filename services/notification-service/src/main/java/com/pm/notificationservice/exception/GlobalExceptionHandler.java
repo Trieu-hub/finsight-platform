@@ -18,6 +18,14 @@ public class GlobalExceptionHandler {
                 .body(new ErrorResponse("NOTIFICATION_NOT_FOUND", ex.getMessage()));
     }
 
+    @ExceptionHandler(InvalidWebhookUrlException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidWebhookUrl(InvalidWebhookUrlException ex) {
+        // The message is written for the user ("must use https"), not for a log — this is the one
+        // place the SSRF rules become visible to whoever is trying to configure a webhook.
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(new ErrorResponse("INVALID_WEBHOOK_URL", ex.getMessage()));
+    }
+
     // Handles @Valid failures on both @RequestBody (MethodArgumentNotValidException,
     // a BindException subclass) and @ModelAttribute query params (e.g. page/limit bounds).
     @ExceptionHandler(BindException.class)

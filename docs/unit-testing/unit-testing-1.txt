@@ -9,12 +9,12 @@ dashboard, risk, notification, analytics) + frontend `web/` (mục 10).
 
 TỔNG QUAN CON SỐ
 --------------------------------------------------------------------------------
-- Tổng số test method (@Test / @ParameterizedTest):  531
-- Tổng số lớp test:                                  111 (+ vài lớp base/support)
+- Tổng số test method (@Test / @ParameterizedTest):  574
+- Tổng số lớp test:                                  116 (+ vài lớp base/support)
 - Trong đó:
-    * Unit / component test (chạy KHÔNG cần Docker):  ~332
+    * Unit / component test (chạy KHÔNG cần Docker):  ~375
     * Integration test (cần Docker – Testcontainers): ~181
-- Frontend (Vitest, ngoài con số 531 ở trên):          70 test / 11 file
+- Frontend (Vitest, ngoài con số 574 ở trên):          74 test / 11 file
 - Frontend E2E (Playwright, cần stack đang chạy):       3 test / 1 file (mục 11)
 - Framework: JUnit 5 (Jupiter) + Mockito + AssertJ; frontend dùng Vitest +
   React Testing Library (jsdom) và Playwright cho E2E trình duyệt.
@@ -628,10 +628,17 @@ về mốc cứng — tức chính hợp đồng cold-start. Đã chứng minh 9
 
 
 ================================================================================
-8) NOTIFICATION-SERVICE  (thông báo trong app từ RiskDetected + narrator LLM tùy chọn)
+8) NOTIFICATION-SERVICE  (thông báo trong app từ RiskDetected + narrator LLM tùy chọn
+   + kênh gửi ra: web push / email / webhook có chữ ký, và digest gom theo user)
 ================================================================================
 
-[UNIT] NotificationServiceImplTest — 6 test
+[UNIT] NotificationServiceImplTest — 9 test
+   - stampsAnImmediateUsersNotificationAsAlreadyAccountedFor
+     (digested_at NULL phải nghĩa là "còn nợ một lần gửi"; để NULL cho user IMMEDIATE
+      thì scheduler sẽ gửi lại toàn bộ lần thứ hai)
+   - leavesADigestUsersNotificationPendingAndSkipsTheContentChannels
+     (email/webhook để scheduler lo; web push vẫn bắn ngay vì không mang nội dung)
+   - aFailingChannelDoesNotFailTheConsumer
    - createFromEventPersistsNotificationAndInboxRowForNewEvent
    - createFromEventSkipsWhenAlreadyProcessed
    - createFromBudgetExceededSpellsOutTheOverspendUsingBudgetServicesOwnFigures
@@ -640,6 +647,20 @@ về mốc cứng — tức chính hợp đồng cold-start. Đã chứng minh 9
    - createFromBudgetExceededIsGuardedByTheSameInbox
    - markReadThrowsWhenNotFoundForUser
    - markReadSetsReadFlagWhenFound
+
+[UNIT] NotificationPreferenceServiceImplTest — 8 test  (email / webhook / digest mode)
+   - defaultsToImmediateForAUserWhoNeverChose
+   - mintsASecretWhenAWebhookUrlIsFirstSet
+   - keepsTheSecretWhenOnlyTheSwitchMoves
+     (receiver đã cấu hình khoá đó; xoay khoá khi user chỉ tạm tắt là âm thầm phá
+      tích hợp của họ)
+   - mintsAFreshSecretWhenTheDestinationChanges
+   - clearingTheUrlClearsTheSecretAndTheSwitch
+   - refusesAUrlTheValidatorRejects
+   - changingDigestModeStartsAFreshWindow
+     (không mang cái đang chờ sang chế độ mới: đi tới IMMEDIATE thì không còn ai
+      flush, đi từ IMMEDIATE thì gửi lại thứ đã gửi)
+   - reSelectingTheSameModeTouchesNothingPending
 
 [UNIT] RiskDetectedConsumerTest — 4 test
    - createsNotificationAndCountsCreated
@@ -693,12 +714,64 @@ về mốc cứng — tức chính hợp đồng cold-start. Đã chứng minh 9
      (chỉ 404/410 mới nghĩa là "mất hẳn"; xoá row vì lỗi mạng tạm thời là âm thầm huỷ
       đăng ký của user vĩnh viễn)
 
-[UNIT] EmailChannelTest — 5 test
+[UNIT] EmailChannelTest — 7 test
    - sendsToTheStoredAddressWhenTheUserOptedIn
+   - aDigestOfSeveralAlertsIsOneEmailThatListsThem
+     (một alert vẫn giữ nguyên title làm subject → đường tức thì đọc y như trước khi
+      có digest; chỉ lô thật mới tự xưng là lô)
+   - summarisesTheTailOfAPathologicalBurst  (25 alert → liệt kê 20 + "and 5 more")
    - staysSilentWhenNoMailServerIsConfigured
    - doesNotEmailAUserWhoHasNotOptedIn
    - doesNotEmailWhenTheAddressIsMissing
    - swallowsSmtpFailuresSoTheKafkaListenerNeverReplays
+
+[UNIT] WebhookUrlValidatorTest — 10 test  (BIÊN GIỚI CHỐNG SSRF — xem GHI CHÚ CUỐI)
+   - acceptsAPublicHttpsUrl
+   - rejectsPlainHttp        (một luật này cũng loại luôn mọi service nội bộ chạy http)
+   - rejectsLoopback
+   - rejectsPrivateRanges    (10/8, 172.16/12, 192.168/16)
+   - rejectsTheCloudMetadataAddress  (169.254.169.254 — link-local, lọt qua check chỉ
+     biết RFC 1918)
+   - rejectsCarrierGradeNat  (100.64/10 — isSiteLocalAddress() KHÔNG bắt)
+   - rejectsIpv6UniqueLocalAndLoopback  (fc00::/7 cũng không bị isSiteLocalAddress bắt)
+   - rejectsCredentialsInTheUrl
+   - rejectsGarbageAndHostlessUrls
+   - isAllowedReportsRatherThanThrows
+   (toàn IP literal nên không phụ thuộc DNS, chạy offline vẫn xanh)
+
+[UNIT] WebhookSignerTest — 4 test  (HMAC-SHA256, lược đồ Stripe/GitHub)
+   - signsTheTimestampAndBodyTogether  (tự tính lại HMAC, không ghim chuỗi vàng)
+   - coversTheTimestampSoItCannotBeRewritten
+     (nếu MAC chỉ trùm body thì request bắt được là token replay vĩnh viễn)
+   - adifferentSecretProducesADifferentSignature
+   - mintsPrefixedSecretsThatDoNotRepeat  (49 ký tự, vừa VARCHAR(64) của V4)
+
+[UNIT] WebhookChannelTest — 8 test  (HTTP thật qua JDK HttpServer, không thêm thư viện)
+   - postsEveryAlertInTheBatchAsOneSignedCall
+   - signsExactlyTheBytesItSent
+     (serialize 1 lần rồi ký chính bytes đó; serialize lần hai có thể lệch và mọi
+      chữ ký thành sai)
+   - wrapsASingleAlertInTheSameArrayShapeAsABatch
+     (receiver chỉ phải viết 1 parser; chuyển user sang digest không phá tích hợp)
+   - staysSilentWhenTheUserHasNoWebhook
+   - staysSilentWhenTheStoredUrlNoLongerValidates  (DNS bị trỏ lại sau khi lưu)
+   - doesNotFollowRedirects  (302 là cách rẻ nhất để lách validator)
+   - swallowsReceiverFailuresSoTheKafkaListenerNeverReplays
+   - swallowsAnUnreachableReceiver
+
+[UNIT] DigestSchedulerTest — 8 test  (gom cảnh báo theo cửa sổ của từng user)
+   - holdsTheDigestBackUntilTheWindowHasElapsed
+   - sendsOneDeliveryCoveringTheWholeWindow
+   - theWindowIsTheOneTheUserChose  (cùng tuổi 70 phút: HOURLY tới hạn, DAILY chưa)
+   - leavesTheImmediateChannelsToTheCreatePath  (không đẩy push lần hai)
+   - stampsExactlyTheRowsItSent
+     (đóng dấu theo id, không theo "mọi thứ đang chờ của user này" — alert tới giữa
+      chừng sẽ bị đánh dấu đã gửi mà chưa từng gửi)
+   - stampsButDoesNotResendStragglersLeftByAUserOnImmediate
+   - oneBrokenUserDoesNotStopEveryoneElse
+   - aChannelThatThrowsDoesNotStrandTheStamp
+     (đóng dấu TRƯỚC khi gửi: gửi trước rồi đóng dấu thì một receiver hỏng biến thành
+      cùng một digest gửi lại mỗi 5 phút mãi mãi)
 
 [INTEGRATION] OpenApiDocsIntegrationTest — 1 test
 [INTEGRATION] PrometheusEndpointIntegrationTest — 1 test
@@ -817,9 +890,11 @@ lời gọi mạng, phần còn lại là thật)
      (soi gương: /register của auth-service trả 200 mà KHÔNG có token)
    - disables the submit button while the request is in flight
 
-[COMPONENT] src/components/DeliverySettings.test.tsx — 6 test  (kênh gửi cảnh báo:
-web push + email; quy tắc "ẩn hẳn cái không dùng được" thay vì hiện rồi vô hiệu)
-   - renders nothing when neither channel can deliver
+[COMPONENT] src/components/DeliverySettings.test.tsx — 10 test  (kênh gửi cảnh báo:
+web push + email + webhook + digest; quy tắc "ẩn hẳn cái không dùng được" thay vì
+hiện rồi vô hiệu — chỉ áp cho push/email, vì webhook và digest không cần server cấu
+hình gì nên luôn có)
+   - still offers webhook and digest when neither push nor email can deliver
    - hides the push row when the server has no VAPID keypair
    - hides the push row when the probe never got an answer
    - hides the email row when the server cannot send mail
@@ -827,6 +902,13 @@ web push + email; quy tắc "ẩn hẳn cái không dùng được" thay vì hi�
    - turns email alerts on and reflects what the server stored
      (hai nút cùng hiện chữ "Turn on" → phân biệt bằng aria-label + aria-pressed,
       chính test này phát hiện ra chúng vốn không phân biệt được)
+   - shows the signing secret once, when saving a webhook mints one
+     (server chỉ trả đúng response đó; không hiện ở đây là user mất khoá)
+   - surfaces the server's reason for refusing a URL
+     ("must use https" / "must point at a public address" là chỗ DUY NHẤT luật chống
+      SSRF hiện ra với người đang cấu hình)
+   - clears the webhook, and the secret with it
+   - switches digest mode and marks the chosen one
 
 [HOOK] src/hooks/useWebPush.test.ts — 6 test  (5 kết cục của việc dò khả năng
 push; jsdom không có service worker lẫn PushManager nên phải dựng tay)
@@ -883,8 +965,15 @@ vào là nửa mà k6 không thấy: UI có render và nối dây đúng hay kh�
 ================================================================================
 GHI CHÚ CUỐI
 ================================================================================
-- Một số lớp base/support không phải test (không tính vào 501): AbstractMySql/
+- Một số lớp base/support không phải test (không tính vào 574): AbstractMySql/
   MockMvc/IntegrationTest, JwtTestTokens, TestUpstreamCalls...
+- "BIÊN GIỚI CHỐNG SSRF" (WebhookUrlValidatorTest, notification-service): webhook là chỗ
+  DUY NHẤT trong hệ thống mà người dùng chọn địa chỉ rồi **server** đi kết nối tới — từ bên
+  trong mạng Docker nơi risk-service trả lời không cần xác thực, còn MySQL/Redis/Kafka gọi
+  được bằng tên. Nên các test này không phải kiểm tra hình thức URL: mỗi case là một địa chỉ
+  ai đó có thể gõ vào để bắt hệ thống đọc hộ thứ nó không được đọc. Hai luật gánh phần lớn:
+  chỉ https, và mọi địa chỉ mà host phân giải ra đều phải định tuyến công khai. Kiểm hai lần
+  (lúc lưu và trước mỗi lần gửi, vì DNS trỏ lại được) và tắt follow-redirect ở client.
 - Bộ "CorrelationIdFilterTest" (4 test) lặp lại giống nhau ở **cả 9 service**: giữ nguyên
   X-Correlation-ID đến từ upstream, sinh UUID khi thiếu/rỗng, echo lên response, và xoá
   MDC khi request kết thúc (id rò rỉ sẽ dán nhầm sang request kế tiếp trên cùng thread của

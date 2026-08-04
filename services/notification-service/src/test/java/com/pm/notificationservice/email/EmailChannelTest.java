@@ -13,7 +13,9 @@ import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -41,7 +43,7 @@ class EmailChannelTest {
     void sendsToTheStoredAddressWhenTheUserOptedIn() {
         when(preferences.get(7L)).thenReturn(preference(true, "user@example.com"));
 
-        channel(sender).deliver(notification());
+        channel(sender).deliver(7L, List.of(notification()));
 
         ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
         verify(sender).send(captor.capture());
@@ -53,10 +55,45 @@ class EmailChannelTest {
     }
 
     @Test
+    void aDigestOfSeveralAlertsIsOneEmailThatListsThem() {
+        when(preferences.get(7L)).thenReturn(preference(true, "user@example.com"));
+
+        channel(sender).deliver(7L, List.of(notification(), notification("Budget exceeded", "Over by 200.")));
+
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(sender).send(captor.capture());
+        SimpleMailMessage message = captor.getValue();
+        // A batch announces itself; a single alert (above) keeps its own title as the subject, so
+        // the immediate path reads exactly as it did before digests existed.
+        assertThat(message.getSubject()).isEqualTo("2 Vernfy alerts");
+        assertThat(message.getText())
+                .contains("- Large expense: You spent a lot.")
+                .contains("- Budget exceeded: Over by 200.");
+    }
+
+    @Test
+    void summarisesTheTailOfAPathologicalBurst() {
+        // 25 alerts must not become 25 unreadable lines. The bell holds the complete record; this
+        // is the nudge towards it.
+        when(preferences.get(7L)).thenReturn(preference(true, "user@example.com"));
+        List<Notification> burst = IntStream.rangeClosed(1, 25)
+                .mapToObj(i -> notification("Alert " + i, "Body " + i))
+                .toList();
+
+        channel(sender).deliver(7L, burst);
+
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(sender).send(captor.capture());
+        String text = captor.getValue().getText();
+        assertThat(text).contains("- Alert 20: Body 20").contains("and 5 more in the app");
+        assertThat(text).doesNotContain("Alert 21");
+    }
+
+    @Test
     void staysSilentWhenNoMailServerIsConfigured() {
         // No JavaMailSender bean is the default: spring.mail.host unset. The channel must not even
         // read preferences, since there is nothing it could do with them.
-        channel(null).deliver(notification());
+        channel(null).deliver(7L, List.of(notification()));
 
         verify(preferences, never()).get(any());
     }
@@ -65,7 +102,7 @@ class EmailChannelTest {
     void doesNotEmailAUserWhoHasNotOptedIn() {
         when(preferences.get(7L)).thenReturn(preference(false, "user@example.com"));
 
-        channel(sender).deliver(notification());
+        channel(sender).deliver(7L, List.of(notification()));
 
         verify(sender, never()).send(any(SimpleMailMessage.class));
     }
@@ -74,7 +111,7 @@ class EmailChannelTest {
     void doesNotEmailWhenTheAddressIsMissing() {
         when(preferences.get(7L)).thenReturn(preference(true, null));
 
-        channel(sender).deliver(notification());
+        channel(sender).deliver(7L, List.of(notification()));
 
         verify(sender, never()).send(any(SimpleMailMessage.class));
     }
@@ -86,7 +123,7 @@ class EmailChannelTest {
         when(preferences.get(7L)).thenReturn(preference(true, "user@example.com"));
         doThrow(new MailSendException("smtp down")).when(sender).send(any(SimpleMailMessage.class));
 
-        assertThatCode(() -> channel(sender).deliver(notification())).doesNotThrowAnyException();
+        assertThatCode(() -> channel(sender).deliver(7L, List.of(notification()))).doesNotThrowAnyException();
     }
 
     private EmailChannel channel(JavaMailSender available) {
@@ -106,13 +143,17 @@ class EmailChannelTest {
     }
 
     private static Notification notification() {
+        return notification("Large expense", "You spent a lot.");
+    }
+
+    private static Notification notification(String title, String message) {
         return Notification.builder()
                 .id(UUID.randomUUID())
                 .userId(7L)
                 .type("RISK_ALERT")
                 .severity("HIGH")
-                .title("Large expense")
-                .message("You spent a lot.")
+                .title(title)
+                .message(message)
                 .read(false)
                 .createdAt(LocalDateTime.now())
                 .build();

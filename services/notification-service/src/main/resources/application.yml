@@ -95,6 +95,15 @@ finsight:
     # Wording around the alert itself. The SMTP connection is `spring.mail.*` below, and its
     # presence is what enables the channel — there is no separate on/off flag.
     from: ${MAIL_FROM:Vernfy <noreply@vernfy.com>}
+  webhook:
+    # Outbound webhooks are enabled per user (by supplying an https URL), so there is no
+    # server-side switch here — only how long we wait on a receiver before giving up.
+    timeout-ms: ${WEBHOOK_TIMEOUT_MS:5000}
+  digest:
+    # How often the digest scheduler looks for users whose batching window has elapsed. This is
+    # the resolution, not the window: at 5 minutes an hourly digest lands 60-65 minutes after the
+    # first alert. Lowering it costs a query per interval and buys precision nobody asked for.
+    poll-ms: ${DIGEST_POLL_MS:300000}
 
 management:
   # Metrics are exported by Prometheus scrape (/actuator/prometheus). Turn OFF the OTLP

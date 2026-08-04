@@ -587,6 +587,29 @@ The address alerts go to is the `email` claim of the user's own JWT, captured wh
 channel on — nothing is emailed to a user who never opted in, and there is no admin path to set
 someone else's address.
 
+## 7.6 Webhooks and digests — nothing to deploy
+
+Both ship on by default and need **no** operator setup, so there is nothing to add to
+`secrets.env`.
+
+**Webhook.** Each user pastes their own `https` URL into the delivery settings and the service
+mints their signing secret. There is no server-side enable flag to forget.
+
+What an operator does need to know: the URL is one **this box connects to**, from a network where
+`risk-service` answers unauthenticated and MySQL, Redis and Kafka resolve by name. That egress is
+constrained in code (`webhook/WebhookUrlValidator`): https only, and every address the host
+resolves to must be publicly routable — loopback, RFC 1918, link-local (the cloud metadata
+address), CGNAT and IPv6 unique-local are all refused, re-checked before every delivery, and
+redirects are not followed. **Do not loosen it to make a local test work**; point the test at a
+tunnel instead. A refused URL shows up as a 400 to the user and as
+`finsight_notifications_webhook_blocked_total` on the metrics endpoint.
+
+**Digests.** Default is `IMMEDIATE`, which is exactly the behaviour that existed before, so an
+upgrade changes nothing for anyone until they choose otherwise. `DIGEST_POLL_MS` (default 300000)
+is the scheduler's resolution, not the window — an hourly digest lands 60–65 minutes after the
+first alert. The scheduler is **single-instance**, like the SSE registry: running a second
+notification-service would send each digest twice.
+
 ## 8. Updating
 
 ```bash
