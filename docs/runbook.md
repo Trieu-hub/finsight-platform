@@ -14,7 +14,7 @@ deployment guide (there is no production target yet)._
 | budget-service | 8084 | Kafka producer + consumer |
 | dashboard-service | 8085 | BFF, no DB |
 | risk-service | _(not published)_ | listens on 8086 inside the network; Kafka consumer + producer; risk/insight/anomaly read APIs |
-| notification-service | 8087 | Kafka consumer of RiskDetected; in-app notification read/mark-read API |
+| notification-service | 8087 | Kafka consumer of RiskDetected + BudgetExceeded; in-app notification read/mark-read API; delivery channels (SSE, web push, email, signed webhook) and the digest scheduler |
 | Prometheus | 9090 | |
 | Grafana | 3000 | anonymous admin (dev only) |
 | MySQL / Redis / Kafka | _(not published)_ | reachable only on the compose network |
@@ -287,6 +287,9 @@ docker compose exec kafka /opt/kafka/bin/kafka-consumer-groups.sh \
 | Consumer group lag climbing | a consumer is failing to process | check the service logs; budget-service retries twice then increments `finsight_budget_events_failed_total` and skips (no DLT) |
 | Prometheus target DOWN | service not healthy, or scrape endpoint blocked | confirm `/actuator/prometheus` returns 200 for that service |
 | Port already in use on `up` | a host port (8080–8085, 9090, 3000) is taken | stop the conflicting process or remap the `ports:` entry |
+| Saving a webhook URL returns 400 `INVALID_WEBHOOK_URL` | by design: notification-service refuses anything that is not a **public https** address, because it is the server that connects, from inside the private network. `http://`, `localhost`, RFC 1918, CGNAT and cloud-metadata addresses are all refused — see `webhook/WebhookUrlValidator` | use a publicly reachable https endpoint; for local testing point it at a tunnel (ngrok/Cloudflare) rather than relaxing the validator |
+| Webhook enabled but the receiver gets nothing | the alert may be sitting in a digest window, or the stored URL now fails re-validation | check `finsight_notifications_webhook_blocked_total` (URL refused at delivery time) and `..._failed_total`; if the user is on HOURLY/DAILY the delivery is due only once the **oldest** pending alert is older than the window, and the scheduler polls every 5 min (`DIGEST_POLL_MS`) |
+| Receiver rejects the signature | it must verify HMAC-SHA256 over `"<t>.<body>"` — the raw body bytes, and the timestamp from the header included — not over the body alone | header is `X-Vernfy-Signature: t=<epoch>,v1=<hex>`; the secret is the one returned once when the URL was saved. Re-save the URL to mint a new one |
 | Edited a bind-mounted config (`Caddyfile`, `prometheus.yml`, …) and the container still serves the old one — a reload even reports success | the file was replaced with `mv`, `sed -i`, `scp`, or an editor that writes-then-renames. A **single-file** bind mount follows the **inode**, not the path, so a new inode leaves the container on the old file | compare `stat -c %i <host path>` with `docker exec <c> stat -c %i <container path>`. Rewrite in place to keep the inode — `tr -d '\r' < f > /tmp/f && cat /tmp/f > f` — or force a fresh mount with `up -d --force-recreate <svc>` (plain `up -d` won't: the service definition hasn't changed) |
 
 ---

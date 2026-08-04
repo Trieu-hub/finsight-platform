@@ -1,8 +1,10 @@
 package com.pm.notificationservice.controller;
 
 import com.pm.notificationservice.dto.ApiResponse;
+import com.pm.notificationservice.dto.DigestPreferenceRequest;
 import com.pm.notificationservice.dto.EmailPreferenceRequest;
 import com.pm.notificationservice.dto.NotificationPreferenceResponse;
+import com.pm.notificationservice.dto.WebhookPreferenceRequest;
 import com.pm.notificationservice.entity.NotificationPreference;
 import com.pm.notificationservice.security.JwtUserPrincipal;
 import com.pm.notificationservice.service.NotificationPreferenceService;
@@ -46,6 +48,31 @@ public class NotificationPreferenceController {
             @Valid @RequestBody EmailPreferenceRequest request) {
         NotificationPreference preference = preferenceService.setEmailEnabled(
                 principal.getUserId(), principal.getEmail(), request.isEmailEnabled());
+        return ApiResponse.of(NotificationPreferenceResponse.from(preference, emailConfigured()));
+    }
+
+    /**
+     * Sets or clears the outbound webhook. The response carries the signing secret only when this
+     * call minted one — changing the URL always does, toggling the same URL never does — so the
+     * client must show it there and then.
+     */
+    @PutMapping("/webhook")
+    public ApiResponse<NotificationPreferenceResponse> setWebhook(
+            @AuthenticationPrincipal JwtUserPrincipal principal,
+            @Valid @RequestBody WebhookPreferenceRequest request) {
+        String url = request.getUrl() == null || request.getUrl().isBlank() ? null : request.getUrl().trim();
+        String freshSecret = preferenceService.setWebhook(principal.getUserId(), url, request.isEnabled());
+        NotificationPreference preference = preferenceService.get(principal.getUserId());
+        return ApiResponse.of(
+                NotificationPreferenceResponse.from(preference, emailConfigured(), freshSecret));
+    }
+
+    @PutMapping("/digest")
+    public ApiResponse<NotificationPreferenceResponse> setDigest(
+            @AuthenticationPrincipal JwtUserPrincipal principal,
+            @Valid @RequestBody DigestPreferenceRequest request) {
+        NotificationPreference preference =
+                preferenceService.setDigestMode(principal.getUserId(), request.getDigestMode());
         return ApiResponse.of(NotificationPreferenceResponse.from(preference, emailConfigured()));
     }
 

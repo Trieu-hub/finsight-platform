@@ -62,12 +62,17 @@ public class WebPushChannel implements DeliveryChannel {
                 .register(meterRegistry);
     }
 
+    /**
+     * One ping per subscribed browser, whatever the size of the batch: the push has no body, so
+     * the service worker's reaction — fetch the unread notifications — already covers all of them.
+     * Sending N pings for N alerts would buzz the device N times to convey the same thing.
+     */
     @Override
-    public void deliver(Notification notification) {
+    public void deliver(Long userId, List<Notification> batch) {
         if (!properties.isConfigured()) {
             return;
         }
-        List<PushSubscription> targets = subscriptions.findByUserId(notification.getUserId());
+        List<PushSubscription> targets = subscriptions.findByUserId(userId);
         for (PushSubscription subscription : targets) {
             push(subscription);
         }

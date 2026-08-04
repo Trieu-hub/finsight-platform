@@ -295,7 +295,8 @@ com.pm.gateway            (the gateway is the one exception to the naming)
 
 Typical packages: `config`, `controller` (or `web`), `dto`, `entity`, `repository`, `service`,
 `service/impl`, `exception`, `security/jwt`. Plus domain packages: `rule`, `insight`, `anomaly`
-in risk-service; `outbox`, `game` in transaction-service.
+in risk-service; `outbox`, `game` in transaction-service; `delivery`, `push`, `email`, `webhook`,
+`narrator`, `stream` in notification-service.
 
 DTOs are used for every API request/response. Never expose JPA entities directly.
 DTOs are Lombok classes, not records — match the surrounding style.
@@ -456,6 +457,9 @@ Do not add ad-hoc try/catch in controllers to produce error responses.
 - `.github/workflows/frontend.yml` — `web/` only (path-filtered): `npm ci`, ESLint, Vitest, then
   `tsc -b && vite build`.
 - `.github/dependabot.yml` — nine Maven directories + npm `/web` + github-actions, weekly.
+  Major `typescript` bumps are ignored for `/web`: typescript-eslint's peer range excludes each
+  new major, so the PR dies at `npm ci` (ERESOLVE) and reddens every job that installs. Lift the
+  entry once typescript-eslint widens the range, and bump both together.
 
 ---
 

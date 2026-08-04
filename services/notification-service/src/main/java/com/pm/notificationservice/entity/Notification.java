@@ -20,8 +20,8 @@ import java.util.UUID;
  * (currently {@code RiskDetected}). The id is a {@link UUID} generated in app code,
  * matching the rest of FinSight's persistence convention.
  *
- * <p>Read state is mutable ({@code isRead}/{@code readAt}); everything else is set once
- * at creation by the consumer and never updated.
+ * <p>Read state ({@code isRead}/{@code readAt}) and {@code digestedAt} are the only mutable parts;
+ * everything else is set once at creation by the consumer and never updated.
  */
 @Entity
 @Table(name = "notifications")
@@ -64,4 +64,12 @@ public class Notification {
 
     @Column(name = "read_at")
     private LocalDateTime readAt;
+
+    /**
+     * When the content-carrying channels (email, webhook) accounted for this row. Stamped at
+     * creation for users on {@link DigestMode#IMMEDIATE}; left null for the rest until the digest
+     * scheduler sends it. Null therefore means "still owed an outbound delivery", never "old".
+     */
+    @Column(name = "digested_at")
+    private LocalDateTime digestedAt;
 }

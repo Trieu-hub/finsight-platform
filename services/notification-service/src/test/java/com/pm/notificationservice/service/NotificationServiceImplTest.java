@@ -1,6 +1,9 @@
 package com.pm.notificationservice.service;
 
+import com.pm.notificationservice.delivery.DeliveryChannel;
+import com.pm.notificationservice.entity.DigestMode;
 import com.pm.notificationservice.entity.Notification;
+import com.pm.notificationservice.entity.NotificationPreference;
 import com.pm.notificationservice.event.BudgetExceededEvent;
 import com.pm.notificationservice.event.RiskDetectedEvent;
 import com.pm.notificationservice.exception.NotificationNotFoundException;
@@ -30,6 +33,7 @@ class NotificationServiceImplTest {
 
     private NotificationRepository notificationRepository;
     private ProcessedEventRepository processedEventRepository;
+    private NotificationPreferenceService preferences;
     private NotificationServiceImpl service;
 
     @BeforeEach
@@ -44,9 +48,73 @@ class NotificationServiceImplTest {
         // is about what gets persisted.
         // No delivery channels: this test is about what gets persisted, and the channels are a
         // best-effort side path that runs after the commit.
+        // Default preferences: IMMEDIATE, which is the behaviour every assertion below was written
+        // against — one event, one delivery.
+        preferences = mock(NotificationPreferenceService.class);
+        when(preferences.get(any())).thenReturn(NotificationPreference.builder()
+                .digestMode(DigestMode.IMMEDIATE)
+                .build());
         service = new NotificationServiceImpl(
                 notificationRepository, processedEventRepository, new TemplateNarrator(),
-                mock(NotificationStream.class), List.of(), txManager);
+                mock(NotificationStream.class), List.of(), preferences, txManager);
+    }
+
+    @Test
+    void stampsAnImmediateUsersNotificationAsAlreadyAccountedFor() {
+        // A null digestedAt has to mean "still owed a delivery". If immediate rows were left null
+        // the scheduler would later mail every one of them a second time.
+        RiskDetectedEvent event = event(UUID.randomUUID());
+        when(processedEventRepository.existsById(event.eventId())).thenReturn(false);
+
+        service.createFromEvent(event);
+
+        ArgumentCaptor<Notification> saved = ArgumentCaptor.forClass(Notification.class);
+        verify(notificationRepository).save(saved.capture());
+        assertThat(saved.getValue().getDigestedAt()).isNotNull();
+    }
+
+    @Test
+    void leavesADigestUsersNotificationPendingAndSkipsTheContentChannels() {
+        // The scheduler owns email and webhook for this user; push still fires now because it
+        // carries no payload.
+        DeliveryChannel batched = mock(DeliveryChannel.class);
+        when(batched.respectsDigest()).thenReturn(true);
+        DeliveryChannel immediate = mock(DeliveryChannel.class);
+        when(immediate.respectsDigest()).thenReturn(false);
+        when(preferences.get(any())).thenReturn(NotificationPreference.builder()
+                .digestMode(DigestMode.HOURLY)
+                .build());
+        service = new NotificationServiceImpl(
+                notificationRepository, processedEventRepository, new TemplateNarrator(),
+                mock(NotificationStream.class), List.of(batched, immediate), preferences,
+                mock(PlatformTransactionManager.class));
+        RiskDetectedEvent event = event(UUID.randomUUID());
+        when(processedEventRepository.existsById(event.eventId())).thenReturn(false);
+
+        service.createFromEvent(event);
+
+        ArgumentCaptor<Notification> saved = ArgumentCaptor.forClass(Notification.class);
+        verify(notificationRepository).save(saved.capture());
+        assertThat(saved.getValue().getDigestedAt()).isNull();
+        verify(batched, never()).deliver(any(), any());
+        verify(immediate).deliver(any(), any());
+    }
+
+    @Test
+    void aFailingChannelDoesNotFailTheConsumer() {
+        // A throw here would fail the Kafka listener, the event would be redelivered, and everyone
+        // who already got their alert would get it twice.
+        DeliveryChannel broken = mock(DeliveryChannel.class);
+        org.mockito.Mockito.doThrow(new IllegalStateException("boom"))
+                .when(broken).deliver(any(), any());
+        service = new NotificationServiceImpl(
+                notificationRepository, processedEventRepository, new TemplateNarrator(),
+                mock(NotificationStream.class), List.of(broken), preferences,
+                mock(PlatformTransactionManager.class));
+        RiskDetectedEvent event = event(UUID.randomUUID());
+        when(processedEventRepository.existsById(event.eventId())).thenReturn(false);
+
+        assertThat(service.createFromEvent(event)).isTrue();
     }
 
     @Test
