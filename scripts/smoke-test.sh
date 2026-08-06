@@ -5,7 +5,8 @@
 # PASS, non-zero on the first category that fails — so `deploy.sh` can roll back on it.
 #
 # What it checks (all NON-destructive — no user/data is created):
-#   1. every core container reports healthy (or running, for the ones without a healthcheck)
+#   1. every core container reports healthy (or running, for the ones without a healthcheck),
+#      waiting out a healthcheck that is still 'starting' (SMOKE_HEALTH_TIMEOUT, default 180s)
 #   2. auth-service publishes a JWK Set with at least one key (JWT signing is live)
 #   3. a bogus login is rejected 400/401 — exercises Caddy? no: the gateway -> auth -> DB
 #      path end to end (auth must query the DB to reject), proving the chain works
@@ -30,12 +31,27 @@ CURL_IMG="curlimages/curl:latest"
 sidecar() { local c="$1"; shift; docker run --rm --network "container:$c" "$CURL_IMG" "$@"; }
 
 echo "== 1. container health =="
+# 'starting' is not a verdict, so wait it out. `docker compose up -d` returns once api-gateway
+# has *started* — nothing depends on it with condition service_healthy, so compose never waits
+# for its healthcheck — and reading health once right after a deploy catches it mid-'starting'.
+# That failed a perfectly good deploy and made deploy.sh roll itself back. Every other state
+# (healthy, unhealthy, missing) is still decided on the spot.
+HEALTH_TIMEOUT="${SMOKE_HEALTH_TIMEOUT:-180}"
+health_of() { docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}nohealth{{end}}' "$1" 2>/dev/null || echo missing; }
+settled_health() {
+  local c="$1" h deadline=$(( $(date +%s) + HEALTH_TIMEOUT ))
+  while :; do
+    h=$(health_of "$c")
+    if [ "$h" != starting ] || [ "$(date +%s)" -ge "$deadline" ]; then echo "$h"; return; fi
+    sleep 3
+  done
+}
 # Services with an actuator/mysqladmin/redis/kafka healthcheck must be 'healthy'.
 for c in finsight-mysql finsight-redis finsight-kafka \
          finsight-api-gateway finsight-auth-service finsight-user-service \
          finsight-transaction-service finsight-budget-service finsight-dashboard-service \
          finsight-risk-service finsight-notification-service finsight-analytics-service; do
-  h=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}nohealth{{end}}' "$c" 2>/dev/null || echo missing)
+  h=$(settled_health "$c")
   if [ "$h" = healthy ]; then note "$c" "healthy"; else fail "$c" "NOT healthy ($h)"; fi
 done
 # Caddy + the SPA container carry no healthcheck — 'running' is the bar.
