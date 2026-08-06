@@ -45,6 +45,15 @@ export interface Category {
   type: TransactionType
 }
 
+// What an import did. Rows are independent, so the answer is a tally rather than a status:
+// `duplicates` are rows the server already held (or that the file repeated), `errors` name the
+// rows it refused and why.
+export interface ImportResult {
+  imported: number
+  duplicates: number
+  errors: { row: number; message: string }[]
+}
+
 export interface AdminUser {
   id: number
   username: string

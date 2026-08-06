@@ -248,8 +248,15 @@ stay in the backend.
   showing the current period's budgets by default with a toggle to reveal expired ones, and an
   instant popup the moment a new expense pushes its budget over the limit), Wallets (accounts with
   live balances, create / delete), Analytics (month-over-month overview, spend forecast, top movers,
-  category breakdown, and an AI/template monthly summary — served by analytics-service), Admin
-  console (RBAC user management, ROLE_ADMIN only).
+  category breakdown, and an AI/template monthly summary — served by analytics-service), Import
+  (bring a bank statement in from a CSV), Admin console (RBAC user management, ROLE_ADMIN only).
+- **Statement import**: upload a CSV, say which column is the date, the amount and the description,
+  and check every row before it is written — the delimiter is guessed, amounts are read in either
+  grouping convention, and the date order is asked for rather than inferred (03/04 is two different
+  days). Rows go through the ordinary create path, so budget, risk and analytics see them over
+  Kafka exactly as they see a hand-typed one. A re-uploaded statement is **not** imported twice:
+  each imported row carries a fingerprint of the line it came from. Imported expenses are charged
+  to no budget — dropping a whole statement on one budget would blow it up.
 - **Bilingual & themed**: a header toggle switches between English and Vietnamese (all copy and
   category names localized) and between light/dark colour themes; both choices persist in the
   browser.

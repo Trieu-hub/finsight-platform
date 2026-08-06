@@ -10,6 +10,7 @@ import Transactions from './pages/Transactions'
 import Budgets from './pages/Budgets'
 import Wallets from './pages/Wallets'
 import Analytics from './pages/Analytics'
+import Import from './pages/Import'
 import Admin from './pages/Admin'
 import LuckyMe from './pages/LuckyMe'
 
@@ -28,6 +29,7 @@ export default function App() {
           <Route path="/budgets" element={<Budgets />} />
           <Route path="/wallets" element={<Wallets />} />
           <Route path="/analytics" element={<Analytics />} />
+          <Route path="/import" element={<Import />} />
           {/* LuckyMe: gamers + admins only (also enforced server-side) */}
           <Route element={<LuckyMeRoute />}>
             <Route path="/luckyme" element={<LuckyMe />} />

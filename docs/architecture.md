@@ -18,7 +18,7 @@ explicitly under [Not yet built](#not-yet-built).
 | `api-gateway` | 8080 | – | HTTP (edge) | Path-prefix routing + edge JWT validation (RS256/issuer/audience); forwards the bearer token downstream |
 | `auth-service` | 8081 | `auth_db` | HTTP | Register, login, refresh, account lockout; Redis-backed refresh tokens + lockout counters |
 | `user-service` | 8082 | `user_db` | HTTP | User profile data |
-| `transaction-service` | 8083 | `transaction_db` | HTTP | Transactions (INCOME/EXPENSE), categories, summaries; **produces** `TransactionCreated` |
+| `transaction-service` | 8083 | `transaction_db` | HTTP | Transactions (INCOME/EXPENSE), categories, summaries, CSV statement import; **produces** `TransactionCreated` |
 | `budget-service` | 8084 | `budget_db` | HTTP, Kafka | Budget definitions + utilization (`spent_amount`); **consumes** `TransactionCreated`, **produces** `BudgetChanged` |
 | `dashboard-service` | 8085 | _(none, BFF)_ | HTTP | Read-only aggregation over user/transaction/budget; relays the caller's JWT; fail-fast |
 | `risk-service` | 8086 | `risk_db` | Kafka | Risk rules, behavioral insights, anomaly detection; **consumes** `TransactionCreated` + `BudgetChanged`, **produces** `RiskDetected`; read APIs for risks/insights/anomalies |
@@ -247,6 +247,14 @@ sequenceDiagram
 Auth/login goes `Client → api-gateway → auth-service` (public routes skip JWT validation).
 Direct resource calls (`/api/v1/transactions`, `/api/v1/budgets`, …) route gateway → the owning
 service, which validates the JWT itself.
+
+`POST /api/v1/transactions/import` is the one endpoint that carries a whole file's worth of rows.
+The **client** parses the CSV — delimiters, grouping marks and date order are presentation
+problems, and the preview has to read the file anyway — and posts normalised rows as JSON, so the
+gateway forwards it as any other body (capped at `GATEWAY_MAX_BODY_BYTES`, 2 MB). Each row is then
+written through the ordinary create path in its own transaction: partial success is the expected
+outcome, and every row that lands emits `TransactionCreated` like any other. Re-importing is safe
+— `transactions.import_fingerprint` (`V13`) identifies the statement line a row came from.
 
 ---
 

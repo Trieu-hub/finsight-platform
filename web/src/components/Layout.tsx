@@ -59,6 +59,7 @@ const baseLinks = [
   { to: '/budgets', labelKey: 'nav.budgets' },
   { to: '/wallets', labelKey: 'nav.wallets' },
   { to: '/analytics', labelKey: 'nav.analytics' },
+  { to: '/import', labelKey: 'nav.import' },
 ]
 
 function NavIcon({ to }: { to: string }) {

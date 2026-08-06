@@ -1,6 +1,8 @@
 package com.pm.transactionservice.service.impl;
 
 import com.pm.transactionservice.dto.CreateTransactionRequest;
+import com.pm.transactionservice.dto.ImportResultResponse;
+import com.pm.transactionservice.dto.ImportRowError;
 import com.pm.transactionservice.dto.TransactionFilterRequest;
 import com.pm.transactionservice.dto.TransactionResponse;
 import com.pm.transactionservice.dto.UpdateTransactionRequest;
@@ -20,16 +22,27 @@ import com.pm.transactionservice.repository.TransactionSpecifications;
 import com.pm.transactionservice.service.TransactionService;
 import com.pm.transactionservice.service.WalletService;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -40,22 +53,36 @@ public class TransactionServiceImpl implements TransactionService {
     private final ApplicationEventPublisher eventPublisher;
     private final AuditLog auditLog;
     private final WalletService walletService;
+    private final TransactionTemplate transactionTemplate;
 
     public TransactionServiceImpl(TransactionRepository transactionRepository,
                                   CategoryRepository categoryRepository,
                                   ApplicationEventPublisher eventPublisher,
                                   AuditLog auditLog,
-                                  WalletService walletService) {
+                                  WalletService walletService,
+                                  PlatformTransactionManager transactionManager) {
         this.transactionRepository = transactionRepository;
         this.categoryRepository = categoryRepository;
         this.eventPublisher = eventPublisher;
         this.auditLog = auditLog;
         this.walletService = walletService;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
     @Override
     @Transactional
     public TransactionResponse create(Long userId, CreateTransactionRequest request) {
+        return toResponse(write(userId, request, null));
+    }
+
+    /**
+     * The one path that turns a request into a stored transaction — used by {@link #create} and by
+     * each row of an import, so an imported transaction goes through exactly the same validation,
+     * event and wallet handling as one typed in by hand.
+     *
+     * <p>{@code importFingerprint} is null for everything but an import.
+     */
+    private Transaction write(Long userId, CreateTransactionRequest request, String importFingerprint) {
         validateAmountPositive(request.getAmount());
         validateCategoryForType(request.getCategoryId(), request.getType());
         validateTransferWallets(request.getType(), request.getWalletId(), request.getToWalletId());
@@ -80,6 +107,7 @@ public class TransactionServiceImpl implements TransactionService {
                 .budgetId(request.getType() == TransactionType.EXPENSE ? request.getBudgetId() : null)
                 .isDeleted(false)
                 .metadata(request.getMetadata())
+                .importFingerprint(importFingerprint)
                 .build();
 
         Transaction saved = transactionRepository.save(transaction);
@@ -102,7 +130,88 @@ public class TransactionServiceImpl implements TransactionService {
                 saved.getWalletId(), saved.getToWalletId(), +1);
 
         auditLog.record("CREATE", "transaction", saved.getId(), userId);
-        return toResponse(saved);
+        return saved;
+    }
+
+    /**
+     * Writes a parsed statement, row by row.
+     *
+     * <p>Deliberately NOT {@code @Transactional}: each row commits on its own through
+     * {@link #transactionTemplate}, so a row the service refuses neither stops the rows after it
+     * nor undoes the ones already written — and because every written row carries a fingerprint,
+     * re-uploading the file after a partial import skips what landed instead of doubling it.
+     */
+    @Override
+    public ImportResultResponse importTransactions(Long userId, List<CreateTransactionRequest> rows) {
+        List<ImportRowError> errors = new ArrayList<>();
+        // A statement that lists the same line twice is the file's problem, not the DB's: catch it
+        // here, because both copies would otherwise race for the same fingerprint.
+        Set<String> seenInThisFile = new HashSet<>();
+        int imported = 0;
+        int duplicates = 0;
+
+        for (int i = 0; i < rows.size(); i++) {
+            CreateTransactionRequest row = rows.get(i);
+            String fingerprint = fingerprint(userId, row);
+            if (!seenInThisFile.add(fingerprint)) {
+                duplicates++;
+                continue;
+            }
+            try {
+                boolean written = Boolean.TRUE.equals(transactionTemplate.execute(status -> {
+                    if (transactionRepository.existsByUserIdAndImportFingerprint(userId, fingerprint)) {
+                        return false;
+                    }
+                    write(userId, row, fingerprint);
+                    return true;
+                }));
+                if (written) {
+                    imported++;
+                } else {
+                    duplicates++;
+                }
+            } catch (DataIntegrityViolationException e) {
+                // The unique index caught what the check-then-insert above cannot: the same file
+                // submitted twice at once. Still a duplicate, not a failure.
+                duplicates++;
+            } catch (RuntimeException e) {
+                errors.add(ImportRowError.builder()
+                        .row(i + 1)
+                        .message(e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage())
+                        .build());
+            }
+        }
+
+        auditLog.record("IMPORT", "transaction", null, userId);
+        return ImportResultResponse.builder()
+                .imported(imported)
+                .duplicates(duplicates)
+                .errors(errors)
+                .build();
+    }
+
+    /**
+     * Identifies a statement line by what a bank actually prints on it. Recomputed from the row on
+     * every import — the client never sends it — so it cannot be used to make one account's import
+     * collide with another's.
+     *
+     * <p>The amount is normalised (1000.00 and 1000 are the same line) and the description trimmed,
+     * because the same statement exported twice rarely comes back byte-identical.
+     */
+    private static String fingerprint(Long userId, CreateTransactionRequest row) {
+        String description = row.getDescription() == null ? "" : row.getDescription().trim();
+        String amount = row.getAmount() == null
+                ? "" : row.getAmount().stripTrailingZeros().toPlainString();
+        String material = userId + "|" + row.getType() + "|" + amount + "|" + row.getCurrency()
+                + "|" + row.getTransactionDate() + "|" + description;
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(material.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException e) {
+            // SHA-256 is mandatory in every Java SE implementation; unreachable in practice.
+            throw new IllegalStateException("SHA-256 unavailable", e);
+        }
     }
 
     @Override
@@ -237,6 +346,9 @@ public class TransactionServiceImpl implements TransactionService {
 
         // Soft delete.
         transaction.setDeleted(true);
+        // Release the statement line back: a deleted row is invisible to the user, so leaving its
+        // fingerprint behind would make re-importing the statement silently skip it forever.
+        transaction.setImportFingerprint(null);
         transactionRepository.save(transaction);
 
         // Emit AFTER_COMMIT so a running-total consumer (budget spent_amount) reverses this
