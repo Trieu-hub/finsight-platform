@@ -88,6 +88,15 @@ public class Transaction {
     @Column(name = "metadata", columnDefinition = "json")
     private Map<String, Object> metadata;
 
+    /**
+     * Identifies the statement line this row was imported from, so re-uploading the same file
+     * skips it instead of duplicating it. Derived in the service from the row's own fields; null
+     * for anything recorded by hand or by the game, and cleared on delete so a deleted row can be
+     * imported again.
+     */
+    @Column(name = "import_fingerprint", length = 64)
+    private String importFingerprint;
+
     @CreatedDate
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;

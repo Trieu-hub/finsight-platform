@@ -2,6 +2,8 @@ package com.pm.transactionservice.controller;
 
 import com.pm.transactionservice.dto.ApiResponse;
 import com.pm.transactionservice.dto.CreateTransactionRequest;
+import com.pm.transactionservice.dto.ImportResultResponse;
+import com.pm.transactionservice.dto.ImportTransactionsRequest;
 import com.pm.transactionservice.dto.PageMeta;
 import com.pm.transactionservice.dto.TransactionFilterRequest;
 import com.pm.transactionservice.dto.TransactionResponse;
@@ -47,6 +49,20 @@ public class TransactionController {
         Long userId = extractUserId(authentication);
         TransactionResponse created = transactionService.create(userId, request);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.of(created));
+    }
+
+    /**
+     * Imports a statement the client has already parsed into rows. Answers 200, not 201: a partial
+     * import is the normal outcome, and the body — not the status — says what happened to each row.
+     */
+    @PostMapping("/import")
+    public ResponseEntity<ApiResponse<ImportResultResponse>> importTransactions(
+            @Valid @RequestBody ImportTransactionsRequest request,
+            Authentication authentication) {
+        Long userId = extractUserId(authentication);
+        ImportResultResponse result =
+                transactionService.importTransactions(userId, request.getTransactions());
+        return ResponseEntity.ok(ApiResponse.of(result));
     }
 
     @GetMapping

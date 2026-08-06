@@ -9,12 +9,12 @@ dashboard, risk, notification, analytics) + frontend `web/` (mục 10).
 
 TỔNG QUAN CON SỐ
 --------------------------------------------------------------------------------
-- Tổng số test method (@Test / @ParameterizedTest):  574
-- Tổng số lớp test:                                  116 (+ vài lớp base/support)
+- Tổng số test method (@Test / @ParameterizedTest):  583
+- Tổng số lớp test:                                  117 (+ vài lớp base/support)
 - Trong đó:
     * Unit / component test (chạy KHÔNG cần Docker):  ~375
-    * Integration test (cần Docker – Testcontainers): ~181
-- Frontend (Vitest, ngoài con số 574 ở trên):          74 test / 11 file
+    * Integration test (cần Docker – Testcontainers): ~190
+- Frontend (Vitest, ngoài con số 583 ở trên):         100 test / 12 file
 - Frontend E2E (Playwright, cần stack đang chạy):       3 test / 1 file (mục 11)
 - Framework: JUnit 5 (Jupiter) + Mockito + AssertJ; frontend dùng Vitest +
   React Testing Library (jsdom) và Playwright cho E2E trình duyệt.
@@ -290,6 +290,17 @@ Quy ước chung của test:
    - rejectsInvalidCurrencyWithStructuredError
    - rejectsMissingTransactionDateWithStructuredError
    - rejectsUnknownCategoryWithStructuredError
+
+[INTEGRATION] TransactionImportIntegrationTest — 9 test  (nhập sao kê + chống trùng)
+   - importWritesEveryRow
+   - reimportingTheSameStatementSkipsEveryRow
+   - repeatedRowWithinOneFileIsImportedOnce
+   - amountAndDescriptionAreNormalisedBeforeComparing
+   - abadRowIsReportedWithoutStoppingTheRest
+   - deletingAnImportedRowAllowsItToBeImportedAgain
+   - anIdenticalRowFromAnotherUserIsNotADuplicate
+   - anEmptyImportIsRejected
+   - importRequiresAuthentication
 
 [INTEGRATION] TransactionApiFilterIntegrationTest — 7 test
    - defaultSortingIsTransactionDateDesc
@@ -829,6 +840,33 @@ Test trình duyệt thật nằm ở mục 11.
    - sanitizeMoneyInput: caps the length at MAX_MONEY_DIGITS
      (soi gương @Digits(integer=15) phía backend)
    - sanitizeMoneyInput: returns empty when there are no digits
+
+[UNIT] src/lib/csv.test.ts — 26 test  (đọc sao kê CSV: dấu phân cách, số tiền, ngày)
+   - detectDelimiter: picks the comma for a comma-separated header
+   - detectDelimiter: picks the semicolon used by non-en-US exports
+   - detectDelimiter: ignores delimiters inside a quoted field
+   - parseCsv: splits rows and cells
+   - parseCsv: keeps a delimiter that is inside quotes
+   - parseCsv: unescapes a doubled quote
+   - parseCsv: handles CRLF line endings and a trailing newline
+   - parseCsv: strips a UTF-8 BOM so the first header is not corrupted
+   - parseCsv: keeps a newline that is inside a quoted field
+   - parseAmount: reads a plain number
+   - parseAmount: reads en-US grouping with decimals
+   - parseAmount: reads the other convention, where the comma is the decimal mark
+   - parseAmount: treats a lone separator with three digits behind it as grouping
+     (cách đọc VND: 1.500 = một nghìn năm trăm)
+   - parseAmount: treats a lone separator with two digits behind it as a decimal mark
+   - parseAmount: keeps a minus sign, which is how an expense announces itself
+   - parseAmount: reads accounting parentheses as negative
+   - parseAmount: ignores a currency symbol or code around the number (2 test)
+   - parseAmount: returns null when there is no number to read
+   - parseDate: reads day-first / month-first / ISO dates (3 test)
+   - parseDate: accepts dots and dashes as separators
+   - parseDate: expands a two-digit year into this century
+   - parseDate: ignores a time that follows the date
+   - parseDate: rejects a day that does not exist in that month
+   - parseDate: rejects text that is not a date
 
 [UNIT] src/lib/jwt.test.ts — 6 test  (giải mã JWT phía client, CHỈ để dựng UI)
    - decodeJwt: decodes the payload claims

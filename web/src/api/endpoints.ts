@@ -8,6 +8,7 @@ import type {
   BudgetPeriod,
   Category,
   CategorySlice,
+  ImportResult,
   MonthlySummary,
   Notification,
   SpendForecast,
@@ -72,6 +73,25 @@ export async function createTransaction(body: {
   budgetId?: string
 }): Promise<Transaction> {
   const { data } = await api.post<ApiResponse<Transaction>>('/transactions', body)
+  return data.data
+}
+
+// A parsed statement. The client does the reading (delimiters, date order, grouping marks are a
+// presentation problem); the server still validates every row and decides what is a duplicate.
+export async function importTransactions(
+  transactions: {
+    type: TransactionType
+    amount: number
+    currency: string
+    categoryId: number
+    description?: string
+    transactionDate: string
+    walletId?: number
+  }[],
+): Promise<ImportResult> {
+  const { data } = await api.post<ApiResponse<ImportResult>>('/transactions/import', {
+    transactions,
+  })
   return data.data
 }
 

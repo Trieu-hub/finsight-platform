@@ -68,4 +68,10 @@ public interface TransactionRepository
 
     /** True if any transaction (deleted or not) references the category — blocks delete. */
     boolean existsByCategoryId(Long categoryId);
+
+    /**
+     * True if this user already holds the statement line behind the fingerprint. Deleted rows have
+     * their fingerprint cleared, so they never make a re-import look like a duplicate.
+     */
+    boolean existsByUserIdAndImportFingerprint(Long userId, String importFingerprint);
 }
