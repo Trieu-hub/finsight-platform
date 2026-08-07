@@ -9,12 +9,12 @@ dashboard, risk, notification, analytics) + frontend `web/` (mục 10).
 
 TỔNG QUAN CON SỐ
 --------------------------------------------------------------------------------
-- Tổng số test method (@Test / @ParameterizedTest):  583
-- Tổng số lớp test:                                  117 (+ vài lớp base/support)
+- Tổng số test method (@Test / @ParameterizedTest):  591
+- Tổng số lớp test:                                  119 (+ vài lớp base/support)
 - Trong đó:
-    * Unit / component test (chạy KHÔNG cần Docker):  ~375
-    * Integration test (cần Docker – Testcontainers): ~190
-- Frontend (Vitest, ngoài con số 583 ở trên):         100 test / 12 file
+    * Unit / component test (chạy KHÔNG cần Docker):   406
+    * Integration test (cần Docker – Testcontainers):  185 (58 lớp *IntegrationTest)
+- Frontend (Vitest, ngoài con số 591 ở trên):         103 test / 13 file
 - Frontend E2E (Playwright, cần stack đang chạy):       3 test / 1 file (mục 11)
 - Framework: JUnit 5 (Jupiter) + Mockito + AssertJ; frontend dùng Vitest +
   React Testing Library (jsdom) và Playwright cho E2E trình duyệt.
@@ -94,6 +94,23 @@ Quy ước chung của test:
    - unknownPrefixReturnsRouteNotFound
    - knownPrefixWithValidTokenAndDeadBackendReturnsServiceUnavailable
    - oversizedBodyReturnsPayloadTooLarge (chặn body > 2 MiB → 413)
+
+[UNIT] RateLimiterTest — 8 test  (giới hạn tần suất ở gateway, Redis + Lua)
+   - underTheLimit_isAllowed
+   - overTheLimit_isRejectedWithTheRemainingWindowAsRetryAfter
+   - theTwoScopesHaveIndependentLimits (ẩn danh theo IP vs đã đăng nhập theo user)
+   - aMissingTtlFallsBackToTheFullWindow
+   - redisDown_failsOpenAndCounts (Redis chết thì cho qua, không chặn người dùng)
+   - anUnexpectedScriptReply_failsOpenAndCounts
+   - disabled_allowsWithoutTouchingRedis
+   - aBlankIdentityIsNotCounted
+
+[UNIT] ClientIpResolverTest — 5 test  (lấy đúng IP thật của client sau Cloudflare)
+   - cloudflareHeaderWins
+   - withoutCloudflare_theLeftmostForwardedEntryIsTheClient
+   - aSingleForwardedEntryIsUsedAsIs
+   - blankHeadersAreIgnored
+   - noForwardedHeaders_fallsBackToTheSocketAddress
 
 [UNIT] CorrelationIdFilterTest — 4 test  (bộ chuẩn correlation id — xem GHI CHÚ CUỐI)
 
@@ -385,7 +402,7 @@ Quy ước chung của test:
    - reversingAnExpenseNeverAnnouncesAnExceededBudget
      (applyDelete phủ định số tiền; sửa giao dịch không phải là chi mới)
 
-[UNIT] TransactionEventConsumerTest — 13 test  (idempotency + khớp sự kiện)
+[UNIT] TransactionEventConsumerTest — 12 test  (idempotency + khớp sự kiện)
    - appliedExpenseCountsAsProcessed
    - duplicateExpenseCountsAsDuplicate
    - nonExpenseIsIgnoredWithoutReachingTheService
@@ -535,10 +552,10 @@ Quy ước chung của test:
 
 [UNIT] JwtServiceTest — 5 test  (bộ chuẩn)
 [UNIT] CorrelationIdFilterTest — 4 test  (bộ chuẩn correlation id — xem GHI CHÚ CUỐI)
-[COMPONENT] OpenApiDocsTest — 2 test / PrometheusEndpointTest — 2 test
-[CONTEXT]   DashboardApplicationTests — 2 test
+[COMPONENT] OpenApiDocsTest — 1 test / PrometheusEndpointTest — 1 test
+[CONTEXT]   DashboardApplicationTests — 1 test
 
-[INTEGRATION] DashboardApiSecurityIntegrationTest — 5 test
+[INTEGRATION] DashboardApiSecurityIntegrationTest — 4 test
    - rejectsRequestWithoutJwt / rejectsJwtWithInvalidSignature / rejectsExpiredJwt
    - validJwtPassesSecurityAndReachesUpstreamFanOut
 
@@ -978,6 +995,18 @@ của form; chỉ mock lời gọi mạng)
      (hồi quy: đổi type lúc category chưa về thì ô category rỗng, mà value rỗng
       không khớp <option> nào nên trình duyệt VẪN hiển thị option đầu — form trông
       như đã điền nhưng post categoryId 0 và API từ chối)
+
+[COMPONENT] src/pages/Import.test.tsx — 3 test  (bảng preview của trang nhập sao
+kê: dòng bị giữ lại phải NÓI RA lý do và phải trông như đang bị giữ lại)
+   - says why a row is held back whichever field is unreadable
+     (hồi quy: lý do vốn render THAY CHO ô Ngày, nên chỉ lỗi ngày mới hiện được;
+      dòng "số dư đầu kỳ" có ngày hợp lệ mà thiếu số tiền thì bị loại im lặng)
+   - leaves an unimportable row unticked and locked, matching the count
+     (hồi quy: ô tick bám vào `skipped` chứ không bám vào `problem`, nên dòng
+      không nhập được vẫn hiện tick — màn hình hứa 7 dòng trong khi nút ghi 5)
+   - tells the user a category is missing before one is chosen
+     (trường hợp hay gặp nhất: chưa chọn danh mục mặc định thì MỌI dòng đều chưa
+      sẵn sàng, mà trước đây không dòng nào nói vì sao)
 
 
 ================================================================================
