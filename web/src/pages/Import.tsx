@@ -198,7 +198,7 @@ export default function Import() {
       </header>
 
       {loadError && (
-        <p className="rounded-lg border border-red-800 bg-red-950/40 px-4 py-3 text-sm text-red-300">
+        <p className="rounded-lg border border-red-800 bg-neutral-900/40 px-4 py-3 text-sm text-red-400">
           {loadError}
         </p>
       )}
@@ -376,21 +376,27 @@ export default function Import() {
                       className={`border-t border-neutral-800 ${excluded ? 'opacity-40' : ''}`}
                     >
                       <td className="px-2 py-2">
+                        {/* A row with a problem is not written whatever the user ticks, so it
+                            shows unticked rather than promising an import that will not happen. */}
                         <input
                           type="checkbox"
-                          checked={!excluded}
+                          checked={!excluded && !row.problem}
+                          disabled={Boolean(row.problem)}
                           aria-label={t('import.includeRow', { n: row.index + 1 })}
                           onChange={(e) =>
                             setSkipped((prev) => ({ ...prev, [row.index]: !e.target.checked }))
                           }
-                          className="h-4 w-4 rounded border-neutral-600 bg-neutral-950"
+                          className="h-4 w-4 rounded border-neutral-600 bg-neutral-950 disabled:opacity-40"
                         />
                       </td>
-                      <td className="px-2 py-2 text-neutral-200">
-                        {row.date ?? <span className="text-red-400">{row.problem}</span>}
-                      </td>
-                      <td className="max-w-[18rem] truncate px-2 py-2 text-neutral-300">
-                        {row.description}
+                      <td className="px-2 py-2 text-neutral-200">{row.date ?? '—'}</td>
+                      <td className="max-w-[18rem] px-2 py-2 text-neutral-300">
+                        <span className="block truncate">{row.description}</span>
+                        {/* Beside the description, not inside the date cell: the reason a row is
+                            held back is just as often the amount or the missing category. */}
+                        {row.problem && (
+                          <span className="block text-xs text-red-400">{row.problem}</span>
+                        )}
                       </td>
                       <td
                         className={`px-2 py-2 text-right ${row.type === 'EXPENSE' ? 'text-red-300' : 'text-emerald-300'}`}
@@ -430,7 +436,7 @@ export default function Import() {
           )}
 
           {error && (
-            <p className="rounded-lg border border-red-800 bg-red-950/40 px-4 py-3 text-sm text-red-300">
+            <p className="rounded-lg border border-red-800 bg-neutral-900/40 px-4 py-3 text-sm text-red-400">
               {error}
             </p>
           )}
@@ -447,13 +453,15 @@ export default function Import() {
       )}
 
       {result && (
-        <section className="space-y-2 rounded-xl border border-emerald-800 bg-emerald-950/30 p-5">
-          <h2 className="text-lg font-medium text-emerald-200">{t('import.done')}</h2>
+        <section className="space-y-2 rounded-xl border border-emerald-800 bg-neutral-900/40 p-5">
+          {/* Neutral ink, not emerald: the neutral ramp is what flips with the theme (index.css),
+              so accent-coloured text would be light-on-light in light mode. */}
+          <h2 className="text-lg font-medium text-neutral-100">{t('import.done')}</h2>
           <p className="text-sm text-neutral-200">
             {t('import.result', { imported: result.imported, duplicates: result.duplicates })}
           </p>
           {result.errors.length > 0 && (
-            <ul className="list-inside list-disc text-sm text-red-300">
+            <ul className="list-inside list-disc text-sm text-red-400">
               {result.errors.map((e) => (
                 <li key={e.row}>{t('import.rowFailed', { n: e.row, message: e.message })}</li>
               ))}
