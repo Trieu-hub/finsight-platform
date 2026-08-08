@@ -271,7 +271,7 @@ export default function Transactions() {
       )}
       <div className="grid gap-6 md:grid-cols-3">
       {/* Create form */}
-      <section data-tour="tx-form" className="md:col-span-1">
+      <section data-tour="tx-form" className="min-w-0 md:col-span-1">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-400">
           {t('tx.new')}
         </h2>
@@ -449,7 +449,7 @@ export default function Transactions() {
       </section>
 
       {/* List */}
-      <section data-tour="tx-list" className="md:col-span-2">
+      <section data-tour="tx-list" className="min-w-0 md:col-span-2">
         <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-400">
             {t('tx.title')}

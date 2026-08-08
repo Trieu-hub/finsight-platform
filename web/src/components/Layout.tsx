@@ -126,14 +126,18 @@ export default function Layout() {
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-200">
       <header className="sticky top-0 z-10 border-b border-neutral-800/80 bg-neutral-950/80 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-4 py-3.5 sm:px-5">
-          <div className="flex items-center gap-2 sm:gap-3">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-3 py-3.5 sm:px-5">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
             <div className="relative" ref={menuRef}>
               <button
                 onClick={() => setMenuOpen((o) => !o)}
                 aria-haspopup="menu"
                 aria-expanded={menuOpen}
-                className="flex items-center gap-2 rounded-lg border border-neutral-800 px-2.5 py-1.5 text-sm font-medium text-neutral-300 transition hover:border-neutral-700 hover:bg-neutral-800 hover:text-neutral-100"
+                // The label is hidden on the narrowest screens to buy the row the width it needs,
+                // so the button carries its name here instead — a bare hamburger with no
+                // accessible name is exactly the regression this would otherwise introduce.
+                aria-label={t('nav.menu')}
+                className="flex shrink-0 items-center gap-2 rounded-lg border border-neutral-800 px-2.5 py-1.5 text-sm font-medium text-neutral-300 transition hover:border-neutral-700 hover:bg-neutral-800 hover:text-neutral-100"
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -146,7 +150,7 @@ export default function Layout() {
                 >
                   <path d="M4 6h16M4 12h16M4 18h16" />
                 </svg>
-                <span>{t('nav.menu')}</span>
+                <span className="hidden sm:inline">{t('nav.menu')}</span>
               </button>
               {menuOpen && (
                 <div
@@ -201,11 +205,11 @@ export default function Layout() {
                 </div>
               )}
             </div>
-            <span className="bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-lg font-extrabold tracking-tight text-transparent">
+            <span className="shrink-0 bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-lg font-extrabold tracking-tight text-transparent">
               Vernfy
             </span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
             <ThemeToggle />
             <LanguageToggle />
             <button
@@ -213,7 +217,10 @@ export default function Layout() {
               data-tour="help-btn"
               aria-label={t('nav.tour')}
               title={t('nav.tour')}
-              className="flex h-[34px] w-[34px] items-center justify-center rounded-lg border border-neutral-800 text-sm font-bold text-neutral-400 transition hover:border-neutral-700 hover:bg-neutral-800 hover:text-neutral-100"
+              // Dropped below 380px so the wordmark keeps its full width there rather than
+              // truncating to "V.". Of everything in this row it is the one control the user can
+              // do without: the tour opens by itself for a new account.
+              className="hidden h-[34px] w-[34px] items-center justify-center rounded-lg border border-neutral-800 text-sm font-bold text-neutral-400 transition hover:border-neutral-700 hover:bg-neutral-800 hover:text-neutral-100 min-[380px]:flex"
             >
               ?
             </button>
