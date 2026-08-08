@@ -72,6 +72,21 @@ body,
 }
 
 /*
+  Nothing may scroll the page sideways. A phone reports this as the whole app drifting a few
+  pixels under the thumb, which reads as broken rather than as a layout bug, and devtools' device
+  toolbar does not reproduce it faithfully — so this is a floor, not a substitute for laying the
+  header out to fit (see components/Layout.tsx).
+
+  `clip`, not `hidden`: `hidden` turns the element into a scroll container, which would re-anchor
+  the sticky header and let the page scroll behind it. `clip` just cuts, and it is the same value
+  `main` already uses.
+*/
+html,
+body {
+  overflow-x: clip;
+}
+
+/*
   The page cross-fade. Slow-in/slow-out over most of a second, matching the toggle's own
   choreography (src/components/ThemeToggle.tsx) so the button and the page it changes read as one
   move rather than two. Colours only — layout must never animate.

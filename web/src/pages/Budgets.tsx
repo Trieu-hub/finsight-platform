@@ -162,7 +162,7 @@ export default function Budgets() {
 
   return (
     <div className="grid gap-6 md:grid-cols-3">
-      <section data-tour="budget-form" className="md:col-span-1">
+      <section data-tour="budget-form" className="min-w-0 md:col-span-1">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-400">
           {t('budget.new')}
         </h2>
@@ -287,7 +287,7 @@ export default function Budgets() {
         )}
       </section>
 
-      <section data-tour="budget-list" className="md:col-span-2">
+      <section data-tour="budget-list" className="min-w-0 md:col-span-2">
         <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-400">
             {t('budget.title')}

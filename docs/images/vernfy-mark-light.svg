@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="Vernfy">
+  <title>Vernfy</title>
+  <!--
+    The mark from vernfy-mark.svg, in the light-background palette brand.md specifies
+    (emerald-600 -> teal-600). The dark-background version is emerald-500 -> teal-400, which is
+    tuned for near-black and goes weak on white — hence a second file rather than one shared one.
+    Geometry is identical; only the colours differ. Keep the two in step.
+  -->
+  <defs>
+    <linearGradient id="vernfy-stroke-light" x1="10" y1="46" x2="54" y2="12" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#059669"/>
+      <stop offset="1" stop-color="#0D9488"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Soft halo behind the node. Invisible at favicon size, gives depth at large sizes. -->
+  <circle cx="51" cy="14" r="11" fill="#0D9488" opacity="0.14"/>
+
+  <path d="M12 25 L27 44 L51 14"
+        fill="none"
+        stroke="url(#vernfy-stroke-light)"
+        stroke-width="9"
+        stroke-linecap="round"
+        stroke-linejoin="round"/>
+
+  <circle cx="51" cy="14" r="5.5" fill="#0D9488"/>
+</svg>

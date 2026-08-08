@@ -90,7 +90,7 @@ export default function Wallets() {
 
   return (
     <div className="grid gap-6 md:grid-cols-3">
-      <section data-tour="wallet-form" className="md:col-span-1">
+      <section data-tour="wallet-form" className="min-w-0 md:col-span-1">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-400">
           {t('wallet.new')}
         </h2>
@@ -157,7 +157,7 @@ export default function Wallets() {
         </form>
       </section>
 
-      <section data-tour="wallet-list" className="md:col-span-2">
+      <section data-tour="wallet-list" className="min-w-0 md:col-span-2">
         <div className="mb-3 flex items-baseline justify-between">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-400">
             {t('wallet.title')}
