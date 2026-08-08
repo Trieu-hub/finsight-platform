@@ -7,7 +7,9 @@ size, on both backgrounds.
 
 | File | Use |
 |---|---|
-| [`images/vernfy-mark.svg`](images/vernfy-mark.svg) | Icon only, 64×64. App icon, avatar. |
+| [`images/vernfy-mark.svg`](images/vernfy-mark.svg) | Icon only, 64×64, for dark backgrounds. Avatar, favicon. |
+| [`images/vernfy-mark-light.svg`](images/vernfy-mark-light.svg) | The same mark in the light-background palette below. Source for the installed-app icons. |
+| `web/public/icon-*.png`, `apple-touch-icon.png` | The PWA / home-screen icons: the light mark on a white plate. **Generated, not hand-drawn** — rerun `node make-icons.mjs` from `web/` after any change to the mark. |
 | [`images/vernfy-logo-dark.svg`](images/vernfy-logo-dark.svg) | Horizontal lockup for dark backgrounds (the app, `#0a0a0a`). |
 | [`images/vernfy-logo-light.svg`](images/vernfy-logo-light.svg) | Horizontal lockup for light backgrounds (GitHub README, slides, print). |
 | `web/public/favicon.svg` | The mark again, served by the SPA and referenced from `web/index.html`. Keep the two copies in step. |
