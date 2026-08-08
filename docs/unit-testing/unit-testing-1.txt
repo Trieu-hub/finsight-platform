@@ -14,7 +14,7 @@ TỔNG QUAN CON SỐ
 - Trong đó:
     * Unit / component test (chạy KHÔNG cần Docker):   406
     * Integration test (cần Docker – Testcontainers):  185 (58 lớp *IntegrationTest)
-- Frontend (Vitest, ngoài con số 591 ở trên):         109 test / 14 file
+- Frontend (Vitest, ngoài con số 591 ở trên):         110 test / 14 file
 - Frontend E2E (Playwright, cần stack đang chạy):       4 test / 2 file (mục 11)
 - Framework: JUnit 5 (Jupiter) + Mockito + AssertJ; frontend dùng Vitest +
   React Testing Library (jsdom) và Playwright cho E2E trình duyệt.
@@ -1009,6 +1009,11 @@ của form; chỉ mock lời gọi mạng)
       "manifest parse error" khó hiểu)
    - links the manifest, so the browser ever looks for it
    - ships an apple-touch-icon, the only icon iOS reads for the home screen
+   - describes the product, since #root is empty to anything that does not run JS
+     (hồi quy: không có `<meta name="description">` nên Google trích ngược chính
+      form đăng nhập làm mô tả — "Sign in to Vernfy. Email Password Sign in." — và
+      bản tóm tắt của AI kết luận đây là "cổng đăng nhập chung chung, không rõ mục
+      đích". Test chốt luôn độ dài ≤ 160 ký tự, quá đó công cụ tìm kiếm cắt bỏ)
    📌 Đọc file bằng `?raw` + `import.meta.glob` của Vite chứ KHÔNG dùng `node:fs`, vì
       `tsconfig.app.json` cố ý chỉ cấp `types: ["vite/client"]` cho `src/`.
 
