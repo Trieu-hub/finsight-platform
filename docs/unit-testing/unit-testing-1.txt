@@ -14,7 +14,7 @@ TỔNG QUAN CON SỐ
 - Trong đó:
     * Unit / component test (chạy KHÔNG cần Docker):   406
     * Integration test (cần Docker – Testcontainers):  185 (58 lớp *IntegrationTest)
-- Frontend (Vitest, ngoài con số 591 ở trên):         103 test / 13 file
+- Frontend (Vitest, ngoài con số 591 ở trên):         109 test / 14 file
 - Frontend E2E (Playwright, cần stack đang chạy):       3 test / 1 file (mục 11)
 - Framework: JUnit 5 (Jupiter) + Mockito + AssertJ; frontend dùng Vitest +
   React Testing Library (jsdom) và Playwright cho E2E trình duyệt.
@@ -995,6 +995,22 @@ của form; chỉ mock lời gọi mạng)
      (hồi quy: đổi type lúc category chưa về thì ô category rỗng, mà value rỗng
       không khớp <option> nào nên trình duyệt VẪN hiển thị option đầu — form trông
       như đã điền nhưng post categoryId 0 và API từ chối)
+
+[UNIT] src/pwa.test.ts — 6 test  (cài đặt được như app: manifest + icon + index.html)
+   - is named .json, the only extension nginx has a MIME type for
+     (ảnh nginx phục vụ SPA KHÔNG có entry `.webmanifest` trong mime.types — đã kiểm
+      trên container prod, nginx 1.27.5, 0 entry — nên file đó sẽ đi ra dưới
+      `application/octet-stream`; `.json` thì đã được ánh xạ sẵn)
+   - carries the members a browser requires before it will offer to install
+   - offers both icon sizes Chrome asks for, plus a maskable one
+   - points every icon at a file that is really there
+     (hồi quy: `try_files $uri $uri/ /index.html` khiến file thiếu trả về index.html
+      kèm status 200 chứ không phải 404, nên đường dẫn gõ sai biểu hiện thành lỗi
+      "manifest parse error" khó hiểu)
+   - links the manifest, so the browser ever looks for it
+   - ships an apple-touch-icon, the only icon iOS reads for the home screen
+   📌 Đọc file bằng `?raw` + `import.meta.glob` của Vite chứ KHÔNG dùng `node:fs`, vì
+      `tsconfig.app.json` cố ý chỉ cấp `types: ["vite/client"]` cho `src/`.
 
 [COMPONENT] src/pages/Import.test.tsx — 3 test  (bảng preview của trang nhập sao
 kê: dòng bị giữ lại phải NÓI RA lý do và phải trông như đang bị giữ lại)

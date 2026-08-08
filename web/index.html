@@ -4,6 +4,24 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <!--
+      Installable web app. Named .json rather than .webmanifest on purpose: the nginx image that
+      serves this (web/nginx.conf) has no mime.types entry for .webmanifest and would hand it over
+      as application/octet-stream, while .json is mapped already.
+
+      iOS is the reason this exists at all — Safari only delivers web push to a site that has been
+      added to the home screen, so without a manifest the push channel is dead on every iPhone.
+      `apple-mobile-web-app-capable` is the deprecated spelling, kept alongside the standard one
+      because older iOS reads only that when deciding to launch standalone.
+    -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#0A0A0A" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-title" content="Vernfy" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+
     <title>Vernfy</title>
   </head>
   <body>

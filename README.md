@@ -33,7 +33,7 @@ coupling is asynchronous over Kafka.
 | [`docs/ADR-0004-budget-utilization-via-events.md`](docs/ADR-0004-budget-utilization-via-events.md) | Why budget utilization is event-driven (and its accepted drift) |
 | [`docs/ADR-0001`](docs/ADR-0001-gateway-v1-contract.md) · [`0002`](docs/ADR-0002-identity-auth-contract-freeze.md) · [`0003`](docs/ADR-0003-dashboard-bff-token-relay.md) · [`0005`](docs/ADR-0005-rs256-asymmetric-jwt-signing.md) | Gateway V1 contract, identity/auth freeze, BFF token relay, RS256 signing |
 | [`docs/brand.md`](docs/brand.md) | Logo files, palette, and the reasoning behind the mark |
-| [`docs/unit-testing/unit-testing-1.txt`](docs/unit-testing/unit-testing-1.txt) | Full test-suite catalog — every test class (unit vs integration), count, and what it verifies (591 backend tests across 9 services, plus the 103 frontend Vitest tests and the 3 Playwright journeys) |
+| [`docs/unit-testing/unit-testing-1.txt`](docs/unit-testing/unit-testing-1.txt) | Full test-suite catalog — every test class (unit vs integration), count, and what it verifies (591 backend tests across 9 services, plus the 109 frontend Vitest tests and the 3 Playwright journeys) |
 
 ## Tech stack
 
@@ -272,6 +272,11 @@ stay in the backend.
   on a private network; each saved URL gets an HMAC-SHA256 signing secret that is shown **once**.
   The bell and browser notifications stay instant whatever the digest setting: batching a
   payload-free ping would delay the nudge without sparing anyone any reading.
+- **Installable (PWA)**: a web app manifest and maskable icons make the SPA installable to a phone
+  home screen or a desktop, launching standalone without browser chrome. This is also what makes
+  web push reachable on iOS at all — Safari delivers a push only to a site that has been added to
+  the home screen. There is deliberately **no offline mode**: the service worker handles push and
+  nothing else, so it cannot pin anyone to a stale bundle after a deploy.
 - **Dev proxy**: Vite forwards `/api` → `http://localhost:8080`, so the browser stays
   same-origin and no backend CORS configuration is needed (a reverse proxy plays this role in
   production).
