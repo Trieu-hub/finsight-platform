@@ -39,6 +39,15 @@ const icons: Record<string, ReactNode> = {
       <path d="M8 16v-4m4 4V8m4 8v-6" />
     </>
   ),
+  // A statement coming down into a tray. Without an entry here NavIcon renders an empty <svg>,
+  // so the Import row sat behind an 18px gap while every other row had a glyph.
+  '/import': (
+    <>
+      <path d="M12 3v10" />
+      <path d="M8.5 9.5 12 13l3.5-3.5" />
+      <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
+    </>
+  ),
   '/luckyme': (
     <>
       <circle cx="12" cy="12" r="8" />

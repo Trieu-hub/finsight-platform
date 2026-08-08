@@ -379,7 +379,10 @@ export default function Transactions() {
               {type === 'EXPENSE' && (
                 <Field label={t('tx.budget')}>
                   {matchingBudgets.length === 0 ? (
-                    <p className="rounded-lg border border-amber-500/30 bg-amber-950/30 px-3 py-2 text-sm text-amber-300">
+                    // Amber stays on the border, the words use the neutral ramp: index.css flips
+                    // the neutral scale with the theme but leaves accents alone, so amber ink on
+                    // an amber tint is only legible in the dark.
+                    <p className="rounded-lg border border-amber-500/50 bg-neutral-900/40 px-3 py-2 text-sm text-neutral-200">
                       {t('tx.errNoBudget')}
                     </p>
                   ) : (
