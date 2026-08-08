@@ -61,4 +61,15 @@ describe('index.html', () => {
     expect(indexHtml).toContain('rel="apple-touch-icon"')
     expect(hasPublicFile('/apple-touch-icon.png')).toBe(true)
   })
+
+  it('describes the product, since #root is empty to anything that does not run JS', () => {
+    // Regression: with no description, Google quoted the login form back at itself and AI
+    // summaries called the site a generic login portal of no stated purpose.
+    const description = indexHtml.match(/name="description"[\s\S]*?content="([^"]+)"/)?.[1]
+    expect(description, 'index.html has no meta description').toBeTruthy()
+    expect(description!.length).toBeGreaterThan(50)
+    // Search engines cut the snippet around here; longer is wasted, not wrong.
+    expect(description!.length).toBeLessThanOrEqual(160)
+    expect(indexHtml).toMatch(/<title>[^<]{10,70}<\/title>/)
+  })
 })

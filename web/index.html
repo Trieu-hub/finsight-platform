@@ -22,7 +22,29 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
 
-    <title>Vernfy</title>
+    <!--
+      Without these, a crawler has nothing to go on: the SPA ships an empty #root, so the only
+      text on the page is the login form. Google was quoting "Sign in to Vernfy. Email Password
+      Sign in." as the description, and AI summaries concluded the site was a generic login portal
+      with no stated purpose. One static description covers every route — there is no per-route
+      title, and adding SSR just for this would be a far larger change than the problem warrants.
+    -->
+    <meta
+      name="description"
+      content="Vernfy tracks your spending, budgets and wallets, then flags what looks wrong — clear, rule-based alerts and insights, never a black box."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Vernfy" />
+    <meta property="og:title" content="Vernfy — Financial Intelligence &amp; Risk Monitoring" />
+    <meta
+      property="og:description"
+      content="Track spending, budgets and wallets in one place, and get told the moment something looks wrong."
+    />
+    <meta property="og:url" content="https://vernfy.com/" />
+    <meta property="og:image" content="https://vernfy.com/icon-512.png" />
+    <meta name="twitter:card" content="summary" />
+
+    <title>Vernfy — Financial Intelligence &amp; Risk Monitoring</title>
   </head>
   <body>
     <div id="root"></div>
