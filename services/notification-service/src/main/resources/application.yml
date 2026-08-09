@@ -70,6 +70,8 @@ finsight:
       # Consumed: owned by risk-service. notification-service is the first consumer of
       # this topic — it turns each detected risk into a user-facing in-app notification.
       risk-detected: finsight.risk.detected
+      # Consumed: owned by analytics-service — the month-in-review, once a month is over.
+      monthly-report: finsight.reports.monthly
   narrator:
     ai:
       # Optional LLM-backed narrator on any OpenAI-compatible API (default: Groq free tier).

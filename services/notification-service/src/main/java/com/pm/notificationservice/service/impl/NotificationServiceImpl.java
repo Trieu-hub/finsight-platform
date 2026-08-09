@@ -5,6 +5,7 @@ import com.pm.notificationservice.entity.DigestMode;
 import com.pm.notificationservice.entity.Notification;
 import com.pm.notificationservice.entity.ProcessedEvent;
 import com.pm.notificationservice.event.BudgetExceededEvent;
+import com.pm.notificationservice.event.MonthlyReportEvent;
 import com.pm.notificationservice.event.RiskDetectedEvent;
 import com.pm.notificationservice.exception.NotificationNotFoundException;
 import com.pm.notificationservice.narrator.AlertContent;
@@ -39,6 +40,10 @@ public class NotificationServiceImpl implements NotificationService {
     static final String BUDGET_EXCEEDED_TYPE = "BUDGET_EXCEEDED";
     /** Over budget is a certainty, not a suspicion — it ranks with the high-amount risk alerts. */
     static final String BUDGET_EXCEEDED_SEVERITY = "HIGH";
+
+    static final String MONTHLY_REPORT_TYPE = "MONTHLY_REPORT";
+    /** Nothing is wrong in a summary; it must not colour the bell like an alert. */
+    static final String MONTHLY_REPORT_SEVERITY = "LOW";
 
     /**
      * Fixed US symbols so the grouping separator does not follow the server's default locale —
@@ -112,6 +117,36 @@ public class NotificationServiceImpl implements NotificationService {
 
     private static BigDecimal overBy(BudgetExceededEvent event) {
         return event.spentAmount().subtract(event.limitAmount());
+    }
+
+    @Override
+    public boolean createFromMonthlyReport(MonthlyReportEvent event) {
+        return create(event.eventId(), event.userId(), MONTHLY_REPORT_SEVERITY, reportContent(event));
+    }
+
+    /**
+     * A month in review, written here for the same reason the budget wording is: {@code
+     * AlertNarrator} is shaped around a risk type and severity, and a report is neither.
+     *
+     * <p>The figures arrive on the event — analytics-service owns them, and this service has no
+     * access to {@code analytics_db} — so the numbers in the email are the same ones the
+     * Analytics page shows rather than a second, independently derived set.
+     */
+    private AlertContent reportContent(MonthlyReportEvent event) {
+        String currency = event.currency() == null ? "" : " " + event.currency();
+        StringBuilder message = new StringBuilder()
+                .append("In ").append(event.periodMonth()).append(" you took in ")
+                .append(MONEY.format(event.income())).append(currency).append(" and spent ")
+                .append(MONEY.format(event.expense())).append(currency).append(", leaving ")
+                .append(MONEY.format(event.net())).append(currency)
+                .append(" (").append(MONEY.format(event.savingsRate())).append("% of income kept).");
+        if (event.topCategory() != null) {
+            message.append(" Your largest category was ").append(event.topCategory())
+                    .append(" at ").append(MONEY.format(event.topCategoryAmount()))
+                    .append(currency).append('.');
+        }
+        return new AlertContent(MONTHLY_REPORT_TYPE, "Your " + event.periodMonth() + " summary",
+                message.toString());
     }
 
     /**

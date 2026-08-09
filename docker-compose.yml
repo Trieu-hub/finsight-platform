@@ -385,8 +385,13 @@ services:
       # Deliberately NOT a hard dependency: no depends_on on auth-service, and this service
       # falls back to JWT_PUBLIC_KEY above whenever the JWK Set is unreachable.
       JWT_JWKS_URI: http://auth-service:8081/.well-known/jwks.json
-      # Async event backbone: consumes TransactionCreated to build the rollup read model.
+      # Async event backbone: consumes TransactionCreated to build the rollup read model,
+      # produces MonthlyReportReady once a month is over.
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      # When the monthly-report sweep runs. Daily, not monthly: a box that was down on the 1st
+      # still sends it on the 2nd, and monthly_report_sent makes every later run a no-op.
+      # Override to a tight schedule to exercise it without waiting for a month boundary.
+      FINSIGHT_REPORT_MONTHLY_CRON: ${FINSIGHT_REPORT_MONTHLY_CRON:-0 20 3 * * *}
       # Optional LLM-backed monthly summary on any OpenAI-compatible API (default: Groq free
       # tier). Off unless a key is set and the flag is flipped on; a deterministic template
       # is the default and the safe fallback. Shares the platform-wide LLM_* env contract.
