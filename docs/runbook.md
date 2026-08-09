@@ -132,9 +132,23 @@ docker compose exec mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" \
   -e "SELECT user_id, period_month, sent_at FROM analytics_db.monthly_report_sent;"
 ```
 
-To exercise the monthly report without waiting for a month boundary, delete that user's
-`monthly_report_sent` row and restart analytics-service; the sweep runs on its cron
-(`FINSIGHT_REPORT_MONTHLY_CRON`, default 03:20 daily) and always targets the previous month.
+**The monthly report sweep is OFF by default** (`FINSIGHT_REPORT_MONTHLY_ENABLED=false`): its
+first run against a populated database mails every user who was active last month. Turn it on
+when someone is there to watch the first send:
+
+```bash
+FINSIGHT_REPORT_MONTHLY_ENABLED=true docker compose up -d --force-recreate analytics-service
+# on prod, set it in secrets.env instead:  sops set secrets.env '["FINSIGHT_REPORT_MONTHLY_ENABLED"]' '"true"'
+
+# ALWAYS confirm the switch actually reached the process — `up -d` alone was observed
+# leaving the old container in place, which looks exactly like "the feature is broken":
+docker compose exec analytics-service printenv FINSIGHT_REPORT_MONTHLY_ENABLED
+```
+
+To exercise it without waiting for a month boundary, delete that user's `monthly_report_sent`
+row and restart analytics-service with a tight cron
+(`FINSIGHT_REPORT_MONTHLY_CRON='0/20 * * * * *'`); the sweep always targets the previous month.
+With the flag off the topic is still declared and the consumer still runs — nothing is published.
 
 ---
 

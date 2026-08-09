@@ -40,7 +40,9 @@ service publishes. Dedup is producer-side (`monthly_report_sent`), since there i
 event id to key on, and the sent-row is written **before** the publish: a crash between them
 costs one report, the other order would re-send to everyone daily. The event carries the finished
 figures — notification-service cannot read `analytics_db`. **Single instance**, and gated on
-`finsight.kafka.enabled` like the consumer.
+`finsight.kafka.enabled` like the consumer **plus `finsight.report.monthly.enabled`, which is off
+by default** — the first sweep against a populated database mails everyone who was active last
+month, so it is turned on deliberately, not by the deploy that ships it.
 
 Distinct from `dashboard-service`: that BFF aggregates live over HTTP and owns no data;
 this service owns `analytics_db` and answers from a pre-aggregated model.

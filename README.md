@@ -208,7 +208,8 @@ trigger is an absence, and nothing publishes an event for a payment that never h
 **Monthly report** → the one piece of intelligence that is *not* in risk-service, because the
 figures live in `analytics_db`. A daily sweep in analytics-service publishes `MonthlyReportReady`
 once per user per month; notification-service turns it into a `MONTHLY_REPORT` notification and
-sends it through whichever channels that user has on, email included.
+sends it through whichever channels that user has on, email included. **Off by default**
+(`FINSIGHT_REPORT_MONTHLY_ENABLED`) — the first sweep mails everyone who was active last month.
 
 > The risk-service read APIs (`/api/v1/risks`, `/api/v1/insights`, `/api/v1/anomalies`,
 > `/api/v1/recurring`) are an internal/admin surface — unauthenticated by design, not behind the

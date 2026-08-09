@@ -388,7 +388,11 @@ services:
       # Async event backbone: consumes TransactionCreated to build the rollup read model,
       # produces MonthlyReportReady once a month is over.
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      # When the monthly-report sweep runs. Daily, not monthly: a box that was down on the 1st
+      # Monthly report. OFF by default: the first sweep against a populated database mails
+      # every user who was active last month, so it is switched on deliberately rather than by
+      # the deploy that ships it. Turn on with FINSIGHT_REPORT_MONTHLY_ENABLED=true.
+      FINSIGHT_REPORT_MONTHLY_ENABLED: ${FINSIGHT_REPORT_MONTHLY_ENABLED:-false}
+      # When the sweep runs once enabled. Daily, not monthly: a box that was down on the 1st
       # still sends it on the 2nd, and monthly_report_sent makes every later run a no-op.
       # Override to a tight schedule to exercise it without waiting for a month boundary.
       FINSIGHT_REPORT_MONTHLY_CRON: ${FINSIGHT_REPORT_MONTHLY_CRON:-0 20 3 * * *}

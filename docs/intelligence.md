@@ -207,6 +207,11 @@ notification-service cannot read `analytics_db` and must not call analytics-serv
 - **Delivery:** notification-service turns it into a `MONTHLY_REPORT` notification at severity
   `LOW` (nothing is wrong in a summary) and it leaves through whichever channels the user has on —
   bell, SSE, web push, email, webhook — including the digest.
+- **Off by default.** `finsight.report.monthly.enabled` (env `FINSIGHT_REPORT_MONTHLY_ENABLED`)
+  gates the scheduler bean entirely, the same posture as the notification delivery channels. The
+  first sweep against a populated database mails every user who was active last month, so it is
+  switched on deliberately rather than by the deploy that ships it. With it off the topic is
+  still declared and the consumer still runs — nothing is ever published.
 - **Config:** `finsight.report.monthly.cron` (default `0 20 3 * * *`). **Single instance.**
 
 ---
