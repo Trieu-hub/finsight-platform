@@ -21,8 +21,8 @@ explicitly under [Not yet built](#not-yet-built).
 | `transaction-service` | 8083 | `transaction_db` | HTTP | Transactions (INCOME/EXPENSE), categories, summaries, CSV statement import; **produces** `TransactionCreated` |
 | `budget-service` | 8084 | `budget_db` | HTTP, Kafka | Budget definitions + utilization (`spent_amount`); **consumes** `TransactionCreated`, **produces** `BudgetChanged` |
 | `dashboard-service` | 8085 | _(none, BFF)_ | HTTP | Read-only aggregation over user/transaction/budget; relays the caller's JWT; fail-fast |
-| `risk-service` | 8086 | `risk_db` | Kafka | Risk rules, behavioral insights, anomaly detection; **consumes** `TransactionCreated` + `BudgetChanged`, **produces** `RiskDetected`; read APIs for risks/insights/anomalies |
-| `notification-service` | 8087 | `notification_db` | HTTP, Kafka | In-app notifications; **consumes** `RiskDetected` + `BudgetExceeded`, idempotency inbox; user-scoped read/mark-read API; delivery channels (SSE, web push, email, signed webhook) with per-user digest batching |
+| `risk-service` | 8086 | `risk_db` | Kafka | Risk rules, behavioral insights, anomaly detection, recurring charges; **consumes** `TransactionCreated` + `BudgetChanged`, **produces** `RiskDetected`; read APIs for risks/insights/anomalies/recurring |
+| `notification-service` | 8087 | `notification_db` | HTTP, Kafka | In-app notifications; **consumes** `RiskDetected` + `BudgetExceeded` + `MonthlyReportReady`, idempotency inbox; user-scoped read/mark-read API; delivery channels (SSE, web push, email, signed webhook) with per-user digest batching |
 
 Shared infrastructure (not application services): a single **MySQL 8** instance hosting six
 logical databases, **Redis** (used only by auth-service), a single-node **Kafka** (KRaft)
@@ -108,15 +108,16 @@ One MySQL 8 instance, one logical database per owning service (DB-per-service is
 | `user_db` | user-service | user_profiles |
 | `transaction_db` | transaction-service | transactions, categories |
 | `budget_db` | budget-service | budgets (incl. `spent_amount`), `processed_events` (idempotency inbox) |
-| `risk_db` | risk-service | `risk_alerts`, `observed_expenses`, `insights`, `budget_snapshots`, `anomalies` |
+| `risk_db` | risk-service | `risk_alerts`, `observed_expenses`, `insights`, `budget_snapshots`, `anomalies`, `recurring_series` |
 | `notification_db` | notification-service | `notifications`, `processed_events` (idempotency inbox), `push_subscriptions`, `notification_preferences` (email/webhook destination + digest mode) |
 
 `dashboard-service` owns **no** database — it composes other services' data on read.
 **Redis** backs only auth-service (refresh tokens + brute-force lockout counters).
 
-Schema ownership is Flyway-only. risk-service's migrations, for example, run `V1…V8`
+Schema ownership is Flyway-only. risk-service's migrations, for example, run `V1…V10`
 (`risk_alerts` → `observed_expenses` → `insights` → category/currency → subject discriminator
-→ `budget_snapshots` → income discriminator → `anomalies`).
+→ `budget_snapshots` → income discriminator → `anomalies` → observation index →
+`recurring_series`).
 
 ---
 
@@ -129,10 +130,11 @@ strings.
 
 | Topic | Producer (owner) | Consumer(s) | Event type |
 |---|---|---|---|
-| `finsight.transactions.created` | transaction-service | budget-service, risk-service | `TransactionCreated` |
+| `finsight.transactions.created` | transaction-service | budget-service, risk-service, analytics-service | `TransactionCreated` |
 | `finsight.budgets.changed` | budget-service | risk-service | `BudgetChanged` |
 | `finsight.budgets.exceeded` | budget-service | notification-service | `BudgetExceeded` |
 | `finsight.risk.detected` | risk-service | notification-service | `RiskDetected` |
+| `finsight.reports.monthly` | analytics-service | notification-service | `MonthlyReportReady` |
 
 Each topic is owned by exactly one producer. `RiskDetected` **and `BudgetExceeded`** are both
 consumed by notification-service, which materializes per-user in-app notifications (one idempotent
@@ -285,8 +287,9 @@ What each consumer does with `TransactionCreated`:
 - **budget-service** — applies EXPENSE amounts to every matching budget's `spent_amount`
   (atomic SQL increment), deduped via the `processed_events` inbox.
 - **risk-service** — records the transaction into `observed_expenses` (EXPENSE via the rule
-  engine; INCOME via the insight service), then evaluates the risk rules, behavioral insights,
-  and the anomaly rule. See [intelligence.md](intelligence.md).
+  engine; INCOME via the insight service), then evaluates the risk rules (recurring-charge
+  detection included), behavioral insights, and the anomaly rule. See
+  [intelligence.md](intelligence.md).
 
 ---
 

@@ -26,7 +26,24 @@ public enum RiskRule {
      * UNUSUAL_TRANSACTION_AMOUNT, and the strongest "this doesn't look like you" signal
      * because it is relative to the user rather than to a fixed number.
      */
-    INCOME_SPIKE("HIGH");
+    INCOME_SPIKE("HIGH"),
+
+    /**
+     * A charge has repeated often enough to call it recurring — a subscription, a bill, a rent
+     * payment. LOW: nothing is wrong, the user is being told what they are now committed to.
+     */
+    RECURRING_CHARGE_DETECTED("LOW"),
+    /**
+     * An established recurring charge arrived materially more expensive than the price it had
+     * settled at. MEDIUM — a silent price rise on a subscription is the thing people miss.
+     */
+    RECURRING_PRICE_INCREASE("MEDIUM"),
+    /**
+     * A recurring charge did not arrive when it was due. Raised by the scheduled sweep rather
+     * than by an event, since the signal is an absence. LOW: a cancelled subscription and a
+     * failed payment look identical from here, and only one of them is a problem.
+     */
+    RECURRING_CHARGE_MISSED("LOW");
 
     private final String severity;
 

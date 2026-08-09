@@ -12,7 +12,8 @@ microservice monorepo.
 
 Vernfy is an event-driven finance platform: users record transactions and budgets over a
 REST API, and an asynchronous Kafka backbone feeds a **risk-intelligence** service that
-derives risk alerts, behavioral insights, and anomalies from the activity. Each service owns
+derives risk alerts, behavioral insights, anomalies, and recurring charges from the activity.
+Each service owns
 its own database and the only synchronous fan-out is a read-only BFF; all other cross-service
 coupling is asynchronous over Kafka.
 
@@ -33,7 +34,7 @@ coupling is asynchronous over Kafka.
 | [`docs/ADR-0004-budget-utilization-via-events.md`](docs/ADR-0004-budget-utilization-via-events.md) | Why budget utilization is event-driven (and its accepted drift) |
 | [`docs/ADR-0001`](docs/ADR-0001-gateway-v1-contract.md) · [`0002`](docs/ADR-0002-identity-auth-contract-freeze.md) · [`0003`](docs/ADR-0003-dashboard-bff-token-relay.md) · [`0005`](docs/ADR-0005-rs256-asymmetric-jwt-signing.md) | Gateway V1 contract, identity/auth freeze, BFF token relay, RS256 signing |
 | [`docs/brand.md`](docs/brand.md) | Logo files, palette, and the reasoning behind the mark |
-| [`docs/unit-testing/unit-testing-1.txt`](docs/unit-testing/unit-testing-1.txt) | Full test-suite catalog — every test class (unit vs integration), count, and what it verifies (591 backend tests across 9 services, plus the 110 frontend Vitest tests and the 4 Playwright browser tests) |
+| [`docs/unit-testing/unit-testing-1.txt`](docs/unit-testing/unit-testing-1.txt) | Full test-suite catalog — every test class (unit vs integration), count, and what it verifies (639 backend tests across 9 services, plus the 115 frontend Vitest tests and the 4 Playwright browser tests) |
 
 ## Tech stack
 
@@ -71,15 +72,18 @@ coupling is asynchronous over Kafka.
                        │ finsight.budgets.changed           │
                        │ finsight.budgets.exceeded          │
                        │ finsight.risk.detected             │
+                       │ finsight.reports.monthly           │
                        └───────────────┬───────────────────┘
                                        ▼
                                  risk-service :8086  ──▶ risk_db
-                                 (risk rules · insights · anomalies)
+                            (risk rules · insights · anomalies · recurring)
                                        │ produces finsight.risk.detected
                                        ▼
                           notification-service :8087  ──▶ notification_db
-                          (in-app alerts materialized from RiskDetected)
-
+                          (in-app alerts from RiskDetected, BudgetExceeded,
+                           MonthlyReportReady)
+                                       ▲
+                                       │ produces finsight.reports.monthly
                           analytics-service :8088  ──▶ analytics_db
                           (per-month rollup from TransactionCreated; AI monthly summary)
 ```
@@ -113,12 +117,12 @@ gateway).
 | `api-gateway` | 8080 | – | HTTP | Edge routing + JWT validation (RS256/issuer/audience) |
 | `auth-service` | 8081 | `auth_db` | HTTP | Register, login, refresh, account lockout; Redis-backed tokens |
 | `user-service` | 8082 | `user_db` | HTTP | User profile data |
-| `transaction-service` | 8083 | `transaction_db` | HTTP | Transactions (INCOME/EXPENSE/TRANSFER), categories, wallets (accounts + balances), summaries, **CSV statement import** (fingerprinted, so a re-uploaded file is not imported twice); **produces** `TransactionCreated` |
+| `transaction-service` | 8083 | `transaction_db` | HTTP | Transactions (INCOME/EXPENSE/TRANSFER), categories, wallets (accounts + balances), summaries, **CSV statement import** (fingerprinted, so a re-uploaded file is not imported twice) and **CSV export**; **produces** `TransactionCreated` |
 | `budget-service` | 8084 | `budget_db` | HTTP, Kafka | Budget definitions + utilization; **consumes** `TransactionCreated`, **produces** `BudgetChanged` and `BudgetExceeded` (raised once, on the expense that crosses a limit) |
 | `dashboard-service` | 8085 | _(none, BFF)_ | HTTP | Read-only aggregation over user/transaction/budget; relays JWT; fail-fast |
-| `risk-service` | 8086 (internal) | `risk_db` | Kafka | Risk rules, behavioral insights, anomaly detection; **consumes** `TransactionCreated` + `BudgetChanged`, **produces** `RiskDetected`; read APIs. Port not host-published (SE-2) |
-| `notification-service` | 8087 | `notification_db` | HTTP, Kafka | In-app notifications; **consumes** `RiskDetected` + `BudgetExceeded`; user-scoped read/mark-read API; optional **LLM narrator** (OpenAI-compatible, Groq free tier by default, off unless configured) |
-| `analytics-service` | 8088 | `analytics_db` | HTTP, Kafka | Per-user monthly **rollup read model**; **consumes** `TransactionCreated`; overview / categories / forecast APIs; optional **AI monthly summary** (OpenAI-compatible, Groq free tier by default, off unless configured) |
+| `risk-service` | 8086 (internal) | `risk_db` | Kafka | Risk rules, behavioral insights, anomaly detection, **recurring-charge tracking**; **consumes** `TransactionCreated` + `BudgetChanged`, **produces** `RiskDetected`; read APIs. Port not host-published (SE-2) |
+| `notification-service` | 8087 | `notification_db` | HTTP, Kafka | In-app notifications; **consumes** `RiskDetected` + `BudgetExceeded` + `MonthlyReportReady`; user-scoped read/mark-read API; optional **LLM narrator** (OpenAI-compatible, Groq free tier by default, off unless configured) |
+| `analytics-service` | 8088 | `analytics_db` | HTTP, Kafka | Per-user monthly **rollup read model**; **consumes** `TransactionCreated`, **produces** `MonthlyReportReady` (the month-in-review, once a month is over); overview / categories / forecast APIs; optional **AI monthly summary** (OpenAI-compatible, Groq free tier by default, off unless configured) |
 
 ## Databases
 
@@ -130,9 +134,9 @@ One **MySQL 8** instance hosts seven logical databases (DB-per-service isolation
 | `user_db` | user-service | user_profiles |
 | `transaction_db` | transaction-service | transactions, categories |
 | `budget_db` | budget-service | budgets (incl. `spent_amount`), `processed_events` (idempotency inbox) |
-| `risk_db` | risk-service | `risk_alerts`, `observed_expenses`, `insights`, `budget_snapshots`, `anomalies` |
+| `risk_db` | risk-service | `risk_alerts`, `observed_expenses`, `insights`, `budget_snapshots`, `anomalies`, `recurring_series` |
 | `notification_db` | notification-service | `notifications`, `processed_events` (idempotency inbox) |
-| `analytics_db` | analytics-service | `monthly_category_rollup`, `processed_events` (idempotency inbox) |
+| `analytics_db` | analytics-service | `monthly_category_rollup`, `processed_events` (idempotency inbox), `monthly_report_sent` |
 
 `dashboard-service` owns no database. **Redis** backs only auth-service.
 
@@ -147,6 +151,7 @@ with idempotent consumers. Full payloads in [`docs/event-catalog.md`](docs/event
 | `finsight.budgets.changed` | budget-service | risk-service |
 | `finsight.budgets.exceeded` | budget-service | notification-service |
 | `finsight.risk.detected` | risk-service | notification-service |
+| `finsight.reports.monthly` | analytics-service | notification-service |
 
 ## Implemented intelligence
 
@@ -186,9 +191,29 @@ expense is a tenth of it. Full formula in [docs/intelligence.md](docs/intelligen
 |---|---|
 | `UNUSUAL_TRANSACTION_AMOUNT` | An EXPENSE ≥ 3× the user's average historical expense, with ≥ 10 prior EXPENSE transactions |
 
-> The risk-service read APIs (`/api/v1/risks`, `/api/v1/insights`, `/api/v1/anomalies`) are an
-> internal/admin surface — unauthenticated by design, not behind the gateway, and **not published
-> to the host** (reachable only on the compose network at `risk-service:8086`, SE-2).
+**Recurring charges** → tracked in `recurring_series`, exposed at `GET /api/v1/recurring`,
+reported as `RiskDetected`. A charge repeating in the same category and currency for about the
+same amount on a weekly / monthly / quarterly cadence is a *series* — the event contract carries
+no merchant, so a cadence is what a subscription can be recognised by here:
+
+| Rule | Trigger | Severity |
+|---|---|---|
+| `RECURRING_CHARGE_DETECTED` | The 3rd charge matched to a series — two could be coincidence | LOW |
+| `RECURRING_PRICE_INCREASE` | An established series charged ≥ 1.15× its settled price | MEDIUM |
+| `RECURRING_CHARGE_MISSED` | An expected charge is more than 3 days overdue (hourly sweep) | LOW |
+
+The last one is the only rule in the platform raised by a **scheduler** rather than an event: its
+trigger is an absence, and nothing publishes an event for a payment that never happened.
+
+**Monthly report** → the one piece of intelligence that is *not* in risk-service, because the
+figures live in `analytics_db`. A daily sweep in analytics-service publishes `MonthlyReportReady`
+once per user per month; notification-service turns it into a `MONTHLY_REPORT` notification and
+sends it through whichever channels that user has on, email included.
+
+> The risk-service read APIs (`/api/v1/risks`, `/api/v1/insights`, `/api/v1/anomalies`,
+> `/api/v1/recurring`) are an internal/admin surface — unauthenticated by design, not behind the
+> gateway, and **not published to the host** (reachable only on the compose network at
+> `risk-service:8086`, SE-2).
 
 ## Observability stack
 
@@ -244,7 +269,8 @@ stay in the backend.
   routes are gated client-side for UX only — the backend remains the security boundary.
 - **Pages**: Login / Register, Dashboard (income / expense / balance + recent activity + budget
   progress), Transactions (history newest-first, filterable by month — current month by default —
-  + create, incl. wallet selection and wallet-to-wallet transfers), Budgets (utilization bars,
+  + create, incl. wallet selection and wallet-to-wallet transfers, and a CSV export of the chosen
+  period), Budgets (utilization bars,
   showing the current period's budgets by default with a toggle to reveal expired ones, and an
   instant popup the moment a new expense pushes its budget over the limit), Wallets (accounts with
   live balances, create / delete), Analytics (month-over-month overview, spend forecast, top movers,
@@ -257,6 +283,12 @@ stay in the backend.
   Kafka exactly as they see a hand-typed one. A re-uploaded statement is **not** imported twice:
   each imported row carries a fingerprint of the line it came from. Imported expenses are charged
   to no budget — dropping a whole statement on one budget would blow it up.
+- **Statement export** (`GET /api/v1/transactions/export`): the same filters as the list, rendered
+  server-side as CSV so the file holds every matching transaction rather than the page on screen.
+  Amounts are **signed** (money out negative), and the `date` / `amount` / `description` columns
+  are named exactly what the import page auto-detects, so a file that leaves here can come back
+  without any column mapping. Free-text descriptions are escaped and a leading `=`/`+`/`-`/`@` is
+  neutralised — a description must not become a formula when the file opens in Excel.
 - **Bilingual & themed**: a header toggle switches between English and Vietnamese (all copy and
   category names localized) and between light/dark colour themes; both choices persist in the
   browser.

@@ -1,6 +1,7 @@
 package com.pm.notificationservice.config;
 
 import com.pm.notificationservice.event.BudgetExceededEvent;
+import com.pm.notificationservice.event.MonthlyReportEvent;
 import com.pm.notificationservice.event.RiskDetectedEvent;
 import com.pm.notificationservice.logging.CorrelationIdRecordInterceptor;
 import io.micrometer.core.instrument.Counter;
@@ -101,6 +102,45 @@ public class KafkaConsumerConfig {
         // Attached by hand for the same reason as risk-service's budget factory: Boot's configurer
         // never touches this one, and without it BudgetExceeded would be the single consumed event
         // whose log lines drop out of the cross-service trace.
+        factory.setRecordInterceptor(new CorrelationIdRecordInterceptor<>());
+        return factory;
+    }
+
+    /**
+     * Dedicated factory for {@code MonthlyReportReady} (Phase G.2), for the same reason as the
+     * one above: a third topic carrying a third type, and one JSON default type per factory.
+     *
+     * <p>Its own consumer group as well. A monthly report is the one alert here that is worth
+     * replaying on its own — re-reading a month of reports must not also re-read every risk
+     * alert of that month.
+     */
+    @Bean
+    public ConcurrentKafkaListenerContainerFactory<String, MonthlyReportEvent>
+            monthlyReportListenerContainerFactory(
+                    @Value("${spring.kafka.bootstrap-servers}") String bootstrapServers,
+                    DefaultErrorHandler kafkaErrorHandler,
+                    MeterRegistry meterRegistry) {
+
+        Map<String, Object> props = new HashMap<>();
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        props.put(ConsumerConfig.GROUP_ID_CONFIG, "notification-service-reports");
+        props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
+        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
+        props.put(ErrorHandlingDeserializer.KEY_DESERIALIZER_CLASS, StringDeserializer.class);
+        props.put(ErrorHandlingDeserializer.VALUE_DESERIALIZER_CLASS, JsonDeserializer.class);
+        props.put(JsonDeserializer.VALUE_DEFAULT_TYPE, MonthlyReportEvent.class.getName());
+        props.put(JsonDeserializer.USE_TYPE_INFO_HEADERS, false);
+        props.put(JsonDeserializer.TRUSTED_PACKAGES, "com.pm.notificationservice.event");
+
+        DefaultKafkaConsumerFactory<String, MonthlyReportEvent> consumerFactory =
+                new DefaultKafkaConsumerFactory<>(props);
+        consumerFactory.addListener(new MicrometerConsumerListener<>(meterRegistry));
+
+        ConcurrentKafkaListenerContainerFactory<String, MonthlyReportEvent> factory =
+                new ConcurrentKafkaListenerContainerFactory<>();
+        factory.setConsumerFactory(consumerFactory);
+        factory.setCommonErrorHandler(kafkaErrorHandler);
         factory.setRecordInterceptor(new CorrelationIdRecordInterceptor<>());
         return factory;
     }

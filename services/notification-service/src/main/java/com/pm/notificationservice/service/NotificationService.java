@@ -2,6 +2,7 @@ package com.pm.notificationservice.service;
 
 import com.pm.notificationservice.entity.Notification;
 import com.pm.notificationservice.event.BudgetExceededEvent;
+import com.pm.notificationservice.event.MonthlyReportEvent;
 import com.pm.notificationservice.event.RiskDetectedEvent;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -24,6 +25,13 @@ public interface NotificationService {
      * @return {@code false} when the idempotency inbox has already seen this event id
      */
     boolean createFromBudgetExceeded(BudgetExceededEvent event);
+
+    /**
+     * Materializes the month-in-review analytics-service publishes once a month is over.
+     *
+     * @return {@code false} when the idempotency inbox has already seen this event id
+     */
+    boolean createFromMonthlyReport(MonthlyReportEvent event);
 
     /** A page of the user's notifications, newest first; optionally unread-only. */
     Page<Notification> list(Long userId, boolean unreadOnly, Pageable pageable);

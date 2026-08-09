@@ -1,6 +1,7 @@
 package com.pm.riskservice.rule;
 
 import com.pm.riskservice.event.TransactionCreatedEvent;
+import com.pm.riskservice.recurring.RecurringDetector;
 import com.pm.riskservice.repository.ObservedExpenseRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,7 +31,9 @@ class RiskRuleEngineTest {
     @BeforeEach
     void setUp() {
         repository = mock(ObservedExpenseRepository.class);
-        engine = new RiskRuleEngine(repository);
+        // The recurring rules have their own unit test; here the detector is a mock, whose
+        // default empty list keeps these assertions about the amount/count rules alone.
+        engine = new RiskRuleEngine(repository, mock(RecurringDetector.class));
         // Defaults: unique event, no rapid burst, day total = this event's amount only.
         when(repository.existsById(any())).thenReturn(false);
     }

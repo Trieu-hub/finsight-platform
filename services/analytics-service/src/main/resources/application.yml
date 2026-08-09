@@ -43,6 +43,16 @@ spring:
         spring.json.value.default.type: com.pm.analyticsservice.event.TransactionCreatedEvent
         spring.json.use.type.headers: false
         spring.json.trusted.packages: com.pm.analyticsservice.event
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      # Durability: wait for all in-sync replicas (no-op at RF=1, correct as we scale).
+      acks: all
+      properties:
+        # Keep the payload language-neutral — consumers deserialize by the documented schema.
+        spring.json.add.type.headers: false
+        # Bound how long a send() blocks fetching metadata so a broker blip fails fast.
+        max.block.ms: 10000
 
 finsight:
   kafka:
@@ -53,6 +63,14 @@ finsight:
       # Consumed: owned by transaction-service. analytics-service builds a per-user,
       # per-month, per-category rollup read model from it.
       transaction-created: finsight.transactions.created
+      # Owned by this service; produced here (Phase G.2), consumed by notification-service.
+      monthly-report: finsight.reports.monthly
+  report:
+    monthly:
+      # Daily sweep that publishes the previous month's report once per user. Daily rather
+      # than monthly so a box that was down on the 1st still sends it on the 2nd; the
+      # monthly_report_sent table makes every later run a no-op.
+      cron: ${FINSIGHT_REPORT_MONTHLY_CRON:0 20 3 * * *}
   summarizer:
     ai:
       # Optional LLM-backed monthly summary on any OpenAI-compatible API (default: Groq

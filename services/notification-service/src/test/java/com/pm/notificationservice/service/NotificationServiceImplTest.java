@@ -5,6 +5,7 @@ import com.pm.notificationservice.entity.DigestMode;
 import com.pm.notificationservice.entity.Notification;
 import com.pm.notificationservice.entity.NotificationPreference;
 import com.pm.notificationservice.event.BudgetExceededEvent;
+import com.pm.notificationservice.event.MonthlyReportEvent;
 import com.pm.notificationservice.event.RiskDetectedEvent;
 import com.pm.notificationservice.exception.NotificationNotFoundException;
 import com.pm.notificationservice.narrator.TemplateNarrator;
@@ -184,6 +185,63 @@ class NotificationServiceImplTest {
         return new BudgetExceededEvent(eventId, "BudgetExceeded", "2026-08-03T00:00:00Z",
                 UUID.randomUUID(), 42L, 4L, "VND",
                 new java.math.BigDecimal(limit), new java.math.BigDecimal(spent));
+    }
+
+    // --- MonthlyReportReady ---------------------------------------------------------------
+    // A third source event on the same path. It is not an alert, so the one thing that must
+    // differ is that it does not look like one in the bell.
+
+    @Test
+    void createFromMonthlyReportStatesTheMonthsFiguresAsAnalyticsComputedThem() {
+        MonthlyReportEvent event = reportEvent(UUID.randomUUID(), "Food");
+        when(processedEventRepository.existsById(event.eventId())).thenReturn(false);
+
+        assertThat(service.createFromMonthlyReport(event)).isTrue();
+
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+        verify(notificationRepository).save(captor.capture());
+        Notification saved = captor.getValue();
+
+        assertThat(saved.getType()).isEqualTo("MONTHLY_REPORT");
+        // LOW, not an alert severity: nothing is wrong in a summary.
+        assertThat(saved.getSeverity()).isEqualTo("LOW");
+        assertThat(saved.getTitle()).isEqualTo("Your 2026-07 summary");
+        assertThat(saved.getMessage())
+                .contains("20,000,000 VND")
+                .contains("12,500,000 VND")
+                .contains("7,500,000 VND")
+                .contains("37.5% of income kept")
+                .contains("largest category was Food at 4,000,000 VND");
+    }
+
+    @Test
+    void createFromMonthlyReportOmitsTheCategorySentenceWhenThereWasNoSpend() {
+        MonthlyReportEvent event = reportEvent(UUID.randomUUID(), null);
+        when(processedEventRepository.existsById(event.eventId())).thenReturn(false);
+
+        service.createFromMonthlyReport(event);
+
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+        verify(notificationRepository).save(captor.capture());
+        assertThat(captor.getValue().getMessage()).doesNotContain("largest category");
+    }
+
+    @Test
+    void createFromMonthlyReportIsGuardedByTheSameInbox() {
+        MonthlyReportEvent event = reportEvent(UUID.randomUUID(), "Food");
+        when(processedEventRepository.existsById(event.eventId())).thenReturn(true);
+
+        assertThat(service.createFromMonthlyReport(event)).isFalse();
+        verify(notificationRepository, never()).save(any());
+        verify(processedEventRepository, never()).save(any());
+    }
+
+    private static MonthlyReportEvent reportEvent(UUID eventId, String topCategory) {
+        return new MonthlyReportEvent(eventId, "MonthlyReportReady", "2026-08-01T03:20:00Z",
+                42L, "2026-07", "VND",
+                new java.math.BigDecimal("20000000"), new java.math.BigDecimal("12500000"),
+                new java.math.BigDecimal("7500000"), 37.5,
+                topCategory, topCategory == null ? null : new java.math.BigDecimal("4000000"));
     }
 
     @Test

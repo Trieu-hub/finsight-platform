@@ -65,6 +65,14 @@ finsight:
       budget-changed: finsight.budgets.changed
       # Owned by this service; produced here.
       risk-detected: finsight.risk.detected
+  recurring:
+    # How often the sweep looks for a recurring charge that never arrived (Phase G.1). The
+    # window it applies is measured in days, so this only sets how soon after midnight the
+    # alert lands. The initial delay keeps it off the startup path.
+    sweep-ms: 3600000
+    sweep-initial-delay-ms: 60000
+    # How many days late a charge may be before it is reported missing.
+    grace-days: 3
 
 management:
   # Metrics are exported by Prometheus scrape (/actuator/prometheus). Turn OFF the OTLP

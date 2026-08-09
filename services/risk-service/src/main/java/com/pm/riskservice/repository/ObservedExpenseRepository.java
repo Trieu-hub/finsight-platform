@@ -1,6 +1,7 @@
 package com.pm.riskservice.repository;
 
 import com.pm.riskservice.entity.ExpenseObservation;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -8,6 +9,7 @@ import org.springframework.data.repository.query.Param;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -202,6 +204,34 @@ public interface ObservedExpenseRepository extends JpaRepository<ExpenseObservat
             """)
     DailyBaseline dailyIncomeBaselineBefore(@Param("userId") Long userId,
                                             @Param("beforeDate") LocalDate beforeDate);
+
+    /**
+     * The dates of a user's earlier EXPENSE observations in one category and currency whose
+     * amount falls in [{@code minAmount}, {@code maxAmount}], most recent first. Backs seeding a
+     * recurring series (Phase G.1): the gap between the newest of these and the charge being
+     * evaluated is what identifies a cadence, so callers pass a one-row {@code Pageable}.
+     *
+     * <p>Only the date is selected — the amount already had to be inside the band to be here.
+     * Served by the (user_id, transaction_type, category_id, transaction_date) index from V10.
+     */
+    @Query("""
+            select e.transactionDate
+            from ExpenseObservation e
+            where e.userId = :userId
+              and e.transactionType = 'EXPENSE'
+              and e.categoryId = :categoryId
+              and e.currency = :currency
+              and e.transactionDate < :beforeDate
+              and e.amount between :minAmount and :maxAmount
+            order by e.transactionDate desc
+            """)
+    List<LocalDate> findSimilarExpenseDatesBefore(@Param("userId") Long userId,
+                                                  @Param("categoryId") Long categoryId,
+                                                  @Param("currency") String currency,
+                                                  @Param("beforeDate") LocalDate beforeDate,
+                                                  @Param("minAmount") BigDecimal minAmount,
+                                                  @Param("maxAmount") BigDecimal maxAmount,
+                                                  Pageable pageable);
 
     /** Projection for {@link #expenseBaselineBefore} — prior-expense count and average amount. */
     interface ExpenseBaseline {

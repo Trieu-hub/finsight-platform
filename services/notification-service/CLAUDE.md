@@ -33,6 +33,13 @@ default type per factory — and the auto-configured one is pinned to `RiskDetec
 factory is outside Boot's reach, so the `CorrelationIdRecordInterceptor` is attached by hand;
 forget it and this is the one consumed event whose log lines fall out of the trace.
 
+Also consumes **`MonthlyReportReady`** (on `finsight.reports.monthly`, owned by analytics-service)
+— the month in review, published once per user per month by a scheduled sweep there. It needs its
+own factory (`monthlyReportListenerContainerFactory`) and consumer group for the same headerless-
+wire-format reason as `BudgetExceeded`, and converges on the same private `create(...)`. It is not
+an alert: type `MONTHLY_REPORT`, severity `LOW`. The figures ride on the event because this
+service cannot reach `analytics_db` and must not call analytics-service at runtime.
+
 The message wording comes from an `AlertNarrator`. The default `TemplateNarrator` is rule-based
 and always on. An optional `LlmAlertNarrator` (off by default, `finsight.narrator.ai.enabled`)
 phrases the alert with an LLM over any **OpenAI-compatible** Chat Completions API — default Groq

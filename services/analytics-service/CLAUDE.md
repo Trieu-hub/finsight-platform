@@ -33,6 +33,15 @@ Read API (`/api/v1/analytics`, all JWT-validated and user-scoped):
 - `GET /forecast` — run-rate projection of month-end spend.
 - `GET /summary` — a monthly narrative (template by default, optional LLM).
 
+**Produces `MonthlyReportReady`** (on `finsight.reports.monthly`, consumed by
+notification-service) — the service's only outbound event. `MonthlyReportScheduler` sweeps daily
+and publishes the *previous* month once per user, because "the month ended" is not something any
+service publishes. Dedup is producer-side (`monthly_report_sent`), since there is no upstream
+event id to key on, and the sent-row is written **before** the publish: a crash between them
+costs one report, the other order would re-send to everyone daily. The event carries the finished
+figures — notification-service cannot read `analytics_db`. **Single instance**, and gated on
+`finsight.kafka.enabled` like the consumer.
+
 Distinct from `dashboard-service`: that BFF aggregates live over HTTP and owns no data;
 this service owns `analytics_db` and answers from a pre-aggregated model.
 

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import {
   createTransaction,
+  exportTransactionsCsv,
   listBudgets,
   listCategories,
   listTransactions,
@@ -8,6 +9,7 @@ import {
 } from '../api/endpoints'
 import { errorMessage } from '../api/client'
 import type { Budget, Category, Transaction, TransactionType, Wallet } from '../api/types'
+import { monthRange, saveBlob } from '../lib/download'
 import { catLabel, categoryName, groupThousands, money, sanitizeMoneyInput } from '../lib/format'
 import { useI18n } from '../i18n'
 
@@ -62,6 +64,7 @@ export default function Transactions() {
   const [loading, setLoading] = useState(true)
   // History period filter: 'YYYY-MM' shows just that month, '' shows all. Defaults to this month.
   const [month, setMonth] = useState(today().slice(0, 7))
+  const [exporting, setExporting] = useState(false)
 
   // form state — `amount` holds raw digits; it is rendered grouped (10.000.000).
   const [type, setType] = useState<TransactionType>('EXPENSE')
@@ -131,6 +134,24 @@ export default function Transactions() {
       : transactions
     return [...list].sort(byNewest)
   }, [transactions, month])
+
+  /**
+   * Downloads the chosen period as CSV. The server does the rendering and applies the same
+   * period the table is showing — the list on screen is only the first 100 rows, so exporting
+   * what is loaded here would quietly hand the user an incomplete file.
+   */
+  async function handleExport() {
+    setExporting(true)
+    setError('')
+    try {
+      const blob = await exportTransactionsCsv(monthRange(month))
+      saveBlob(blob, `vernfy-transactions-${month || 'all'}.csv`)
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setExporting(false)
+    }
+  }
 
   async function load() {
     try {
@@ -458,19 +479,29 @@ export default function Transactions() {
             {t('tx.title')}
           </h2>
           {!loading && (
-            <select
-              value={month}
-              onChange={(e) => setMonth(e.target.value)}
-              aria-label={t('tx.filterMonth')}
-              className="rounded-lg border border-neutral-700 bg-neutral-950/60 px-2 py-1 text-xs text-neutral-300 outline-none transition focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
-            >
-              <option value="">{t('tx.allMonths')}</option>
-              {months.map((m) => (
-                <option key={m} value={m}>
-                  {`${m.slice(5)}/${m.slice(0, 4)}`}
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center gap-2">
+              <select
+                value={month}
+                onChange={(e) => setMonth(e.target.value)}
+                aria-label={t('tx.filterMonth')}
+                className="rounded-lg border border-neutral-700 bg-neutral-950/60 px-2 py-1 text-xs text-neutral-300 outline-none transition focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
+              >
+                <option value="">{t('tx.allMonths')}</option>
+                {months.map((m) => (
+                  <option key={m} value={m}>
+                    {`${m.slice(5)}/${m.slice(0, 4)}`}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={handleExport}
+                disabled={exporting}
+                className="rounded-lg border border-neutral-700 px-2 py-1 text-xs text-neutral-300 transition hover:border-emerald-500 hover:text-emerald-400 disabled:opacity-60"
+              >
+                {exporting ? t('tx.exporting') : t('tx.export')}
+              </button>
+            </div>
           )}
         </div>
         {error && <p className="mb-3 text-sm text-red-400">{error}</p>}
