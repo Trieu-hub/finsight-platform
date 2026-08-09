@@ -76,6 +76,20 @@ export async function createTransaction(body: {
   return data.data
 }
 
+// The mirror of the import: the server renders the CSV, because it is the only side that can
+// see every transaction rather than the page currently loaded. Fetched rather than linked to —
+// the endpoint needs the Authorization header, which a plain <a href> cannot send.
+export async function exportTransactionsCsv(params: {
+  fromDate?: string
+  toDate?: string
+}): Promise<Blob> {
+  const { data } = await api.get<Blob>('/transactions/export', {
+    params,
+    responseType: 'blob',
+  })
+  return data
+}
+
 // A parsed statement. The client does the reading (delimiters, date order, grouping marks are a
 // presentation problem); the server still validates every row and decides what is a duplicate.
 export async function importTransactions(
