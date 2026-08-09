@@ -44,11 +44,16 @@ import java.util.UUID;
  * outbox relay. Two would race for the same users; the unique constraint on
  * {@code monthly_report_sent} would stop the duplicate row, but only after both had published.
  *
- * <p>Gated on {@code finsight.kafka.enabled} — with no broker there is nowhere to publish, and the
- * test profile must not try.
+ * <p>Gated on {@code finsight.kafka.enabled} (with no broker there is nowhere to publish, and the
+ * test profile must not try) <b>and</b> on {@code finsight.report.monthly.enabled}, which is
+ * <b>off by default</b> — the same posture as the delivery channels in notification-service. The
+ * first run against a populated database mails every user who was active last month, so turning
+ * that on is a decision someone makes deliberately, not something a deploy does at 03:20.
  */
 @Component
-@ConditionalOnProperty(name = "finsight.kafka.enabled", havingValue = "true")
+@ConditionalOnProperty(
+        name = {"finsight.kafka.enabled", "finsight.report.monthly.enabled"},
+        havingValue = "true")
 public class MonthlyReportScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(MonthlyReportScheduler.class);
