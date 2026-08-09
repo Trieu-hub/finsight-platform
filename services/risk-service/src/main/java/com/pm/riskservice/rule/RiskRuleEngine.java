@@ -3,6 +3,7 @@ package com.pm.riskservice.rule;
 import com.pm.riskservice.entity.ExpenseObservation;
 import com.pm.riskservice.event.EventTimes;
 import com.pm.riskservice.event.TransactionCreatedEvent;
+import com.pm.riskservice.recurring.RecurringDetector;
 import com.pm.riskservice.repository.ObservedExpenseRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,6 +51,10 @@ import java.util.UUID;
  *   <li><b>INCOME_SPIKE</b>: this income is at least {@link #SPIKE_FACTOR}× the user's own mean
  *       income, once {@link #SPIKE_MIN_HISTORY} prior incomes exist. Unchanged — it was already
  *       relative, and is the pattern the four rules above were brought in line with.</li>
+ *   <li><b>RECURRING_CHARGE_DETECTED</b> / <b>RECURRING_PRICE_INCREASE</b>: delegated to
+ *       {@link RecurringDetector}, which matches the expense against the user's recurring
+ *       series. (Its third rule, RECURRING_CHARGE_MISSED, has no triggering event and is
+ *       raised by the scheduled sweep instead.)</li>
  * </ul>
  *
  * <p>INCOME rows are shared with the insights (LOW_SAVINGS_RATE); {@code InsightService} records
@@ -106,9 +111,11 @@ public class RiskRuleEngine {
     private static final BigDecimal FLOOR_DIVISOR = BigDecimal.TEN;
 
     private final ObservedExpenseRepository repository;
+    private final RecurringDetector recurringDetector;
 
-    public RiskRuleEngine(ObservedExpenseRepository repository) {
+    public RiskRuleEngine(ObservedExpenseRepository repository, RecurringDetector recurringDetector) {
         this.repository = repository;
+        this.recurringDetector = recurringDetector;
     }
 
     @Transactional
@@ -172,6 +179,12 @@ public class RiskRuleEngine {
         if (crosses(dayTotal, event.amount(), dailyBar)) {
             fired.add(RiskRule.LARGE_DAILY_SPEND);
         }
+
+        // Recurring charges (Phase G.1). Evaluated here rather than beside the insights so it
+        // inherits this method's idempotency: a redelivered event returns above, before any of
+        // this runs, and cannot count the same charge into a series twice.
+        fired.addAll(recurringDetector.evaluate(event.userId(), event.categoryId(),
+                event.currency(), event.amount(), event.transactionId(), transactionDate));
         return fired;
     }
 

@@ -58,6 +58,21 @@ public class TemplateNarrator implements AlertNarrator {
                 message = "This payment is several times larger than your typical income. "
                         + "Review it if you weren't expecting it.";
             }
+            case "RECURRING_CHARGE_DETECTED" -> {
+                title = "New recurring charge";
+                message = "A charge in this category has repeated on a regular schedule, "
+                        + "so it now counts towards your fixed monthly spending.";
+            }
+            case "RECURRING_PRICE_INCREASE" -> {
+                title = "A recurring charge went up";
+                message = "One of your regular charges cost noticeably more than usual "
+                        + "this time. Check whether the price has changed for good.";
+            }
+            case "RECURRING_CHARGE_MISSED" -> {
+                title = "A recurring charge didn't arrive";
+                message = "A charge that normally repeats by now has not been recorded. "
+                        + "If you didn't cancel it, the payment may have failed.";
+            }
             default -> {
                 title = "Risk alert";
                 message = "A potential risk was detected on your account. "

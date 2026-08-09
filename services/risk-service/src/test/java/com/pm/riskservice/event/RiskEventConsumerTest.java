@@ -55,8 +55,12 @@ class RiskEventConsumerTest {
     @BeforeEach
     void setUp() {
         meterRegistry = new SimpleMeterRegistry();
-        consumer = new RiskEventConsumer(kafkaTemplate, riskRuleEngine, riskAlertService,
-                insightService, anomalyService, RISK_TOPIC, meterRegistry);
+        // The real emitter, not a mock: what these tests assert — the published record, the
+        // persisted alert, the tagged counter — is exactly what it produces.
+        RiskDetectionEmitter emitter = new RiskDetectionEmitter(
+                kafkaTemplate, riskAlertService, RISK_TOPIC, meterRegistry);
+        consumer = new RiskEventConsumer(
+                riskRuleEngine, emitter, insightService, anomalyService, meterRegistry);
     }
 
     @AfterEach

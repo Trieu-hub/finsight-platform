@@ -1,35 +1,24 @@
 package com.pm.riskservice.event;
 
-import com.pm.riskservice.logging.CorrelationIdFilter;
 import com.pm.riskservice.rule.RiskRule;
 import com.pm.riskservice.rule.RiskRuleEngine;
 import com.pm.riskservice.service.AnomalyService;
 import com.pm.riskservice.service.InsightService;
-import com.pm.riskservice.service.RiskAlertService;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
-import org.apache.kafka.clients.producer.ProducerRecord;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.slf4j.MDC;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.annotation.KafkaListener;
-import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
-
-import java.nio.charset.StandardCharsets;
 
 /**
  * Consumes {@code TransactionCreated}, runs every risk rule via {@link RiskRuleEngine},
- * and for each rule that fires emits one {@code RiskDetected}: it persists the alert to
- * {@code risk_alerts} (durable record, Phase D.2), publishes the event to the risk topic
- * keyed by {@code userId} (best-effort notification), and increments the detection counter
- * tagged by {@code type}/{@code severity} (Phase D.3).
+ * and hands each rule that fires to {@link RiskDetectionEmitter}, which persists the alert
+ * (Phase D.2), publishes the {@code RiskDetected} event (Phase D.1) and counts the detection
+ * (Phase D.3).
  *
- * <p>Thin by design: rule logic and observed-expense persistence live in the engine; this
- * class is the event plumbing. Gated by {@code finsight.kafka.enabled} so test/local
- * contexts without a broker never subscribe.
+ * <p>Thin by design: rule logic and observed-expense persistence live in the engine, the
+ * emit path in the emitter; this class is the event plumbing. Gated by
+ * {@code finsight.kafka.enabled} so test/local contexts without a broker never subscribe.
  *
  * <p>{@code finsight.risk.events.processed} counts every consumed event; the
  * {@code RiskDetected} side effects are best-effort (a publish failure is logged async),
@@ -39,33 +28,21 @@ import java.nio.charset.StandardCharsets;
 @ConditionalOnProperty(name = "finsight.kafka.enabled", havingValue = "true")
 public class RiskEventConsumer {
 
-    private static final Logger log = LoggerFactory.getLogger(RiskEventConsumer.class);
-
-    static final String DETECTED_COUNTER = "finsight.risk.events.detected";
-
-    private final KafkaTemplate<String, RiskDetectedEvent> kafkaTemplate;
     private final RiskRuleEngine riskRuleEngine;
-    private final RiskAlertService riskAlertService;
+    private final RiskDetectionEmitter emitter;
     private final InsightService insightService;
     private final AnomalyService anomalyService;
-    private final MeterRegistry meterRegistry;
-    private final String riskTopic;
     private final Counter processedEvents;
 
-    public RiskEventConsumer(KafkaTemplate<String, RiskDetectedEvent> kafkaTemplate,
-                             RiskRuleEngine riskRuleEngine,
-                             RiskAlertService riskAlertService,
+    public RiskEventConsumer(RiskRuleEngine riskRuleEngine,
+                             RiskDetectionEmitter emitter,
                              InsightService insightService,
                              AnomalyService anomalyService,
-                             @Value("${finsight.kafka.topics.risk-detected}") String riskTopic,
                              MeterRegistry meterRegistry) {
-        this.kafkaTemplate = kafkaTemplate;
         this.riskRuleEngine = riskRuleEngine;
-        this.riskAlertService = riskAlertService;
+        this.emitter = emitter;
         this.insightService = insightService;
         this.anomalyService = anomalyService;
-        this.meterRegistry = meterRegistry;
-        this.riskTopic = riskTopic;
         this.processedEvents = Counter.builder("finsight.risk.events.processed")
                 .description("TransactionCreated events evaluated by the risk rules")
                 .register(meterRegistry);
@@ -76,7 +53,7 @@ public class RiskEventConsumer {
         processedEvents.increment();
 
         for (RiskRule rule : riskRuleEngine.evaluate(event)) {
-            emit(event, rule);
+            emitter.emit(event.userId(), event.transactionId(), rule);
         }
 
         // The risk engine has recorded this expense; derive the behavioral insights (Phase E)
@@ -84,36 +61,5 @@ public class RiskEventConsumer {
         // of whether any risk fired. Insight evaluation also records INCOME (its own input).
         insightService.evaluate(event);
         anomalyService.evaluate(event);
-    }
-
-    private void emit(TransactionCreatedEvent event, RiskRule rule) {
-        RiskDetectedEvent risk = RiskDetectedEvent.of(
-                event.userId(), event.transactionId(), rule.name(), rule.severity());
-        // Persist first (durable record), then publish (best-effort notification).
-        riskAlertService.record(risk);
-        kafkaTemplate.send(toRecord(String.valueOf(event.userId()), risk));
-        // Tagged by type/severity so the Risk dashboard breaks detections down by each.
-        meterRegistry.counter(DETECTED_COUNTER, "type", rule.name(), "severity", rule.severity())
-                .increment();
-        log.info("Risk detected [{}/{}]: transactionId={}, userId={}, amount={}",
-                rule.name(), rule.severity(), event.transactionId(), event.userId(), event.amount());
-    }
-
-    /**
-     * The record to publish, keyed by {@code userId} as before, carrying the correlation id of the
-     * {@code TransactionCreated} that triggered this detection as a
-     * {@value CorrelationIdFilter#CORRELATION_ID_HEADER} header. The id is in the MDC because the
-     * record interceptor put it there for this consumed record, so it rides on to
-     * notification-service and the whole chain — HTTP write → transaction → risk → notification —
-     * stays one searchable trace.
-     */
-    ProducerRecord<String, RiskDetectedEvent> toRecord(String key, RiskDetectedEvent risk) {
-        ProducerRecord<String, RiskDetectedEvent> record = new ProducerRecord<>(riskTopic, key, risk);
-        String correlationId = MDC.get(CorrelationIdFilter.CORRELATION_ID_MDC_KEY);
-        if (correlationId != null) {
-            record.headers().add(CorrelationIdFilter.CORRELATION_ID_HEADER,
-                    correlationId.getBytes(StandardCharsets.UTF_8));
-        }
-        return record;
     }
 }
