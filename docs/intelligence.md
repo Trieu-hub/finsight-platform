@@ -1,12 +1,17 @@
 # FinSight — Intelligence Overview
 
-_Last updated: 2026-06-14 · Source of truth: `services/risk-service`._
+_Last updated: 2026-08-09 · Source of truth: `services/risk-service`._
 
-All three intelligence domains live in **risk-service**, derived from a single read-model
+All four intelligence domains live in **risk-service**, derived from a single read-model
 (`observed_expenses`) fed by the `TransactionCreated` consumer — no ML, no prediction, no
-statistical models beyond simple counts/sums/averages, no scheduler. Each consumed transaction
-is recorded, then the risk rules, behavioral insights, and the anomaly rule are evaluated in
-that order (`RiskEventConsumer.onTransactionCreated`).
+statistical models beyond simple counts/sums/averages. Each consumed transaction is recorded,
+then the risk rules, behavioral insights, and the anomaly rule are evaluated in that order
+(`RiskEventConsumer.onTransactionCreated`).
+
+Recurring-charge detection (Phase G.1) is the one part that also keeps state of its own
+(`recurring_series`) and the one that needs a **scheduler**: two of its three signals come off
+the event path like everything else, but "the charge that should have repeated never arrived"
+is an absence, and no event is ever published for something that did not happen.
 
 Numeric thresholds below are the constants in code at the time of writing.
 
@@ -33,7 +38,7 @@ event is recorded into `observed_expenses` idempotently (keyed by the source eve
 rules run, so the windowed rules see it and a redelivered event is neither double-counted nor
 re-alerted.
 
-**Shared behavior for all seven rules:**
+**Shared behavior for all ten rules:**
 - **Generated artifact:** a `RiskDetected` event on `finsight.risk.detected` (keyed by `userId`,
   consumed by notification-service) **and** a durable `risk_alerts` row.
 - **Persistence:** `risk_alerts` (id = the `RiskDetected` event id). Effectively idempotent —
@@ -88,6 +93,45 @@ during cold start.
 | **RAPID_INCOME** | This event is the **5th** INCOME for the user within a **10-minute** window. | MEDIUM |
 | **LARGE_DAILY_INCOME** | This event pushes the user's INCOME total for the calendar day from ≤ their daily income bar to > it (flat **100,000,000**; floor **10,000,000**). | MEDIUM |
 | **INCOME_SPIKE** | This INCOME ≥ **3×** the user's mean prior income, once **10** prior incomes exist. Already relative before the change above — it is the pattern the other rules were brought in line with. | HIGH |
+
+### Recurring charges (Phase G.1)
+
+A **series** is a charge that keeps coming back: a subscription, a rent payment, a standing bill.
+`TransactionCreated` carries no merchant and no description, so a series can only be identified by
+**(user, category, currency, roughly this amount) repeating on a cadence** — the cadence
+requirement is what stops it firing on ordinary shopping. Two unrelated charges of similar size in
+one category will be read as one series; that is a limit of the event contract, not a modelling
+choice.
+
+State lives in `recurring_series` (`RecurringDetector`, `RecurringSweeper`). Recognised cadences
+are **weekly (7 ±2 days)**, **monthly (30 ±5)** and **quarterly (91 ±10)** — monthly is ±5 because
+calendar months run 28–31 days and billing dates slip over weekends. The bands do not overlap.
+
+Three tolerances, deliberately different:
+
+| Tolerance | Value | What it decides |
+|---|---|---|
+| Seed | **10%** | Whether two charges are the same charge, and so open a series. Tight: this is the weakest evidence in the feature. |
+| Match | **25%** | Whether a new charge belongs to a series that exists. Wider than the rise threshold on purpose — otherwise a subscription that went up in price would stop matching its own series and silently seed a second one instead of being reported. |
+| Rise | **1.15×** | What counts as a price increase worth interrupting someone over. A drop to ≤ **0.85×** re-bases the price silently — a charge getting cheaper is not a risk. |
+
+`typical_amount` is the **established** price, moved only when a change is flagged (or is a drop),
+so a subscription creeping up 5% a month is still measured against what it originally cost.
+
+| Rule | Trigger condition | Severity |
+|---|---|---|
+| **RECURRING_CHARGE_DETECTED** | The **3rd** charge matched to a series. Two charges one interval apart could be coincidence; three is a pattern. | LOW |
+| **RECURRING_PRICE_INCREASE** | A charge on an established series (4th onwards) ≥ **1.15×** its established price. Fires once per rise — the series re-bases to the new price. | MEDIUM |
+| **RECURRING_CHARGE_MISSED** | An established series whose `next_expected` passed more than **3 days** ago (`RecurringSweeper`, hourly). The series is then marked `LAPSED` so it is reported once, not every hour. A charge that resumes later opens a fresh series. | LOW |
+
+The missed-charge alert carries the series' **last** transaction id: there is no triggering
+transaction for an absence, and "the charge that should have repeated" is the useful thing to
+point at. Note it cannot distinguish a cancelled subscription from a failed payment — hence LOW.
+
+- **Read API:** `GET /api/v1/recurring` (internal, like the other three).
+- **Config:** `finsight.recurring.{sweep-ms,sweep-initial-delay-ms,grace-days}`.
+- **Single instance**, like the notification digest scheduler: two sweepers would each claim the
+  same overdue series and alert twice.
 
 ---
 
@@ -147,6 +191,26 @@ Evaluated by `AnomalyService` on each consumed **EXPENSE**, after the rule engin
 
 ---
 
+## Monthly report (Phase G.2)
+
+The month in review, produced by **analytics-service** rather than risk-service: the figures live
+in `analytics_db` and nowhere else. A daily sweep (`MonthlyReportScheduler`) publishes
+`MonthlyReportReady` on `finsight.reports.monthly` once per user per month, carrying the finished
+numbers — income, expense, net, savings rate, largest expense category — because
+notification-service cannot read `analytics_db` and must not call analytics-service at runtime.
+
+- **Why a sweep:** "the month ended" is not an event any service publishes. The sweep always
+  targets the *previous* calendar month, and `monthly_report_sent` makes every later run that day
+  a no-op — which also makes it self-healing when the box was down on the 1st.
+- **Ordering:** the sent-row is written **before** the publish. A crash between them costs one
+  user one report; the other order would re-send to everyone, every day, until it succeeded.
+- **Delivery:** notification-service turns it into a `MONTHLY_REPORT` notification at severity
+  `LOW` (nothing is wrong in a summary) and it leaves through whichever channels the user has on —
+  bell, SSE, web push, email, webhook — including the digest.
+- **Config:** `finsight.report.monthly.cron` (default `0 20 3 * * *`). **Single instance.**
+
+---
+
 ## Notification narration (AI, optional)
 
 `notification-service` consumes `RiskDetected` and turns it into a user-facing in-app
@@ -173,6 +237,7 @@ notification. The wording is produced by an `AlertNarrator`:
 | `finsight.anomalies.detected` | `type` | each anomaly detected |
 | `finsight.notifications.ai.success` | – | alerts narrated by the LLM |
 | `finsight.notifications.ai.fallback` | – | alerts that fell back to templates after an LLM error |
+| `finsight.analytics.reports.published` | – | monthly reports published (analytics-service, Phase G.2) |
 
 The **FinSight Risk** Grafana dashboard visualizes `finsight.risk.events.detected` by type and
 severity. (There is no dedicated insights/anomaly dashboard — out of scope for this phase.)

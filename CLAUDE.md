@@ -131,7 +131,7 @@ All three names appear; none of them are interchangeable in code.
 
 An **event-driven microservice monorepo**, not a monolith. Users record transactions and budgets
 over REST; an asynchronous Kafka backbone feeds a risk-intelligence service that derives alerts,
-insights, and anomalies. Each service owns its own database.
+insights, anomalies, and recurring charges. Each service owns its own database.
 
 The intelligence layer is **rule-based, deterministic thresholds — no ML, no prediction.**
 
@@ -148,7 +148,7 @@ Authoritative docs — read these instead of re-deriving:
 - `docs/runbook.md` — startup, compose workflow, troubleshooting
 - `docs/deploy.md` — production deployment
 - `docs/security/jwt-key-rotation.md` — key rotation procedure
-- `docs/unit-testing/unit-testing-1.txt` — full test catalog (513 backend tests, 111 classes,
+- `docs/unit-testing/unit-testing-1.txt` — full test catalog (639 backend tests, 127 classes,
   plus the frontend Vitest suite and the Playwright journeys)
 
 ---
@@ -268,9 +268,9 @@ Nine services. Ports are fixed and referenced by compose, Prometheus, and the ga
 | `transaction-service` | 8083 | `transaction_db` | Transactions, categories, wallets; produces `TransactionCreated` |
 | `budget-service` | 8084 | `budget_db` | Budgets + utilization; consumes/produces |
 | `dashboard-service` | 8085 | none (BFF) | Read-only aggregation |
-| `risk-service` | 8086 | `risk_db` | Rules, insights, anomalies — **internal only** |
-| `notification-service` | 8087 | `notification_db` | In-app notifications from `RiskDetected` |
-| `analytics-service` | 8088 | `analytics_db` | Monthly rollup read model |
+| `risk-service` | 8086 | `risk_db` | Rules, insights, anomalies, recurring charges — **internal only** |
+| `notification-service` | 8087 | `notification_db` | In-app notifications from `RiskDetected`, `BudgetExceeded`, `MonthlyReportReady` |
+| `analytics-service` | 8088 | `analytics_db` | Monthly rollup read model; produces `MonthlyReportReady` |
 
 Layering inside a service
 
@@ -294,9 +294,10 @@ com.pm.gateway            (the gateway is the one exception to the naming)
 ```
 
 Typical packages: `config`, `controller` (or `web`), `dto`, `entity`, `repository`, `service`,
-`service/impl`, `exception`, `security/jwt`. Plus domain packages: `rule`, `insight`, `anomaly`
-in risk-service; `outbox`, `game` in transaction-service; `delivery`, `push`, `email`, `webhook`,
-`narrator`, `stream` in notification-service.
+`service/impl`, `exception`, `security/jwt`. Plus domain packages: `rule`, `insight`, `anomaly`,
+`recurring` in risk-service; `outbox`, `game`, `export` in transaction-service; `delivery`,
+`push`, `email`, `webhook`, `narrator`, `stream` in notification-service; `summarizer`,
+`catalog`, `report` in analytics-service.
 
 DTOs are used for every API request/response. Never expose JPA entities directly.
 DTOs are Lombok classes, not records — match the surrounding style.
@@ -312,7 +313,8 @@ DTOs are Lombok classes, not records — match the surrounding style.
 - **DB-per-service.** Each service connects as its own least-privilege user (`<name>_user`),
   never as root.
 - **`risk-service` is internal**: not behind the gateway, no JWT stack, port not published to the
-  host. Its `/api/v1/{risks,insights,anomalies}` controllers are unauthenticated by design.
+  host. Its `/api/v1/{risks,insights,anomalies,recurring}` controllers are unauthenticated by
+  design.
 - **Every service carries `logging/CorrelationIdFilter`** (registered at `HIGHEST_PRECEDENCE` by
   `config/CorrelationIdFilterConfig`) and sets `LOGGING_STRUCTURED_FORMAT_CONSOLE: ecs` in compose.
   A new service needs both, or its lines drop out of a cross-service log trace. The id also
@@ -331,12 +333,17 @@ Single-node KRaft Kafka. JSON without type headers, keyed by `userId`, at-least-
 | `finsight.budgets.changed` | budget-service | risk |
 | `finsight.budgets.exceeded` | budget-service | notification |
 | `finsight.risk.detected` | risk-service | notification |
+| `finsight.reports.monthly` | analytics-service | notification |
 
 - Producers use a **transactional outbox** — `OutboxWriter` writes inside the business
   transaction, `OutboxRelay` publishes (`transaction-service/.../outbox/`).
 - Consumers are **idempotent via a `processed_events` inbox table** (budget, notification,
   analytics). Any new consumer must follow this pattern.
 - Changing a risk rule threshold means updating `docs/intelligence.md` in the same change.
+- **Two producers are schedulers, not event handlers**: risk-service's `RecurringSweeper`
+  (a recurring charge that never arrived) and analytics-service's `MonthlyReportScheduler`
+  (the month is over). Both are **single-instance**, like the outbox relay and the notification
+  digest scheduler, and neither carries an `X-Correlation-ID` — there is no request behind them.
 
 ---
 

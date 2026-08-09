@@ -9,12 +9,12 @@ dashboard, risk, notification, analytics) + frontend `web/` (mục 10).
 
 TỔNG QUAN CON SỐ
 --------------------------------------------------------------------------------
-- Tổng số test method (@Test / @ParameterizedTest):  591
-- Tổng số lớp test:                                  119 (+ vài lớp base/support)
+- Tổng số test method (@Test / @ParameterizedTest):  639
+- Tổng số lớp test:                                  127 (+ vài lớp base/support)
 - Trong đó:
-    * Unit / component test (chạy KHÔNG cần Docker):   406
-    * Integration test (cần Docker – Testcontainers):  185 (58 lớp *IntegrationTest)
-- Frontend (Vitest, ngoài con số 591 ở trên):         110 test / 14 file
+    * Unit / component test (chạy KHÔNG cần Docker):   442
+    * Integration test (cần Docker – Testcontainers):  197 (61 lớp *IntegrationTest)
+- Frontend (Vitest, ngoài con số 639 ở trên):         115 test / 15 file
 - Frontend E2E (Playwright, cần stack đang chạy):       4 test / 2 file (mục 11)
 - Framework: JUnit 5 (Jupiter) + Mockito + AssertJ; frontend dùng Vitest +
   React Testing Library (jsdom) và Playwright cho E2E trình duyệt.
@@ -260,8 +260,22 @@ Quy ước chung của test:
 
 
 ================================================================================
-4) TRANSACTION-SERVICE  (giao dịch, danh mục, ví, tổng hợp, game, outbox)
+4) TRANSACTION-SERVICE  (giao dịch, danh mục, ví, tổng hợp, game, outbox, xuất CSV)
 ================================================================================
+
+[UNIT] TransactionCsvWriterTest — 7 test  (xuất CSV — bản đối xứng của nhập sao kê)
+   - writesTheHeaderEvenWithNoRows
+   - expenseIsNegativeAndIncomeIsPositive (chế độ mặc định của trang import đọc số âm là
+     tiền ra, nên đây chính là thứ khiến file xuất ra nhập lại được mà không phải ánh xạ
+     cột nào; số cũng bị cắt đuôi 0 vì cột là DECIMAL(19,4) — nếu không, một khoản VND sẽ
+     ra 250000.0000)
+   - transferLeavesTheWalletSoItIsNegativeToo
+   - anUnknownCategoryIsBlankRatherThanANumber (một số trần sẽ đọc như cột tiền thứ hai)
+   - quotesADescriptionContainingADelimiterOrAQuote
+   - neutralisesADescriptionASpreadsheetWouldRunAsAFormula
+     (mô tả là chữ người dùng tự gõ; để nguyên thì "=1+1" thành công thức ngay khi mở file
+      bằng Excel — lỗ hổng CSV injection mà mọi chức năng xuất file đều phải xử lý)
+   - aMissingDescriptionIsAnEmptyField
 
 [UNIT] CurrencyValidatorTest — 3 test
    - acceptsValidIso4217Codes
@@ -318,6 +332,14 @@ Quy ước chung của test:
    - anIdenticalRowFromAnotherUserIsNotADuplicate
    - anEmptyImportIsRejected
    - importRequiresAuthentication
+
+[INTEGRATION] TransactionExportIntegrationTest — 5 test  (xuất CSV qua HTTP)
+   - exportsTheUsersTransactionsAsADownloadableCsv (Content-Type text/csv;charset=UTF-8 +
+     Content-Disposition attachment; thứ tự mới nhất trước, khớp endpoint list)
+   - appliesTheSameFiltersAsTheListEndpoint
+   - neverExportsAnotherUsersTransactions
+   - excludesADeletedTransaction (xoá mềm đã biến mất khỏi list thì phải biến mất khỏi file)
+   - exportRequiresAuthentication
 
 [INTEGRATION] TransactionApiFilterIntegrationTest — 7 test
    - defaultSortingIsTransactionDateDesc
@@ -561,7 +583,7 @@ Quy ước chung của test:
 
 
 ================================================================================
-7) RISK-SERVICE  (rule rủi ro + insight hành vi + phát hiện bất thường)
+7) RISK-SERVICE  (rule rủi ro + insight hành vi + phát hiện bất thường + khoản định kỳ)
 ================================================================================
 
 [UNIT] RiskRuleEngineTest — 24 test  (rule engine phát hiện rủi ro chi/thu)
@@ -621,6 +643,36 @@ về mốc cứng — tức chính hợp đồng cold-start. Đã chứng minh 9
    - doesNotFireBelowThreeTimesAverage
    - ignoresNonExpenseEvents
 
+[UNIT] RecurringDetectorTest — 12 test  (nhận diện khoản chi lặp lại — Phase G.1)
+   Mở series:
+   - opensASeriesWhenASimilarChargeWasOneMonthAgo
+   - aMonthlyGapIsStillMonthlyAtTwentyEightAndThirtyOneDays
+     (tháng dương lịch dài 28–31 ngày, ngày thu tiền còn trôi qua cuối tuần — dung sai ±5
+      là điều kiện để một subscription thật được nhận ra)
+   - opensNothingWhenTheGapMatchesNoCadence
+   - opensNothingWithoutAnEarlierChargeOfASimilarAmount
+   - ignoresAChargeWithNoCategoryOrCurrency
+   Tiếp diễn series:
+   - confirmsTheSeriesOnTheThirdCharge (2 lần có thể là trùng hợp, 3 lần mới là quy luật)
+   - doesNotReconfirmOnTheFourthCharge
+   - reportsAPriceRiseOnAnEstablishedSeries
+     (11.50 = 1.15× giá đã chốt, VẪN nằm trong dải khớp 25% — đó chính là lý do hai con số
+      này khác nhau: nếu dải khớp hẹp hơn ngưỡng tăng giá thì khoản tăng giá sẽ rơi ra
+      ngoài series của chính nó và âm thầm mở series thứ hai thay vì được báo)
+   - treatsSmallDriftAsTheSamePrice
+   - rebasesSilentlyWhenTheChargeGetsCheaper (rẻ đi không phải rủi ro, nhưng phải cập nhật
+     giá nếu không mọi khoản sau đó đều trông như một cú giảm)
+   - doesNotCountAChargeThatArrivedOffCadence
+   - doesNotSeedASecondSeriesWhenOneMatchedOnPriceButNotOnCadence
+     (nếu không, hai series sẽ tranh nhau khoản kế tiếp)
+
+[UNIT] RecurringSweeperTest — 3 test  (khoản định kỳ KHÔNG tới — rule duy nhất chạy bằng
+   scheduler, vì tín hiệu của nó là một sự VẮNG MẶT, không sự kiện nào được phát ra)
+   - asksOnlyForEstablishedSeriesOverdueByMoreThanTheGrace (ân hạn 3 ngày)
+   - reportsAnOverdueChargeAgainstItsLastTransaction (không có giao dịch kích hoạt nên
+     alert trỏ vào khoản đáng lẽ phải lặp lại)
+   - lapsesTheSeriesSoItIsReportedOnlyOnce (không thì mỗi giờ lại báo một lần mãi mãi)
+
 [UNIT] RiskEventConsumerTest — 6 test / BudgetEventConsumerTest — 3 test
    (2 test mới: carriesTheConsumedCorrelationIdOntoTheRiskEvent,
     addsNoCorrelationHeaderWhenTheMdcHasNoId)
@@ -649,6 +701,15 @@ về mốc cứng — tức chính hợp đồng cold-start. Đã chứng minh 9
    - listIsEmptyWhenNoAnomalies
    - detectedMetricIsExposed
 
+[INTEGRATION] RecurringApiIntegrationTest — 4 test  (Phase G.1, MySQL thật)
+   Tồn tại để phủ đúng hai thứ unit test không với tới: JPQL (dải giá viết theo hệ số của
+   chính series, và truy vấn tìm khoản trước đó là truy vấn 1 dòng có sắp xếp) và migration
+   V10 mà Hibernate validate đối chiếu.
+   - threeMonthlyChargesOpenConfirmAndListASeries
+   - aPriceRiseStillMatchesItsOwnSeries
+   - aWeeklyGroceryRunDoesNotBecomeAMonthlySeries (các dải chu kỳ không chồng lấn)
+   - listIsEmptyWhenNothingRecurs
+
 [INTEGRATION] RiskAlertApiIntegrationTest — 4 test  (read API cảnh báo rủi ro)
 [INTEGRATION] InsightAnomalyKafkaE2EIntegrationTest — 2 test
    - transactionCreatedFlowGeneratesInsightAndAnomaly (E2E: sự kiện → insight + anomaly)
@@ -660,7 +721,7 @@ về mốc cứng — tức chính hợp đồng cold-start. Đã chứng minh 9
    + kênh gửi ra: web push / email / webhook có chữ ký, và digest gom theo user)
 ================================================================================
 
-[UNIT] NotificationServiceImplTest — 9 test
+[UNIT] NotificationServiceImplTest — 12 test
    - stampsAnImmediateUsersNotificationAsAlreadyAccountedFor
      (digested_at NULL phải nghĩa là "còn nợ một lần gửi"; để NULL cho user IMMEDIATE
       thì scheduler sẽ gửi lại toàn bộ lần thứ hai)
@@ -673,6 +734,11 @@ về mốc cứng — tức chính hợp đồng cold-start. Đã chứng minh 9
      (type BUDGET_EXCEEDED, severity HIGH, số tiền nhóm hàng nghìn và độc lập locale;
       nêu thẳng phần vượt thay vì bắt người đọc tự trừ hai số)
    - createFromBudgetExceededIsGuardedByTheSameInbox
+   - createFromMonthlyReportStatesTheMonthsFiguresAsAnalyticsComputedThem
+     (type MONTHLY_REPORT, severity LOW — bản tổng kết không có gì "sai", không được
+      nhuộm màu chuông như một cảnh báo)
+   - createFromMonthlyReportOmitsTheCategorySentenceWhenThereWasNoSpend
+   - createFromMonthlyReportIsGuardedByTheSameInbox
    - markReadThrowsWhenNotFoundForUser
    - markReadSetsReadFlagWhenFound
 
@@ -696,10 +762,22 @@ về mốc cứng — tức chính hợp đồng cold-start. Đã chứng minh 9
    - ignoresEventWithoutEventId
    - ignoresEventWithoutUserId
 
-[UNIT] TemplateNarratorTest — 3 test  (diễn đạt cảnh báo bằng template)
+[UNIT] TemplateNarratorTest — 5 test  (diễn đạt cảnh báo bằng template)
    - mapsKnownRiskTypeToSpecificWording
+   - everyRiskTypeTheRuleEngineEmitsHasItsOwnWording
+     (chốt cả 10 rule: một rule mới mà tới tay người dùng dưới dạng "Risk alert" chung chung
+      thì tệ hơn là không có — nó báo rằng có chuyện xảy ra mà không nói chuyện gì, và triệu
+      chứng duy nhất là một thông báo mơ hồ chẳng ai đi báo lỗi)
+   - namesWhatChangedAboutARecurringCharge
    - fallsBackForUnknownRiskType
    - handlesNullRiskTypeWithoutThrowing
+
+[UNIT] MonthlyReportConsumerTest — 4 test  (Phase G.2 — cùng hợp đồng với 2 consumer kia:
+   mọi sự kiện rơi vào đúng một trong created / duplicate / ignored)
+   - createsNotificationAndCountsCreated
+   - countsDuplicateWhenInboxHit
+   - ignoresEventWithoutEventId
+   - ignoresEventWithoutUserId
 
 [UNIT] LlmAlertNarratorTest — 4 test  (diễn đạt bằng LLM, có fallback template)
    - usesLlmTitleAndMessageOnSuccess
@@ -806,7 +884,7 @@ về mốc cứng — tức chính hợp đồng cold-start. Đã chứng minh 9
 
 
 ================================================================================
-9) ANALYTICS-SERVICE  (mô hình đọc CQRS + tóm tắt AI tùy chọn) — TOÀN UNIT TEST
+9) ANALYTICS-SERVICE  (mô hình đọc CQRS + tóm tắt AI tùy chọn + báo cáo tháng)
 ================================================================================
 
 [UNIT] AnalyticsServiceImplTest — 4 test
@@ -831,8 +909,29 @@ về mốc cứng — tức chính hợp đồng cold-start. Đã chứng minh 9
    - describesSavingsRateTrendAndTopCategory
    - reportsNoActivityWhenEmpty
 
+[UNIT] MonthlyReportSchedulerTest — 5 test  (Phase G.2 — sự kiện đầu tiên service này PHÁT)
+   - publishesOneReportPerUserWithActivity
+   - skipsAUserWhoAlreadyHasThatMonthsReport (bảng monthly_report_sent tồn tại vì quét chạy
+     HÀNG NGÀY; chỉ lần quét đầu của tháng được phép thành một cái email)
+   - publishesNothingForAMonthWithNoActivity
+   - carriesTheFiguresAndTheLargestExpenseCategory (danh mục CHI lớn nhất, không phải danh
+     mục biến động mạnh nhất — "top movers" của overview xếp theo mức thay đổi nên danh mục
+     to nhất thường không nằm trong đó)
+   - recordsTheReportBeforePublishingIt (crash ở giữa mất 1 báo cáo của 1 người; thứ tự
+     ngược lại sẽ gửi lại cho TẤT CẢ, mỗi ngày, cho tới khi thành công)
+
 [UNIT] CorrelationIdFilterTest — 4 test  (bộ chuẩn correlation id — xem GHI CHÚ CUỐI)
 [UNIT] CorrelationIdRecordInterceptorTest — 5 test  (correlation id qua Kafka — xem GHI CHÚ CUỐI)
+
+[INTEGRATION] MonthlyReportPersistenceIntegrationTest — 3 test  (MySQL thật — integration
+   test ĐẦU TIÊN của service này). Khởi động context là mục đích chứ không phải tác dụng
+   phụ: Flyway áp mọi migration rồi Hibernate `validate` đối chiếu entity, nên schema lệch
+   mapping sẽ đỏ ở đây thay vì lúc khởi động trên prod.
+   - recordsAndRecognisesAReportAlreadySent
+   - refusesASecondReportForTheSameUserAndMonth (ràng buộc UNIQUE là lưới cuối: một email
+     đã gửi thì không rút lại được)
+   - findsEachUserWithActivityInTheMonthOnce (truy vấn duy nhất trong service cắt ngang
+     nhiều user — nó là job theo lịch, không có JWT nào để scope theo)
 
 
 ================================================================================
@@ -884,6 +983,14 @@ Test trình duyệt thật nằm ở mục 11.
    - parseDate: ignores a time that follows the date
    - parseDate: rejects a day that does not exist in that month
    - parseDate: rejects text that is not a date
+
+[UNIT] src/lib/download.test.ts — 5 test  (khoảng ngày cho nút Xuất CSV)
+   - monthRange: covers a whole 31-day month / a 30-day month
+   - monthRange: gets February right in a common year and a leap year
+     (ngày cuối được TÍNH chứ không gán cứng 28 — gán cứng thì cứ 4 năm lại mất một ngày
+      giao dịch, và chỉ mất ở tháng 2)
+   - monthRange: returns an empty range for "all months" (không có ngày = không lọc ngày)
+   - monthRange: ignores a value that is not YYYY-MM
 
 [UNIT] src/lib/jwt.test.ts — 6 test  (giải mã JWT phía client, CHỈ để dựng UI)
    - decodeJwt: decodes the payload claims

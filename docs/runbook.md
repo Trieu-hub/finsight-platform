@@ -96,13 +96,14 @@ done
 Kafka has no published host port; run commands inside the broker container (`finsight-kafka`).
 
 ```bash
-# List topics — expect the four FinSight topics to appear once producers have run
+# List topics — expect the five FinSight topics to appear once producers have run
 docker compose exec kafka /opt/kafka/bin/kafka-topics.sh \
   --bootstrap-server localhost:9092 --list
 # finsight.transactions.created
 # finsight.budgets.changed
 # finsight.budgets.exceeded
 # finsight.risk.detected
+# finsight.reports.monthly   (declared at analytics-service startup, published monthly)
 
 # Tail a topic from the beginning (Ctrl-C to stop)
 docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh \
@@ -118,6 +119,22 @@ docker compose exec kafka /opt/kafka/bin/kafka-consumer-groups.sh \
 a valid JWT), then confirm a `TransactionCreated` record appears on
 `finsight.transactions.created`, the budget consumer increments `spent_amount`, and — for a
 qualifying expense — a `RiskDetected` record appears on `finsight.risk.detected`.
+
+**The two scheduled producers** publish on a clock, not on a write, so neither shows up in that
+smoke test:
+
+```bash
+# Recurring series risk-service has recognised (internal API, no auth, not behind the gateway)
+docker compose exec risk-service curl -s localhost:8086/api/v1/recurring
+
+# Monthly reports already published (one row per user per month)
+docker compose exec mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" \
+  -e "SELECT user_id, period_month, sent_at FROM analytics_db.monthly_report_sent;"
+```
+
+To exercise the monthly report without waiting for a month boundary, delete that user's
+`monthly_report_sent` row and restart analytics-service; the sweep runs on its cron
+(`FINSIGHT_REPORT_MONTHLY_CRON`, default 03:20 daily) and always targets the previous month.
 
 ---
 

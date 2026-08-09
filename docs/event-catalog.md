@@ -1,8 +1,8 @@
 # FinSight — Event Catalog
 
-_Last updated: 2026-06-14 · Source of truth: the producer-side event records under `services/`._
+_Last updated: 2026-08-09 · Source of truth: the producer-side event records under `services/`._
 
-Every implemented Kafka event is listed here. Conventions shared by all four:
+Every implemented Kafka event is listed here. Conventions shared by all five:
 
 - **Serialization:** JSON, **no** Jackson type headers (language-neutral; consumers
   deserialize by the documented schema and a per-consumer default type).
@@ -22,10 +22,11 @@ Every implemented Kafka event is listed here. Conventions shared by all four:
 
 | Event | Topic | Producer | Consumer(s) |
 |---|---|---|---|
-| `TransactionCreated` | `finsight.transactions.created` | transaction-service | budget-service, risk-service |
+| `TransactionCreated` | `finsight.transactions.created` | transaction-service | budget-service, risk-service, analytics-service |
 | `BudgetChanged` | `finsight.budgets.changed` | budget-service | risk-service |
 | `BudgetExceeded` | `finsight.budgets.exceeded` | budget-service | notification-service |
 | `RiskDetected` | `finsight.risk.detected` | risk-service | notification-service |
+| `MonthlyReportReady` | `finsight.reports.monthly` | analytics-service | notification-service |
 
 ---
 
@@ -180,9 +181,13 @@ Every implemented Kafka event is listed here. Conventions shared by all four:
 ## 4. RiskDetected
 
 - **Topic:** `finsight.risk.detected`
-- **Producer:** risk-service — `RiskDetectedEvent`, published by `RiskEventConsumer` for each
-  risk rule that fires. The detection is also persisted to `risk_alerts` (the durable record);
-  the event is the notification trigger.
+- **Producer:** risk-service — `RiskDetectedEvent`, published by `RiskDetectionEmitter` for each
+  risk rule that fires, on behalf of `RiskEventConsumer` (the event path) and `RecurringSweeper`
+  (the one rule with no triggering event — see [intelligence.md](intelligence.md)). The detection
+  is also persisted to `risk_alerts` (the durable record); the event is the notification trigger.
+  A sweep-raised `RECURRING_CHARGE_MISSED` carries the series' **last** transaction id, since an
+  absence has no transaction of its own — and, having no originating request, no
+  `X-Correlation-ID` header either.
 - **Consumer:** notification-service — creates one per-user in-app notification per detection
   (idempotency inbox dedups Kafka redeliveries).
 - **Purpose:** announce a detected risk. Kept intentionally minimal; `riskType`/`riskSeverity`
@@ -197,7 +202,7 @@ Every implemented Kafka event is listed here. Conventions shared by all four:
 | `occurredAt` | string | ISO-8601 instant |
 | `userId` | number (Long) | partition key |
 | `transactionId` | UUID | the triggering transaction |
-| `riskType` | string | `HIGH_AMOUNT_EXPENSE` / `RAPID_SPENDING` / `LARGE_DAILY_SPEND` |
+| `riskType` | string | any rule name in [intelligence.md](intelligence.md) — e.g. `HIGH_AMOUNT_EXPENSE`, `RAPID_SPENDING`, `RECURRING_PRICE_INCREASE` |
 | `riskSeverity` | string | `HIGH` / `MEDIUM` (see [intelligence.md](intelligence.md)) |
 
 ```json
@@ -214,8 +219,60 @@ Every implemented Kafka event is listed here. Conventions shared by all four:
 
 ---
 
+## 5. MonthlyReportReady
+
+- **Topic:** `finsight.reports.monthly`
+- **Producer:** analytics-service — `MonthlyReportEvent`, published by `MonthlyReportScheduler`
+  once per user per month. This is analytics-service's **first produced event**; every other
+  event here is triggered by a write, this one by a calendar.
+- **Consumer:** notification-service (`MonthlyReportConsumer`, group
+  `notification-service-reports`) — creates one `MONTHLY_REPORT` notification, delivered through
+  the user's existing channels including email.
+- **Purpose:** the month in review. It carries the **finished figures**, not a reference to them:
+  notification-service has no access to `analytics_db` and must not call analytics-service at
+  runtime, so an event saying only "user 42's report is ready" would be unusable at the far end.
+- **Once-only** is enforced on the producer side by `monthly_report_sent` (there is no upstream
+  event id to key on) and on the consumer side by the usual idempotency inbox.
+- **No `X-Correlation-ID`**: like the recurring sweep, there is no originating HTTP request.
+
+**Payload**
+
+| Field | Type | Notes |
+|---|---|---|
+| `eventId` | UUID | de-duplication key for the consumer inbox |
+| `eventType` | string | `"MonthlyReportReady"` |
+| `occurredAt` | string | ISO-8601 instant |
+| `userId` | number (Long) | partition key |
+| `periodMonth` | string | the month reported on, `"YYYY-MM"` |
+| `currency` | string | the user's dominant currency for that month |
+| `income` / `expense` / `net` | number | the month's totals in that currency |
+| `savingsRate` | number (double) | share of income kept, e.g. `37.5` |
+| `topCategory` | string / null | largest **expense** category; null when there was no spend |
+| `topCategoryAmount` | number / null | its total |
+
+```json
+{
+  "eventId": "dddddddd-eeee-ffff-0000-111122223333",
+  "eventType": "MonthlyReportReady",
+  "occurredAt": "2026-08-01T03:20:00.000Z",
+  "userId": 4242,
+  "periodMonth": "2026-07",
+  "currency": "VND",
+  "income": 20000000,
+  "expense": 12500000,
+  "net": 7500000,
+  "savingsRate": 37.5,
+  "topCategory": "Food & Dining",
+  "topCategoryAmount": 4000000
+}
+```
+
+---
+
 ## Not an event
 
-`SPENDING_INCREASE`, `CATEGORY_SURGE`, `BUDGET_RISK`, `LOW_SAVINGS_RATE` (insights) and
-`UNUSUAL_TRANSACTION_AMOUNT` (anomaly) are **persisted records exposed over REST**, not Kafka
-events — risk-service does not publish them. See [intelligence.md](intelligence.md).
+`SPENDING_INCREASE`, `CATEGORY_SURGE`, `BUDGET_RISK`, `LOW_SAVINGS_RATE` (insights),
+`UNUSUAL_TRANSACTION_AMOUNT` (anomaly) and the `recurring_series` read-model are **persisted
+records exposed over REST**, not Kafka events — risk-service does not publish them. The recurring
+*rules* do publish, as `RiskDetected` like every other rule. See
+[intelligence.md](intelligence.md).
