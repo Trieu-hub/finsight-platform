@@ -79,11 +79,11 @@
             <scope>runtime</scope>
         </dependency>
 
-        <!-- OpenAPI / Swagger UI (springdoc 3.0.x is the Spring Boot 4 line). -->
+        <!-- OpenAPI / Swagger UI (springdoc 3.1.x is the Spring Boot 4 line). -->
         <dependency>
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
-            <version>3.0.3</version>
+            <version>3.1.0</version>
         </dependency>
 
         <!-- Flyway -->
