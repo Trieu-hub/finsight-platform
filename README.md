@@ -34,7 +34,7 @@ coupling is asynchronous over Kafka.
 | [`docs/ADR-0004-budget-utilization-via-events.md`](docs/ADR-0004-budget-utilization-via-events.md) | Why budget utilization is event-driven (and its accepted drift) |
 | [`docs/ADR-0001`](docs/ADR-0001-gateway-v1-contract.md) · [`0002`](docs/ADR-0002-identity-auth-contract-freeze.md) · [`0003`](docs/ADR-0003-dashboard-bff-token-relay.md) · [`0005`](docs/ADR-0005-rs256-asymmetric-jwt-signing.md) | Gateway V1 contract, identity/auth freeze, BFF token relay, RS256 signing |
 | [`docs/brand.md`](docs/brand.md) | Logo files, palette, and the reasoning behind the mark |
-| [`docs/unit-testing/unit-testing-1.txt`](docs/unit-testing/unit-testing-1.txt) | Full test-suite catalog — every test class (unit vs integration), count, and what it verifies (639 backend tests across 9 services, plus the 115 frontend Vitest tests and the 4 Playwright browser tests) |
+| [`docs/unit-testing/unit-testing-1.txt`](docs/unit-testing/unit-testing-1.txt) | Full test-suite catalog — every test class (unit vs integration), count, and what it verifies (644 backend tests across 9 services, plus the 115 frontend Vitest tests and the 4 Playwright browser tests) |
 
 ## Tech stack
 

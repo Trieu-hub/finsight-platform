@@ -9,11 +9,11 @@ dashboard, risk, notification, analytics) + frontend `web/` (mục 10).
 
 TỔNG QUAN CON SỐ
 --------------------------------------------------------------------------------
-- Tổng số test method (@Test / @ParameterizedTest):  639
-- Tổng số lớp test:                                  127 (+ vài lớp base/support)
+- Tổng số test method (@Test / @ParameterizedTest):  644
+- Tổng số lớp test:                                  128 (+ vài lớp base/support)
 - Trong đó:
     * Unit / component test (chạy KHÔNG cần Docker):   442
-    * Integration test (cần Docker – Testcontainers):  197 (61 lớp *IntegrationTest)
+    * Integration test (cần Docker – Testcontainers):  202 (62 lớp *IntegrationTest)
 - Frontend (Vitest, ngoài con số 639 ở trên):         115 test / 15 file
 - Frontend E2E (Playwright, cần stack đang chạy):       4 test / 2 file (mục 11)
 - Framework: JUnit 5 (Jupiter) + Mockito + AssertJ; frontend dùng Vitest +
@@ -340,6 +340,19 @@ Quy ước chung của test:
    - neverExportsAnotherUsersTransactions
    - excludesADeletedTransaction (xoá mềm đã biến mất khỏi list thì phải biến mất khỏi file)
    - exportRequiresAuthentication
+
+[INTEGRATION] VietnameseTextIntegrationTest — 5 test  (tiếng Việt đi trọn vòng, so BYTE)
+   Mojibake không nhìn thấy được từ bên trong ứng dụng: mỗi tầng trao cho tầng sau một
+   String, nên description đọc lại vẫn đúng ngay cả khi byte dưới đĩa đã hỏng — chỉ trình
+   duyệt và bảng tính mới lộ ra. Vì vậy lớp này khẳng định BYTE (HEX() lấy thẳng từ MySQL,
+   và body thô của response) so với hằng số viết bằng ASCII.
+   - storesAVietnameseDescriptionAsTheUtf8BytesTheClientSent (HEX + CHAR_LENGTH + LENGTH)
+   - storesAVietnameseWalletNameAsTheUtf8BytesTheClientSent
+   - returnsAVietnameseDescriptionAsUtf8OverJson (khẳng định trước khi decode)
+   - exportsAVietnameseDescriptionAsUtf8Csv (charset trên Content-Type, thân file không BOM)
+   - everyTextColumnInTheSchemaIsUtf8mb4 (chặn migration sau này thêm cột sai charset)
+   Chuỗi mẫu cố tình phủ cả 4 độ rộng UTF-8, kể cả một emoji 4 byte — thứ chỉ lưu được vì
+   schema là utf8mb4 chứ không phải utf8mb3.
 
 [INTEGRATION] TransactionApiFilterIntegrationTest — 7 test
    - defaultSortingIsTransactionDateDesc
