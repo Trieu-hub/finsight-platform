@@ -88,7 +88,7 @@
         <dependency>
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
-            <version>3.0.3</version>
+            <version>3.1.0</version>
         </dependency>
 
         <!-- Distributed tracing. Boot 4 unified tracing under one starter: it pulls the
