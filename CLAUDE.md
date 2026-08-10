@@ -148,7 +148,7 @@ Authoritative docs — read these instead of re-deriving:
 - `docs/runbook.md` — startup, compose workflow, troubleshooting
 - `docs/deploy.md` — production deployment
 - `docs/security/jwt-key-rotation.md` — key rotation procedure
-- `docs/unit-testing/unit-testing-1.txt` — full test catalog (639 backend tests, 127 classes,
+- `docs/unit-testing/unit-testing-1.txt` — full test catalog (644 backend tests, 128 classes,
   plus the frontend Vitest suite and the Playwright journeys)
 
 ---
