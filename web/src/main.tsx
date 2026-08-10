@@ -5,7 +5,10 @@ import './index.css'
 import App from './App.tsx'
 import { AuthProvider } from './auth/AuthContext'
 import { I18nProvider } from './i18n'
+import { registerServiceWorker } from './lib/sw'
 import { ThemeProvider } from './theme'
+
+registerServiceWorker()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

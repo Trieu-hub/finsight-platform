@@ -14,8 +14,8 @@ TỔNG QUAN CON SỐ
 - Trong đó:
     * Unit / component test (chạy KHÔNG cần Docker):   442
     * Integration test (cần Docker – Testcontainers):  202 (62 lớp *IntegrationTest)
-- Frontend (Vitest, ngoài con số 639 ở trên):         115 test / 15 file
-- Frontend E2E (Playwright, cần stack đang chạy):       4 test / 2 file (mục 11)
+- Frontend (Vitest, ngoài con số 644 ở trên):         128 test / 17 file
+- Frontend E2E (Playwright, cần stack đang chạy):       6 test / 3 file (mục 11)
 - Framework: JUnit 5 (Jupiter) + Mockito + AssertJ; frontend dùng Vitest +
   React Testing Library (jsdom) và Playwright cho E2E trình duyệt.
 - Integration test dùng Testcontainers (MySQL 8, Kafka KRaft, Redis) và WireMock
@@ -1137,6 +1137,33 @@ của form; chỉ mock lời gọi mạng)
    📌 Đọc file bằng `?raw` + `import.meta.glob` của Vite chứ KHÔNG dùng `node:fs`, vì
       `tsconfig.app.json` cố ý chỉ cấp `types: ["vite/client"]` cho `src/`.
 
+[UNIT] src/sw.test.ts — 10 test  (service worker: cache đọc khi mất mạng)
+   Nạp CHÍNH `public/sw.js` bằng `?raw` rồi chạy trong một scope worker giả (`new
+   Function` với `self`/`caches`/`fetch` bơm vào), thay vì viết lại logic trong test —
+   `sw.js` là file tĩnh không ai import, nên một test mô phỏng lại sẽ vẫn xanh sau khi
+   file thật đã hỏng.
+   - serves the last good API response when the network is gone
+   - fails rather than inventing an answer when nothing was ever cached
+   - never caches a write, so an offline edit cannot look like it succeeded
+   - leaves auth, notifications, push and game requests alone
+     (danh sách cho phép, không phải danh sách chặn: /auth mang token, /notifications và
+      /push phải phản ánh server ngay lúc đó, /game do server quyết định — một kết quả
+      quay lại từ cache là một lời nói dối)
+   - ignores another origin entirely
+   - does not store an error response, which would outlive the token that caused it
+   - falls back to the cached shell for any route, matching nginx try_files
+   - drops the API cache on PURGE, so a sign-out leaves nothing readable behind
+   - caches the hashed bundles named in the shell, which the first load never routes
+     through it
+   - clears caches from an older version on activate
+   📌 Đã chứng minh test có răng bằng 2 mutation: mở allowlist thành "mọi /api/v1/*" →
+      đỏ đúng test allowlist; bỏ nhánh PURGE → đỏ đúng test purge.
+
+[HOOK] src/hooks/useOnline.test.ts — 3 test  (cờ online cho banner ngoại tuyến)
+   - starts from whatever the browser already thinks
+   - follows the offline and online events
+   - stops listening once unmounted, so a late event cannot set state on a dead component
+
 [COMPONENT] src/pages/Import.test.tsx — 3 test  (bảng preview của trang nhập sao
 kê: dòng bị giữ lại phải NÓI RA lý do và phải trông như đang bị giữ lại)
    - says why a row is held back whichever field is unreadable
@@ -1165,6 +1192,21 @@ Mỗi lần chạy tự đăng ký tài khoản riêng nên không phụ thuộc
       → dashboard qua BFF cũng thấy)
    - a signed-out visitor is sent to the login page
    - wrong credentials are rejected with the API error, not a blank page
+
+[E2E] e2e/offline.spec.ts — 2 test  (chromium) — **KHÔNG cần backend**
+   Spec duy nhất ở mục này chạy được với mỗi `vite preview`: `/login` là trang công
+   khai, và điều cần chứng minh là app shell sống sót khi không có server. Vẫn phải là
+   bản build production vì service worker cố ý không đăng ký dưới `vite dev`.
+   - serves the app shell with the network cut, instead of the browser error page
+     (`context.setOffline(true)` cắt mạng thật, không mock fetch)
+   - fails offline once the worker is gone, proving it was the worker doing the work
+     (đối chứng: gỡ đăng ký worker + xoá cache thì reload offline PHẢI hỏng — không có
+      nó, test trên vẫn xanh nếu HTTP cache của Chrome âm thầm trả trang)
+   📌 Chính spec này bắt được 2 lỗi mà unit test không thấy: (1) lần tải đầu tiên chưa
+      bị worker điều khiển nên bundle `/assets/*` chưa từng được cache → offline ra
+      trang trắng; sửa bằng `primeShell()` đọc tên bundle băm từ chính shell HTML.
+      (2) `cache.match` trượt vì `Vary` — entry nằm trong cache mà không khớp, app
+      trắng và KHÔNG có lỗi nào giải thích; sửa bằng `ignoreVary: true`.
 
 [E2E] e2e/mobile-layout.spec.ts — 1 test  (chromium)
    - no page can be scrolled sideways at phone widths

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
+import { useOnline } from '../hooks/useOnline'
 import { useI18n } from '../i18n'
 import NotificationBell from './NotificationBell'
 import OnboardingTour from './OnboardingTour'
@@ -91,6 +92,7 @@ function NavIcon({ to }: { to: string }) {
 export default function Layout() {
   const { signOut, isAdmin, canPlayLuckyMe } = useAuth()
   const { t } = useI18n()
+  const online = useOnline()
   const navigate = useNavigate()
 
   // Guided tour: auto-open for a brand-new account (or the first visit on this browser),
@@ -239,6 +241,16 @@ export default function Layout() {
           </div>
         </div>
       </header>
+      {!online && (
+        // role="status" rather than "alert": losing wifi is not an emergency, and an assertive
+        // live region would cut across whatever the user is reading.
+        <div
+          role="status"
+          className="border-b border-amber-900/60 bg-amber-950/60 px-4 py-2 text-center text-sm text-amber-200 sm:px-5"
+        >
+          {t('offline.banner')}
+        </div>
+      )}
       <main className="mx-auto max-w-6xl overflow-x-clip px-4 py-8 sm:px-5 sm:py-10">
         <Outlet />
       </main>
