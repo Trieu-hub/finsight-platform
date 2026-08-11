@@ -39,7 +39,7 @@ current month; `currency` is optional (defaults to the user's dominant currency)
 |---|---|
 | `GET /overview?year=&month=&currency=` | This vs last month: income/expense/net, savings rate, % changes, top movers |
 | `GET /categories?from=YYYY-MM&to=YYYY-MM&currency=` | Per-category totals + share over a month range |
-| `GET /forecast?year=&month=&currency=` | Run-rate projection of month-end spend |
+| `GET /forecast?year=&month=&currency=` | Month-end spend projection. Run-rate by default; the fitted `spending_model` when one exists and days remain in the month — `method` says which, and `projectedLow`/`projectedHigh` carry the model's error band |
 | `GET /summary?year=&month=&currency=` | A monthly narrative (template, or LLM when enabled) |
 
 Response envelope: `{ "success": true, "data": ... }`.

@@ -34,7 +34,7 @@ coupling is asynchronous over Kafka.
 | [`docs/ADR-0004-budget-utilization-via-events.md`](docs/ADR-0004-budget-utilization-via-events.md) | Why budget utilization is event-driven (and its accepted drift) |
 | [`docs/ADR-0001`](docs/ADR-0001-gateway-v1-contract.md) · [`0002`](docs/ADR-0002-identity-auth-contract-freeze.md) · [`0003`](docs/ADR-0003-dashboard-bff-token-relay.md) · [`0005`](docs/ADR-0005-rs256-asymmetric-jwt-signing.md) | Gateway V1 contract, identity/auth freeze, BFF token relay, RS256 signing |
 | [`docs/brand.md`](docs/brand.md) | Logo files, palette, and the reasoning behind the mark |
-| [`docs/unit-testing/unit-testing-1.txt`](docs/unit-testing/unit-testing-1.txt) | Full test-suite catalog — every test class (unit vs integration), count, and what it verifies (644 backend tests across 9 services, plus the 128 frontend Vitest tests and the 6 Playwright browser tests) |
+| [`docs/unit-testing/unit-testing-1.txt`](docs/unit-testing/unit-testing-1.txt) | Full test-suite catalog — every test class (unit vs integration), count, and what it verifies (659 backend tests across 9 services, plus the 128 frontend Vitest tests and the 9 Playwright browser tests) |
 
 ## Tech stack
 
@@ -478,9 +478,17 @@ runtime is captured by the committed Grafana dashboard screenshots above.
 
 These are **absent from the codebase** — do not assume they exist:
 
-- **ML-based intelligence** — the rules are deterministic. They are no longer one-size-fits-all
-  (the monetary thresholds are drawn from each user's own history), but that is an average, not a
-  model: there is no training, no prediction, and no seasonality or category-level personalisation.
+- **ML-based intelligence — partly built.** The **risk rules** are still deterministic thresholds
+  drawn from each user's own history: an average, not a model. What is now a model is the
+  **spend forecast** — `analytics-service` fits a per-user Holt linear trend with a multiplicative
+  weekly season, chooses its smoothing constants by minimising in-sample error, persists the
+  parameters in `spending_model`, and predicts the remaining days of the month one at a time, so a
+  month ending on a weekend projects higher than one ending mid-week. A young account borrows the
+  population's weekly shape and is handed its own as its evidence accumulates. Still absent:
+  **category-level personalisation** (the model is fitted per user and currency, not per category),
+  and any model behind the risk/insight/anomaly rules. Off by default
+  (`FINSIGHT_FORECAST_MODEL_ENABLED`); with the flag off the forecast is the run-rate projection it
+  has always been.
 - **An orchestrated deployment target** (Kubernetes/ECS) **and a managed secrets store**
   (Vault/KMS). The live demo runs Docker Compose on a single VPS behind Caddy with TLS; secrets
   are **SOPS/age-encrypted at rest** and injected into the process environment at launch, which

@@ -1,5 +1,5 @@
-import { expect, test, type Page } from '@playwright/test'
-import { randomBytes } from 'node:crypto'
+import { expect, test } from '@playwright/test'
+import { signUp } from './support/account'
 
 /**
  * The critical journey, in a real browser against the real stack: sign up → record income → see it
@@ -10,34 +10,6 @@ import { randomBytes } from 'node:crypto'
  * any freshly started stack. Text is queried in English — the default language for a browser with
  * no stored preference, which is what a clean Playwright context is.
  */
-
-/** Unique per run: auth rejects a duplicate username OR email, and CI re-runs against a live DB. */
-function newAccount() {
-  const stamp = `${Date.now().toString(36)}${randomBytes(6).toString('hex')}`
-  return { username: `e2e${stamp}`, email: `e2e${stamp}@vernfy.test`, password: 'E2ePass123' }
-}
-
-async function signUp(page: Page) {
-  const account = newAccount()
-  await page.goto('/register')
-  await page.getByLabel('Username').fill(account.username)
-  await page.getByLabel('Email').fill(account.email)
-  await page.getByLabel('Password (min 8 chars)').fill(account.password)
-  await page.getByRole('button', { name: 'Create account' }).click()
-
-  // Registration signs the user straight in and lands on the dashboard.
-  await expect(page).toHaveURL(/\/$/)
-
-  // A brand-new account always gets the guided tour; dismiss it so it stops covering the page.
-  // It renders a tick after the redirect, so wait for it rather than sampling visibility once.
-  const tour = page.getByRole('dialog', { name: 'Guided tour' })
-  await tour.waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {})
-  if (await tour.isVisible()) {
-    await tour.getByRole('button', { name: 'Skip' }).click()
-    await expect(tour).toBeHidden()
-  }
-  return account
-}
 
 test('a new user can sign up, record income and find it in their history', async ({ page }) => {
   await signUp(page)

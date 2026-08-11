@@ -396,6 +396,15 @@ services:
       # still sends it on the 2nd, and monthly_report_sent makes every later run a no-op.
       # Override to a tight schedule to exercise it without waiting for a month boundary.
       FINSIGHT_REPORT_MONTHLY_CRON: ${FINSIGHT_REPORT_MONTHLY_CRON:-0 20 3 * * *}
+      # Fitted spend-forecast model (Holt trend + weekly season, trained nightly from the daily
+      # rollup). OFF by default: with the flag off nothing is fitted and /forecast keeps
+      # returning the run-rate projection, so turning it on is what changes a number users
+      # already read. Needs a few weeks of daily rollup before it has anything to learn from —
+      # the table starts empty on the deploy that creates it.
+      FINSIGHT_FORECAST_MODEL_ENABLED: ${FINSIGHT_FORECAST_MODEL_ENABLED:-false}
+      # 02:40 daily, before the 03:20 report sweep so the report reads a fresh model. Always
+      # trains up to yesterday: a partial day looks like a collapse in spending.
+      FINSIGHT_FORECAST_MODEL_CRON: ${FINSIGHT_FORECAST_MODEL_CRON:-0 40 2 * * *}
       # Optional LLM-backed monthly summary on any OpenAI-compatible API (default: Groq free
       # tier). Off unless a key is set and the flag is flipped on; a deterministic template
       # is the default and the safe fallback. Shares the platform-wide LLM_* env contract.

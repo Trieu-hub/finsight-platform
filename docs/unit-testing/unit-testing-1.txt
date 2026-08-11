@@ -9,13 +9,13 @@ dashboard, risk, notification, analytics) + frontend `web/` (mục 10).
 
 TỔNG QUAN CON SỐ
 --------------------------------------------------------------------------------
-- Tổng số test method (@Test / @ParameterizedTest):  644
-- Tổng số lớp test:                                  128 (+ vài lớp base/support)
+- Tổng số test method (@Test / @ParameterizedTest):  659
+- Tổng số lớp test:                                  129 (+ vài lớp base/support)
 - Trong đó:
-    * Unit / component test (chạy KHÔNG cần Docker):   442
+    * Unit / component test (chạy KHÔNG cần Docker):   457
     * Integration test (cần Docker – Testcontainers):  202 (62 lớp *IntegrationTest)
-- Frontend (Vitest, ngoài con số 644 ở trên):         128 test / 17 file
-- Frontend E2E (Playwright, cần stack đang chạy):       6 test / 3 file (mục 11)
+- Frontend (Vitest, ngoài con số 659 ở trên):         128 test / 17 file
+- Frontend E2E (Playwright, cần stack đang chạy):       9 test / 4 file (mục 11)
 - Framework: JUnit 5 (Jupiter) + Mockito + AssertJ; frontend dùng Vitest +
   React Testing Library (jsdom) và Playwright cho E2E trình duyệt.
 - Integration test dùng Testcontainers (MySQL 8, Kafka KRaft, Redis) và WireMock
@@ -897,20 +897,46 @@ về mốc cứng — tức chính hợp đồng cold-start. Đã chứng minh 9
 
 
 ================================================================================
-9) ANALYTICS-SERVICE  (mô hình đọc CQRS + tóm tắt AI tùy chọn + báo cáo tháng)
+9) ANALYTICS-SERVICE  (mô hình đọc CQRS + tóm tắt AI tùy chọn + báo cáo tháng
+                       + mô hình dự báo chi tiêu đã huấn luyện)
 ================================================================================
 
-[UNIT] AnalyticsServiceImplTest — 4 test
+[UNIT] AnalyticsServiceImplTest — 6 test
    - overviewComputesTotalsSavingsRateAndExpenseChange
-   - forecastForPastMonthProjectsToActual
+   - forecastForPastMonthProjectsToActual  (tháng đã xong ⇒ luôn RUN_RATE)
+   - forecastFallsBackToTheRunRateWhenNoModelHasBeenTrained
+     (trạng thái của MỌI tài khoản cho tới khi trainer chạy, và của cả nền tảng khi cờ tắt)
+   - forecastUsesTheTrainedModelForTheDaysStillToCome
+     (mô hình phẳng 10/ngày ⇒ 300 + 10 × số ngày còn lại — con số run-rate KHÔNG thể tạo ra,
+      vì nó sẽ nhân 300 theo tỷ lệ ngày đã trôi. `assumeTrue` bỏ qua vào ngày cuối tháng:
+      lúc đó không còn ngày nào để dự báo nên run-rate mới là câu trả lời đúng)
    - categoriesComputeShareWithinType
    - summaryUsesTemplateAndIsNotAiGenerated
 
-[UNIT] RollupServiceTest — 4 test  (dựng read-model từ TransactionCreated)
+[UNIT] SeasonalTrendTrainerTest — 11 test  (số học thuần, KHÔNG cần Docker/Spring)
+   Mỗi test dựng một chuỗi có hình dạng biết trước rồi khẳng định mô hình khôi phục lại
+   đúng hình dạng đó — một mô hình chỉ "sinh ra vài con số" sẽ qua smoke test và trượt cả 11.
+   - recoversWeeklyShape  (cuối tuần gấp đôi ngày thường ⇒ tỷ lệ chỉ số = 2,0)
+   - predictionCarriesTheWeeklyShape  (thứ Bảy > thứ Hai — điều run-rate không nói được)
+   - recoversTrend  (dốc 2/ngày ⇒ trend ≈ 2,0 và ngoại suy 10 ngày ≈ 152)
+   - flatSeriesGivesNeutralIndices
+   - refusesShortSeries  (< 14 ngày ⇒ null, không đoán bừa)
+   - refusesAllZeroSeries
+   - predictionIsFlooredAtZero  (dốc xuống mạnh vẫn không ra chi tiêu âm)
+   - shrinkageFallsBackToThePopulation  (chưa có bằng chứng riêng ⇒ lấy hình dạng của đám đông)
+   - shrinkageYieldsToTheUserAsEvidenceGrows
+   - shrinkageIsProportionalToEvidence  (4 quan sát = trọng số prior ⇒ đúng giữa)
+   - countsWeekdayObservations
+   📌 `shrinkTowards` CHUẨN HOÁ kết quả về trung bình 1, nên vector kỳ vọng trong test phải
+      sẵn trung bình 1 — lần đầu viết sai chỗ này và test đỏ, không phải code sai.
+
+[UNIT] RollupServiceTest — 6 test  (dựng read-model từ TransactionCreated)
    - createsNewRollupForFirstEventInSlot
    - addsToExistingRollupInSlot
    - skipsDuplicateEvent (idempotent)
    - usesUncategorizedSentinelWhenCategoryMissing
+   - foldsTheSameEventIntoTheDailySeriesAsWell  (chuỗi ngày là thứ mô hình học)
+   - skipsTheDailySeriesForADuplicateEventToo  (cùng một inbox, không lệch nhau được)
 
 [UNIT] LlmSummarizerTest — 4 test  (tóm tắt tháng bằng LLM, fallback template)
    - usesLlmSummaryOnSuccess
@@ -1184,7 +1210,14 @@ Chạy bằng `npm run test:e2e --prefix web`. KHÔNG tự dựng backend: cần
 `docker compose up -d` (hoặc stack ephemeral trong `.github/workflows/staging.yml`)
 để `/api` có gateway trả lời. Frontend do `vite preview` phục vụ — tức là **bản
 build production**, proxy `/api` → gateway giống hệt vai trò của Caddy trên prod.
-Mỗi lần chạy tự đăng ký tài khoản riêng nên không phụ thuộc dữ liệu seed.
+Mỗi lần chạy tự đăng ký tài khoản riêng nên không phụ thuộc dữ liệu seed — phần đăng
+ký dùng chung ở `e2e/support/account.ts` (không phải file test nên Playwright bỏ qua).
+📌 `signUp` chờ `/api/v1/auth/login` trả về **dưới 500** trước khi gửi form. Login bị từ
+   chối là kết quả TỐT ở đây: nó chứng minh request đã tới auth-service. Thứ phải chờ
+   là **503 "Downstream service is unavailable"** — gateway fail-fast trong lúc
+   auth-service còn đang lên. Container báo `healthy` KHÔNG có nghĩa mạch qua gateway đã
+   thông, và triệu chứng của nó là form đăng ký im lặng không đi đâu cả, trông y hệt lỗi
+   test. Đã tái hiện được bằng `docker compose restart auth-service` rồi chạy ngay.
 
 [E2E] e2e/journey.spec.ts — 3 test  (chromium)
    - a new user can sign up, record income and find it in their history
@@ -1192,6 +1225,25 @@ Mỗi lần chạy tự đăng ký tài khoản riêng nên không phụ thuộc
       → dashboard qua BFF cũng thấy)
    - a signed-out visitor is sent to the login page
    - wrong credentials are rejected with the API error, not a blank page
+
+[E2E] e2e/money-loop.spec.ts — 3 test  (chromium)
+   Vòng tiền đầy đủ: ví → ngân sách → khoản chi → các con số mọi màn hình khác suy ra
+   từ nó. `journey.spec.ts` cố ý ghi INCOME vì thu nhập đứng một mình; khoản CHI mới là
+   nửa khó — phải gắn vào một ngân sách do người dùng chọn, phải trừ số dư ví do
+   transaction-service giữ, và phải tới budget-service **qua Kafka**.
+   - an expense moves the wallet, the budget tally and the dashboard together
+     (4 mốc: dòng trong lịch sử → số dư ví giảm đúng → **`spent` của ngân sách cập nhật
+      qua Kafka** (poll + reload, hạn 60s: request tạo giao dịch đã trả 200 từ lâu
+      trước khi outbox relay phát đi) → dashboard đọc lại qua BFF cũng thấy)
+   - an expense past the limit warns at once, before the tally catches up
+     (cảnh báo vượt hạn mức tính ở client nên hiện ngay, không chờ Kafka; sau đó
+      ngân sách mới thật sự mang nhãn "Over budget" khi sự kiện đã tới)
+   - an expense in a category with no budget is refused, not silently recorded
+     (chốt lại đúng bất biến của PR #172: mỗi khoản chi trừ đúng 1 ngân sách. Không có
+      ngân sách khớp thì trường Budget là ghi chú màu hổ phách chứ không phải select,
+      và bấm Add không ghi gì — lịch sử vẫn rỗng, số dư ví không đổi)
+   📌 Đây là phần Vitest KHÔNG thay được: mạng giả trả lời tức thì và đúng thứ tự,
+      đúng hai tính chất mà đường bất đồng bộ thật không có.
 
 [E2E] e2e/offline.spec.ts — 2 test  (chromium) — **KHÔNG cần backend**
    Spec duy nhất ở mục này chạy được với mỗi `vite preview`: `/login` là trang công

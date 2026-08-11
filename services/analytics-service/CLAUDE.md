@@ -47,7 +47,20 @@ month, so it is turned on deliberately, not by the deploy that ships it.
 Distinct from `dashboard-service`: that BFF aggregates live over HTTP and owns no data;
 this service owns `analytics_db` and answers from a pre-aggregated model.
 
-Deliberately deferred: ML forecasting (the forecast is a deterministic run-rate),
+**Forecast model** (`forecast/`): `daily_category_rollup` carries the same fold at day
+granularity — written in the same transaction as the monthly row, because a month total cannot be
+taken apart into days afterwards and the weekly pattern lives entirely in that detail.
+`SpendingModelTrainer` fits one `spending_model` per (user, currency): Holt level + trend over a
+120-day window with a multiplicative weekly season, smoothing constants chosen by grid search on
+in-sample SSE. A user's weekday indices are blended toward the population's shape with a weight
+that decays as their own evidence grows, so a three-week-old account is not handed seven indices
+estimated from three observations each. `ModelTrainingScheduler` retrains nightly at 02:40, always
+up to **yesterday** (a partial day looks like a collapse in spending), **single instance**, gated
+on `finsight.forecast.model.enabled` — **off by default**. `/forecast` uses a model only while
+days remain in the month and only when one has been fitted; otherwise it returns the run-rate
+projection unchanged. The response's `method` field says which answered.
+
+Deliberately deferred: category-level models (the fit is per user + currency),
 auto-categorization, and a persisted AI-summary cache (summaries are computed on demand).
 
 ## Commands
