@@ -1,7 +1,9 @@
 package com.pm.analyticsservice.service;
 
+import com.pm.analyticsservice.entity.DailyCategoryRollup;
 import com.pm.analyticsservice.entity.MonthlyCategoryRollup;
 import com.pm.analyticsservice.event.TransactionCreatedEvent;
+import com.pm.analyticsservice.repository.DailyCategoryRollupRepository;
 import com.pm.analyticsservice.repository.MonthlyCategoryRollupRepository;
 import com.pm.analyticsservice.repository.ProcessedEventRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -9,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -22,14 +25,47 @@ import static org.mockito.Mockito.when;
 class RollupServiceTest {
 
     private MonthlyCategoryRollupRepository rollupRepository;
+    private DailyCategoryRollupRepository dailyRollupRepository;
     private ProcessedEventRepository processedEventRepository;
     private RollupService service;
 
     @BeforeEach
     void setUp() {
         rollupRepository = mock(MonthlyCategoryRollupRepository.class);
+        dailyRollupRepository = mock(DailyCategoryRollupRepository.class);
         processedEventRepository = mock(ProcessedEventRepository.class);
-        service = new RollupService(rollupRepository, processedEventRepository);
+        service = new RollupService(rollupRepository, dailyRollupRepository, processedEventRepository);
+    }
+
+    @Test
+    void foldsTheSameEventIntoTheDailySeriesAsWell() {
+        // The daily rollup is what the forecast model trains on, and it is written in the
+        // same transaction as the monthly one — so it must move on the same event.
+        TransactionCreatedEvent event = event(UUID.randomUUID(), "EXPENSE", "250.00", 4L);
+        when(processedEventRepository.existsById(event.eventId())).thenReturn(false);
+        when(rollupRepository.findByUserIdAndYearMonthAndCategoryIdAndTypeAndCurrency(
+                any(), any(), any(), any(), any())).thenReturn(Optional.empty());
+        when(dailyRollupRepository.findByUserIdAndSpendDateAndCategoryIdAndTypeAndCurrency(
+                any(), any(), any(), any(), any())).thenReturn(Optional.empty());
+
+        service.apply(event);
+
+        ArgumentCaptor<DailyCategoryRollup> captor = ArgumentCaptor.forClass(DailyCategoryRollup.class);
+        verify(dailyRollupRepository).save(captor.capture());
+        DailyCategoryRollup saved = captor.getValue();
+        assertThat(saved.getSpendDate()).isEqualTo(LocalDate.of(2026, 6, 15));
+        assertThat(saved.getTotalAmount()).isEqualByComparingTo("250.00");
+        assertThat(saved.getTxnCount()).isEqualTo(1);
+    }
+
+    @Test
+    void skipsTheDailySeriesForADuplicateEventToo() {
+        TransactionCreatedEvent event = event(UUID.randomUUID(), "EXPENSE", "250.00", 4L);
+        when(processedEventRepository.existsById(event.eventId())).thenReturn(true);
+
+        assertThat(service.apply(event)).isFalse();
+
+        verify(dailyRollupRepository, never()).save(any());
     }
 
     @Test

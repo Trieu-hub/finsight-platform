@@ -4,30 +4,43 @@ import com.pm.analyticsservice.dto.CategoryMover;
 import com.pm.analyticsservice.dto.ForecastResponse;
 import com.pm.analyticsservice.dto.OverviewResponse;
 import com.pm.analyticsservice.entity.MonthlyCategoryRollup;
+import com.pm.analyticsservice.entity.SpendingModel;
 import com.pm.analyticsservice.repository.MonthlyCategoryRollupRepository;
+import com.pm.analyticsservice.repository.SpendingModelRepository;
 import com.pm.analyticsservice.service.impl.AnalyticsServiceImpl;
 import com.pm.analyticsservice.summarizer.TemplateSummarizer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.YearMonth;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class AnalyticsServiceImplTest {
 
     private MonthlyCategoryRollupRepository repo;
+    private SpendingModelRepository modelRepo;
     private AnalyticsServiceImpl service;
 
     @BeforeEach
     void setUp() {
         repo = mock(MonthlyCategoryRollupRepository.class);
+        modelRepo = mock(SpendingModelRepository.class);
+        // No trained model by default: these cases assert the run-rate behaviour, which stays
+        // the answer for every user until the trainer has fitted one.
+        when(modelRepo.findByUserIdAndCurrency(any(), any())).thenReturn(Optional.empty());
         // Real template summarizer: deterministic, no network.
-        service = new AnalyticsServiceImpl(repo, new TemplateSummarizer());
+        service = new AnalyticsServiceImpl(repo, modelRepo, new TemplateSummarizer());
     }
 
     @Test
@@ -71,6 +84,71 @@ class AnalyticsServiceImplTest {
         assertThat(f.expenseToDate()).isEqualByComparingTo("620.00");
         assertThat(f.projectedExpense()).isEqualByComparingTo("620.00");
         assertThat(f.dailyAverage()).isEqualByComparingTo("20.00");
+        // A finished month is history, not a forecast — the model is never consulted for it.
+        assertThat(f.method()).isEqualTo("RUN_RATE");
+        assertThat(f.projectedLow()).isNull();
+    }
+
+    @Test
+    void forecastFallsBackToTheRunRateWhenNoModelHasBeenTrained() {
+        YearMonth thisMonth = YearMonth.now();
+        when(repo.findByUserIdAndYearMonth(42L, thisMonth.toString())).thenReturn(List.of(
+                rollup(thisMonth.toString(), 4L, "EXPENSE", "300.00", 5)));
+
+        ForecastResponse f = service.forecast(42L, thisMonth.getYear(), thisMonth.getMonthValue(), "USD");
+
+        // This is the state every account is in until the nightly trainer has fitted it, and
+        // the state the whole platform stays in while the feature flag is off.
+        assertThat(f.method()).isEqualTo("RUN_RATE");
+        assertThat(f.projectedLow()).isNull();
+        assertThat(f.projectedHigh()).isNull();
+    }
+
+    @Test
+    void forecastUsesTheTrainedModelForTheDaysStillToCome() {
+        YearMonth thisMonth = YearMonth.now();
+        int today = LocalDate.now().getDayOfMonth();
+        // On the last day of a month there are no remaining days to model, so the run rate is
+        // the correct answer and there is nothing to assert here. Skipping beats a test that
+        // silently passes for the wrong reason one day in thirty.
+        assumeTrue(today < thisMonth.lengthOfMonth(), "no days left in the month to project");
+
+        when(repo.findByUserIdAndYearMonth(42L, thisMonth.toString())).thenReturn(List.of(
+                rollup(thisMonth.toString(), 4L, "EXPENSE", "300.00", 5)));
+        // A flat model: level 10/day, no trend, no weekly shape, trained up to yesterday.
+        when(modelRepo.findByUserIdAndCurrency(42L, "USD"))
+                .thenReturn(Optional.of(model(10.0, 2.0, LocalDate.now().minusDays(1))));
+
+        ForecastResponse f = service.forecast(42L, thisMonth.getYear(), thisMonth.getMonthValue(), "USD");
+
+        int remainingDays = thisMonth.lengthOfMonth() - today;
+        assertThat(f.method()).isEqualTo("MODEL");
+        // 300 already spent plus 10 for each day still to come — a number the run rate cannot
+        // produce, since it would scale 300 by the elapsed fraction instead.
+        assertThat(f.projectedExpense())
+                .isEqualByComparingTo(BigDecimal.valueOf(300 + 10L * remainingDays));
+        // The band is sigma * sqrt(remaining days), never narrower than what is already spent.
+        assertThat(f.projectedLow()).isNotNull();
+        assertThat(f.projectedHigh()).isGreaterThan(f.projectedExpense());
+        assertThat(f.projectedLow()).isGreaterThanOrEqualTo(f.expenseToDate());
+    }
+
+    /** A model with a flat week, so the arithmetic in the test above stays legible. */
+    private SpendingModel model(double level, double sigma, LocalDate trainedUpto) {
+        BigDecimal one = BigDecimal.ONE;
+        return SpendingModel.builder()
+                .id(UUID.randomUUID())
+                .userId(42L)
+                .currency("USD")
+                .levelValue(BigDecimal.valueOf(level))
+                .trendValue(BigDecimal.ZERO)
+                .dowMon(one).dowTue(one).dowWed(one).dowThu(one)
+                .dowFri(one).dowSat(one).dowSun(one)
+                .sigma(BigDecimal.valueOf(sigma))
+                .sampleDays(60)
+                .trainedUpto(trainedUpto)
+                .trainedAt(LocalDateTime.now())
+                .build();
     }
 
     @Test

@@ -75,6 +75,16 @@ finsight:
       # than monthly so a box that was down on the 1st still sends it on the 2nd; the
       # monthly_report_sent table makes every later run a no-op.
       cron: ${FINSIGHT_REPORT_MONTHLY_CRON:0 20 3 * * *}
+  forecast:
+    model:
+      # OFF by default. With the flag off no model is ever fitted and /forecast answers from
+      # the deterministic run rate exactly as before; turning it on changes the shape of a
+      # number users already read, so it is a deliberate switch rather than a deploy.
+      enabled: ${FINSIGHT_FORECAST_MODEL_ENABLED:false}
+      # Nightly retrain over the trailing window, always up to YESTERDAY — training up to
+      # today would feed the fit a partial day that looks like a collapse in spending.
+      # 02:40 sits before the 03:20 report sweep so the report reads a fresh model.
+      cron: ${FINSIGHT_FORECAST_MODEL_CRON:0 40 2 * * *}
   summarizer:
     ai:
       # Optional LLM-backed monthly summary on any OpenAI-compatible API (default: Groq

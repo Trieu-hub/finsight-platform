@@ -7,7 +7,10 @@ import com.pm.analyticsservice.dto.ForecastResponse;
 import com.pm.analyticsservice.dto.MonthlySummaryResponse;
 import com.pm.analyticsservice.dto.OverviewResponse;
 import com.pm.analyticsservice.entity.MonthlyCategoryRollup;
+import com.pm.analyticsservice.entity.SpendingModel;
+import com.pm.analyticsservice.forecast.SeasonalTrendModel;
 import com.pm.analyticsservice.repository.MonthlyCategoryRollupRepository;
+import com.pm.analyticsservice.repository.SpendingModelRepository;
 import com.pm.analyticsservice.service.AnalyticsService;
 import com.pm.analyticsservice.summarizer.CategoryFigure;
 import com.pm.analyticsservice.summarizer.FinancialSummary;
@@ -38,11 +41,14 @@ public class AnalyticsServiceImpl implements AnalyticsService {
     private static final int MONEY_SCALE = 2;
 
     private final MonthlyCategoryRollupRepository rollupRepository;
+    private final SpendingModelRepository spendingModelRepository;
     private final Summarizer summarizer;
 
     public AnalyticsServiceImpl(MonthlyCategoryRollupRepository rollupRepository,
+                                SpendingModelRepository spendingModelRepository,
                                 Summarizer summarizer) {
         this.rollupRepository = rollupRepository;
+        this.spendingModelRepository = spendingModelRepository;
         this.summarizer = summarizer;
     }
 
@@ -141,8 +147,63 @@ public class AnalyticsServiceImpl implements AnalyticsService {
                     .setScale(MONEY_SCALE, RoundingMode.HALF_UP);
         }
 
+        // A trained model only improves the part of the month that has NOT happened yet, so it
+        // is consulted only while days remain. A past month is already known, not forecast.
+        if (dayOfMonth > 0 && dayOfMonth < daysInMonth) {
+            ModelProjection modelled = projectWithModel(userId, currency, ym, dayOfMonth, daysInMonth, expenseToDate);
+            if (modelled != null) {
+                return new ForecastResponse(ym.toString(), currency,
+                        expenseToDate, dayOfMonth, daysInMonth, modelled.projected(), dailyAverage,
+                        "MODEL", modelled.low(), modelled.high());
+            }
+        }
+
         return new ForecastResponse(ym.toString(), currency,
-                expenseToDate, dayOfMonth, daysInMonth, projected, dailyAverage);
+                expenseToDate, dayOfMonth, daysInMonth, projected, dailyAverage,
+                "RUN_RATE", null, null);
+    }
+
+    /**
+     * Projects the rest of the month one day at a time from the user's fitted model, adding
+     * each predicted day to what has already been spent.
+     *
+     * @return {@code null} when no model has been trained for this user and currency, which is
+     *         the normal state on a young account — the caller then keeps the run rate
+     */
+    private ModelProjection projectWithModel(Long userId, String currency, YearMonth ym,
+                                             int dayOfMonth, int daysInMonth, BigDecimal expenseToDate) {
+        SpendingModel row = spendingModelRepository.findByUserIdAndCurrency(userId, currency).orElse(null);
+        if (row == null) {
+            return null;
+        }
+
+        SeasonalTrendModel model = row.toSeasonalTrendModel();
+        LocalDate trainedUpto = row.getTrainedUpto();
+        BigDecimal remaining = BigDecimal.ZERO;
+        double variance = 0.0;
+
+        for (int day = dayOfMonth + 1; day <= daysInMonth; day++) {
+            LocalDate date = ym.atDay(day);
+            // Horizon counts from the last day the model was trained on, not from today: a
+            // model that missed a night must extrapolate further, and saying so is the point.
+            int horizon = (int) (date.toEpochDay() - trainedUpto.toEpochDay());
+            if (horizon <= 0) {
+                continue;
+            }
+            double predicted = model.predict(horizon, date.getDayOfWeek().getValue() - 1);
+            remaining = remaining.add(BigDecimal.valueOf(predicted));
+            // Daily residuals are treated as independent, so the band over n days widens with
+            // sqrt(n) rather than n — summing sigma directly would overstate it badly.
+            variance += model.sigma() * model.sigma();
+        }
+
+        BigDecimal projected = expenseToDate.add(remaining).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+        BigDecimal band = BigDecimal.valueOf(Math.sqrt(variance)).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+        BigDecimal low = projected.subtract(band).max(expenseToDate).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+        return new ModelProjection(projected, low, projected.add(band).setScale(MONEY_SCALE, RoundingMode.HALF_UP));
+    }
+
+    private record ModelProjection(BigDecimal projected, BigDecimal low, BigDecimal high) {
     }
 
     @Override

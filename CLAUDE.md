@@ -133,7 +133,14 @@ An **event-driven microservice monorepo**, not a monolith. Users record transact
 over REST; an asynchronous Kafka backbone feeds a risk-intelligence service that derives alerts,
 insights, anomalies, and recurring charges. Each service owns its own database.
 
-The intelligence layer is **rule-based, deterministic thresholds — no ML, no prediction.**
+The **risk/insight/anomaly** layer in `risk-service` is **rule-based, deterministic thresholds —
+no ML, no prediction.** That invariant still holds there and should not be broken casually.
+
+The **spend forecast** in `analytics-service` is the one exception, added deliberately: a fitted
+per-user model (Holt trend + multiplicative weekly season, smoothing constants chosen by grid
+search, parameters persisted in `spending_model`, retrained nightly by `ModelTrainingScheduler`).
+It is still fully deterministic and inspectable — no library, no external service, no randomness —
+and it is **off by default** behind `FINSIGHT_FORECAST_MODEL_ENABLED`.
 
 Live in production at <https://vernfy.com> (single VPS, Docker Compose behind Caddy).
 
@@ -148,7 +155,7 @@ Authoritative docs — read these instead of re-deriving:
 - `docs/runbook.md` — startup, compose workflow, troubleshooting
 - `docs/deploy.md` — production deployment
 - `docs/security/jwt-key-rotation.md` — key rotation procedure
-- `docs/unit-testing/unit-testing-1.txt` — full test catalog (644 backend tests, 128 classes,
+- `docs/unit-testing/unit-testing-1.txt` — full test catalog (659 backend tests, 129 classes,
   plus the frontend Vitest suite and the Playwright journeys)
 
 ---

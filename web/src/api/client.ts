@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { purgeCachedData } from '../lib/sw'
 
 const ACCESS_KEY = 'finsight_token'
 const REFRESH_KEY = 'finsight_refresh'
@@ -14,6 +15,9 @@ export const tokenStore = {
   clear: () => {
     localStorage.removeItem(ACCESS_KEY)
     localStorage.removeItem(REFRESH_KEY)
+    // The offline cache holds this user's figures. Dropping it here rather than at each call site
+    // means every path out of a session — sign-out, a dead refresh token — is covered by one line.
+    purgeCachedData()
   },
 }
 

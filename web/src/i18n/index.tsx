@@ -34,6 +34,7 @@ const en: Dict = {
   'nav.menu': 'Menu',
   'nav.luckyme': 'LuckyMe',
   'footer.tagline': 'event-driven finance platform',
+  'offline.banner': 'You are offline. These figures are from the last time they loaded, and nothing can be saved until you reconnect.',
 
   'luckyme.title': 'LuckyMe',
   'luckyme.subtitle': 'Flip the coin and try your luck.',
@@ -403,6 +404,7 @@ const vi: Dict = {
   'nav.menu': 'Menu',
   'nav.luckyme': 'LuckyMe',
   'footer.tagline': 'nền tảng tài chính hướng sự kiện',
+  'offline.banner': 'Bạn đang ngoại tuyến. Các số liệu dưới đây là của lần tải gần nhất, và không lưu được gì cho tới khi có mạng lại.',
 
   'luckyme.title': 'LuckyMe',
   'luckyme.subtitle': 'Lật đồng xu và thử vận may của bạn.',
