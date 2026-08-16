@@ -1,5 +1,6 @@
 package com.pm.analyticsservice.entity;
 
+import com.pm.analyticsservice.forecast.BacktestResult;
 import com.pm.analyticsservice.forecast.SeasonalTrendModel;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -86,6 +87,19 @@ public class SpendingModel {
     @Column(name = "trained_at", nullable = false)
     private LocalDateTime trainedAt;
 
+    /**
+     * Holdout score, all three null together when the series was too short to validate.
+     * Null means "unproven", which is treated exactly like "lost" — see {@link #beatsRunRate()}.
+     */
+    @Column(name = "holdout_days")
+    private Integer holdoutDays;
+
+    @Column(name = "model_mae", precision = 18, scale = 6)
+    private BigDecimal modelMae;
+
+    @Column(name = "baseline_mae", precision = 18, scale = 6)
+    private BigDecimal baselineMae;
+
     /** Rebuilds the in-memory model this row was written from. */
     public SeasonalTrendModel toSeasonalTrendModel() {
         double[] dow = {
@@ -114,5 +128,28 @@ public class SpendingModel {
         this.sampleDays = model.sampleDays();
         this.trainedUpto = trainedUpto;
         this.trainedAt = now;
+    }
+
+    /** Records the latest holdout score, or clears it when the fit could not be validated. */
+    public void applyAccuracy(BacktestResult accuracy) {
+        if (accuracy == null) {
+            this.holdoutDays = null;
+            this.modelMae = null;
+            this.baselineMae = null;
+            return;
+        }
+        this.holdoutDays = accuracy.holdoutDays();
+        this.modelMae = BigDecimal.valueOf(accuracy.modelMae());
+        this.baselineMae = BigDecimal.valueOf(accuracy.baselineMae());
+    }
+
+    /**
+     * Whether this model earned the right to answer. An unvalidated model is not served: the
+     * question the forecast asks is "is this better than the run rate", and "unknown" is not
+     * a yes.
+     */
+    public boolean beatsRunRate() {
+        return modelMae != null && baselineMae != null
+                && BacktestResult.modelWins(modelMae.doubleValue(), baselineMae.doubleValue());
     }
 }

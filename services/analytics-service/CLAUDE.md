@@ -56,9 +56,19 @@ in-sample SSE. A user's weekday indices are blended toward the population's shap
 that decays as their own evidence grows, so a three-week-old account is not handed seven indices
 estimated from three observations each. `ModelTrainingScheduler` retrains nightly at 02:40, always
 up to **yesterday** (a partial day looks like a collapse in spending), **single instance**, gated
-on `finsight.forecast.model.enabled` — **off by default**. `/forecast` uses a model only while
-days remain in the month and only when one has been fitted; otherwise it returns the run-rate
-projection unchanged. The response's `method` field says which answered.
+on `finsight.forecast.model.enabled` — **off by default**.
+
+**Fitting and serving are separate decisions.** Every fit is scored by `HoldoutBacktest`: the last
+14 days (two whole weeks, so no weekday is over-weighted) are withheld, the model is refitted on
+what remains, and both it and the run rate predict those days blind. The two MAEs land in
+`spending_model.{model_mae, baseline_mae, holdout_days}` (**nullable — null means "not measured",
+which is treated as a loss**). The baseline averages only the trailing 28 days, because the run
+rate never looks further back than a month and beating a strawman is not evidence; the population
+prior used inside the backtest is refitted without the holdout too, or the score would be reading
+its own answer. `/forecast` serves a model only while days remain in the month, only when one has
+been fitted, **and only when `SpendingModel.beatsRunRate()`** — the model must beat the run rate by
+at least `BacktestResult.REQUIRED_IMPROVEMENT` (5%), so a tie goes to the simpler projection.
+Otherwise the run-rate projection answers unchanged. The response's `method` field says which did.
 
 Deliberately deferred: category-level models (the fit is per user + currency),
 auto-categorization, and a persisted AI-summary cache (summaries are computed on demand).

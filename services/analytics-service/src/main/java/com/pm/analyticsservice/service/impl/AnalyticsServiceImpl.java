@@ -167,13 +167,20 @@ public class AnalyticsServiceImpl implements AnalyticsService {
      * Projects the rest of the month one day at a time from the user's fitted model, adding
      * each predicted day to what has already been spent.
      *
-     * @return {@code null} when no model has been trained for this user and currency, which is
-     *         the normal state on a young account — the caller then keeps the run rate
+     * @return {@code null} when no model has been trained for this user and currency, or when
+     *         the one that exists did not beat the run rate on its holdout — both are the
+     *         normal state on a young account, and the caller then keeps the run rate
      */
     private ModelProjection projectWithModel(Long userId, String currency, YearMonth ym,
                                              int dayOfMonth, int daysInMonth, BigDecimal expenseToDate) {
         SpendingModel row = spendingModelRepository.findByUserIdAndCurrency(userId, currency).orElse(null);
         if (row == null) {
+            return null;
+        }
+        // A fitted model is not automatically a better answer. It is served only where the
+        // nightly holdout showed it predicting withheld days more accurately than the run rate
+        // it would replace; unmeasured or beaten, the simpler projection stands.
+        if (!row.beatsRunRate()) {
             return null;
         }
 

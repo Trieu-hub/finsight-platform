@@ -4,7 +4,10 @@ _Last updated: 2026-08-09 · Source of truth: `services/risk-service`._
 
 All four intelligence domains live in **risk-service**, derived from a single read-model
 (`observed_expenses`) fed by the `TransactionCreated` consumer — no ML, no prediction, no
-statistical models beyond simple counts/sums/averages. Each consumed transaction is recorded,
+statistical models beyond simple counts/sums/averages. That is a claim about **this document's
+subject only**: the platform's one fitted model is the spend forecast in `analytics-service`
+(`spending_model`, off by default, served only where a holdout backtest beats the run rate — see
+that service's README). Nothing below it feeds a risk rule, an insight, or an anomaly. Each consumed transaction is recorded,
 then the risk rules, behavioral insights, and the anomaly rule are evaluated in that order
 (`RiskEventConsumer.onTransactionCreated`).
 
