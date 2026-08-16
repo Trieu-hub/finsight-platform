@@ -5,6 +5,7 @@ import com.pm.analyticsservice.dto.ForecastResponse;
 import com.pm.analyticsservice.dto.OverviewResponse;
 import com.pm.analyticsservice.entity.MonthlyCategoryRollup;
 import com.pm.analyticsservice.entity.SpendingModel;
+import com.pm.analyticsservice.forecast.HoldoutBacktest;
 import com.pm.analyticsservice.repository.MonthlyCategoryRollupRepository;
 import com.pm.analyticsservice.repository.SpendingModelRepository;
 import com.pm.analyticsservice.service.impl.AnalyticsServiceImpl;
@@ -133,7 +134,52 @@ class AnalyticsServiceImplTest {
         assertThat(f.projectedLow()).isGreaterThanOrEqualTo(f.expenseToDate());
     }
 
-    /** A model with a flat week, so the arithmetic in the test above stays legible. */
+    @Test
+    void forecastKeepsTheRunRateWhenTheModelLostItsBacktest() {
+        YearMonth thisMonth = YearMonth.now();
+        assumeTrue(LocalDate.now().getDayOfMonth() < thisMonth.lengthOfMonth(),
+                "no days left in the month to project");
+
+        when(repo.findByUserIdAndYearMonth(42L, thisMonth.toString())).thenReturn(List.of(
+                rollup(thisMonth.toString(), 4L, "EXPENSE", "300.00", 5)));
+        // A model exists and is perfectly usable — it simply predicted the withheld days no
+        // better than the run rate did. Existing is not the same as being worth serving.
+        SpendingModel beaten = model(10.0, 2.0, LocalDate.now().minusDays(1));
+        beaten.setModelMae(new BigDecimal("40.000000"));
+        beaten.setBaselineMae(new BigDecimal("40.000000"));
+        when(modelRepo.findByUserIdAndCurrency(42L, "USD")).thenReturn(Optional.of(beaten));
+
+        ForecastResponse f = service.forecast(42L, thisMonth.getYear(), thisMonth.getMonthValue(), "USD");
+
+        assertThat(f.method()).isEqualTo("RUN_RATE");
+        assertThat(f.projectedLow()).isNull();
+    }
+
+    @Test
+    void forecastKeepsTheRunRateWhileAModelIsStillUnvalidated() {
+        YearMonth thisMonth = YearMonth.now();
+        assumeTrue(LocalDate.now().getDayOfMonth() < thisMonth.lengthOfMonth(),
+                "no days left in the month to project");
+
+        when(repo.findByUserIdAndYearMonth(42L, thisMonth.toString())).thenReturn(List.of(
+                rollup(thisMonth.toString(), 4L, "EXPENSE", "300.00", 5)));
+        // Too little history to withhold two weeks and still fit: the trainer wrote the model
+        // with no score. "Unknown" is not evidence of an improvement, so it is not served.
+        SpendingModel unscored = model(10.0, 2.0, LocalDate.now().minusDays(1));
+        unscored.setHoldoutDays(null);
+        unscored.setModelMae(null);
+        unscored.setBaselineMae(null);
+        when(modelRepo.findByUserIdAndCurrency(42L, "USD")).thenReturn(Optional.of(unscored));
+
+        ForecastResponse f = service.forecast(42L, thisMonth.getYear(), thisMonth.getMonthValue(), "USD");
+
+        assertThat(f.method()).isEqualTo("RUN_RATE");
+    }
+
+    /**
+     * A model with a flat week, so the arithmetic in the tests above stays legible, carrying a
+     * holdout score that clears the gate — an unscored model is never served.
+     */
     private SpendingModel model(double level, double sigma, LocalDate trainedUpto) {
         BigDecimal one = BigDecimal.ONE;
         return SpendingModel.builder()
@@ -148,6 +194,9 @@ class AnalyticsServiceImplTest {
                 .sampleDays(60)
                 .trainedUpto(trainedUpto)
                 .trainedAt(LocalDateTime.now())
+                .holdoutDays(HoldoutBacktest.HOLDOUT_DAYS)
+                .modelMae(new BigDecimal("20.000000"))
+                .baselineMae(new BigDecimal("50.000000"))
                 .build();
     }
 

@@ -9,12 +9,12 @@ dashboard, risk, notification, analytics) + frontend `web/` (mục 10).
 
 TỔNG QUAN CON SỐ
 --------------------------------------------------------------------------------
-- Tổng số test method (@Test / @ParameterizedTest):  659
-- Tổng số lớp test:                                  129 (+ vài lớp base/support)
+- Tổng số test method (@Test / @ParameterizedTest):  668
+- Tổng số lớp test:                                  131 (+ vài lớp base/support)
 - Trong đó:
-    * Unit / component test (chạy KHÔNG cần Docker):   457
+    * Unit / component test (chạy KHÔNG cần Docker):   466
     * Integration test (cần Docker – Testcontainers):  202 (62 lớp *IntegrationTest)
-- Frontend (Vitest, ngoài con số 659 ở trên):         128 test / 17 file
+- Frontend (Vitest, ngoài con số 668 ở trên):         130 test / 18 file
 - Frontend E2E (Playwright, cần stack đang chạy):       9 test / 4 file (mục 11)
 - Framework: JUnit 5 (Jupiter) + Mockito + AssertJ; frontend dùng Vitest +
   React Testing Library (jsdom) và Playwright cho E2E trình duyệt.
@@ -901,7 +901,7 @@ về mốc cứng — tức chính hợp đồng cold-start. Đã chứng minh 9
                        + mô hình dự báo chi tiêu đã huấn luyện)
 ================================================================================
 
-[UNIT] AnalyticsServiceImplTest — 6 test
+[UNIT] AnalyticsServiceImplTest — 8 test
    - overviewComputesTotalsSavingsRateAndExpenseChange
    - forecastForPastMonthProjectsToActual  (tháng đã xong ⇒ luôn RUN_RATE)
    - forecastFallsBackToTheRunRateWhenNoModelHasBeenTrained
@@ -910,6 +910,10 @@ về mốc cứng — tức chính hợp đồng cold-start. Đã chứng minh 9
      (mô hình phẳng 10/ngày ⇒ 300 + 10 × số ngày còn lại — con số run-rate KHÔNG thể tạo ra,
       vì nó sẽ nhân 300 theo tỷ lệ ngày đã trôi. `assumeTrue` bỏ qua vào ngày cuối tháng:
       lúc đó không còn ngày nào để dự báo nên run-rate mới là câu trả lời đúng)
+   - forecastKeepsTheRunRateWhenTheModelLostItsBacktest
+     (model_mae = baseline_mae ⇒ hoà, mà hoà thì thuộc về cách đơn giản hơn)
+   - forecastKeepsTheRunRateWhileAModelIsStillUnvalidated
+     (chưa đủ lịch sử để chấm điểm ⇒ 3 cột NULL; "chưa biết" không phải bằng chứng cải thiện)
    - categoriesComputeShareWithinType
    - summaryUsesTemplateAndIsNotAiGenerated
 
@@ -929,6 +933,23 @@ về mốc cứng — tức chính hợp đồng cold-start. Đã chứng minh 9
    - countsWeekdayObservations
    📌 `shrinkTowards` CHUẨN HOÁ kết quả về trung bình 1, nên vector kỳ vọng trong test phải
       sẵn trung bình 1 — lần đầu viết sai chỗ này và test đỏ, không phải code sai.
+
+[UNIT] HoldoutBacktestTest — 5 test  (số học thuần, KHÔNG cần Docker/Spring)
+   Chấm điểm mô hình trên 14 ngày nó CHƯA từng thấy, đối đầu trực tiếp với run-rate.
+   Các ca đáng giá là những ca mô hình THUA — một backtest chỉ biết gật đầu thì vô dụng.
+   - modelWinsOnSeasonalSpending  (chuỗi có hình dạng tuần thật ⇒ MAE mô hình < MAE run-rate)
+   - modelLosesWhenTheTrendBreaks  (học dốc lên rồi chi tiêu sụp ⇒ ngoại suy sai nặng hơn
+     đường phẳng; đây chính là ca mà cái gate sinh ra để chặn)
+   - aTieIsNotAWin  (chuỗi phẳng: cả hai đều đúng tuyệt đối ⇒ không phục vụ mô hình)
+   - trainingStopsAtTheSplit  (train phẳng 100, holdout nhảy 1000 ⇒ MAE > 800; nếu fit có
+     "nhìn trộm" holdout thì level đã kéo lên và điểm số sẽ đẹp giả tạo — test rò rỉ dữ liệu)
+   - refusesWhenThereIsNothingLeftToTrainOn  (cắt 14 ngày mà phần còn lại < 14 ⇒ null)
+
+[UNIT] SpendingModelTrainerTest — 2 test  (dây nối giữa fit, chấm điểm và lưu)
+   - writesTheAccuracyItMeasured  (holdout_days/model_mae/baseline_mae ghi cạnh đúng fit đã
+     sinh ra chúng, và fit đó học được cuối tuần đắt hơn)
+   - keepsFittingSeparateFromServing  (chuỗi phẳng vẫn được LƯU mô hình nhưng
+     `beatsRunRate()` = false — "fit được" và "đáng phục vụ" là hai quyết định khác nhau)
 
 [UNIT] RollupServiceTest — 6 test  (dựng read-model từ TransactionCreated)
    - createsNewRollupForFirstEventInSlot
@@ -1141,6 +1162,15 @@ của form; chỉ mock lời gọi mạng)
      (hồi quy: đổi type lúc category chưa về thì ô category rỗng, mà value rỗng
       không khớp <option> nào nên trình duyệt VẪN hiển thị option đầu — form trông
       như đã điền nhưng post categoryId 0 và API từ chối)
+
+[COMPONENT] src/pages/Analytics.test.tsx — 2 test  (trang phải nói RÕ con số dự báo
+đến từ đâu; chỉ mock lời gọi mạng)
+   - says the run rate answered, and shows no band it does not have
+     (run-rate không có ước lượng sai số ⇒ bịa ra một khoảng là nói dối)
+   - says the model answered, and shows the band it reported
+     (hồi quy: chú thích trước đây LUÔN là "at the current pace" — kể cả với con số mà
+      tốc độ hiện tại không hề tạo ra. Đã chứng minh test có răng: bỏ điều kiện đi thì
+      đúng test này đỏ)
 
 [UNIT] src/pwa.test.ts — 6 test  (cài đặt được như app: manifest + icon + index.html)
    - is named .json, the only extension nginx has a MIME type for

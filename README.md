@@ -274,7 +274,9 @@ stay in the backend.
   period), Budgets (utilization bars,
   showing the current period's budgets by default with a toggle to reveal expired ones, and an
   instant popup the moment a new expense pushes its budget over the limit), Wallets (accounts with
-  live balances, create / delete), Analytics (month-over-month overview, spend forecast, top movers,
+  live balances, create / delete), Analytics (month-over-month overview, spend forecast — badged
+  with which projection answered, the trained model or the current pace, and carrying the model's
+  own confidence band when it did — top movers,
   category breakdown, and an AI/template monthly summary — served by analytics-service), Import
   (bring a bank statement in from a CSV), Admin console (RBAC user management, ROLE_ADMIN only).
 - **Statement import**: upload a CSV, say which column is the date, the amount and the description,
@@ -484,7 +486,11 @@ These are **absent from the codebase** — do not assume they exist:
   weekly season, chooses its smoothing constants by minimising in-sample error, persists the
   parameters in `spending_model`, and predicts the remaining days of the month one at a time, so a
   month ending on a weekend projects higher than one ending mid-week. A young account borrows the
-  population's weekly shape and is handed its own as its evidence accumulates. Still absent:
+  population's weekly shape and is handed its own as its evidence accumulates. Each nightly fit is
+  then **validated on a 14-day holdout** it never saw and scored against the run-rate projection it
+  would replace; the model answers a request only where it won by a margin, so "a model exists" and
+  "a model is used" are separate facts and a fit that would have made the forecast worse is kept
+  out of the API rather than shipped because it is newer. Still absent:
   **category-level personalisation** (the model is fitted per user and currency, not per category),
   and any model behind the risk/insight/anomaly rules. Off by default
   (`FINSIGHT_FORECAST_MODEL_ENABLED`); with the flag off the forecast is the run-rate projection it

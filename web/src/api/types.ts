@@ -146,6 +146,12 @@ export interface SpendForecast {
   daysInMonth: number
   projectedExpense: number
   dailyAverage: number
+  // Which projection answered. MODEL only where a trained model beat the run rate on its
+  // holdout, so most accounts see RUN_RATE — the band is null under it, having no error
+  // estimate to report.
+  method: 'RUN_RATE' | 'MODEL'
+  projectedLow: number | null
+  projectedHigh: number | null
 }
 
 export interface MonthlySummary {

@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,6 +31,10 @@ import java.util.UUID;
  * isolation would give a three-week-old account seven indices estimated from three
  * observations each — numbers that look personalised and are mostly noise. Pooling starts
  * them on the crowd's Saturday and hands the account its own as it earns it.
+ *
+ * <p>Every fit is then scored by {@link HoldoutBacktest} and the score is persisted with it.
+ * Fitting and serving are separate decisions: this class writes a model for anyone with enough
+ * history, and the forecast serves it only where the holdout says it beats the run rate.
  */
 @Service
 public class SpendingModelTrainer {
@@ -65,10 +70,18 @@ public class SpendingModelTrainer {
             return 0;
         }
 
-        double[] population = populationIndices(series, from, trainedUpto);
         int firstDow = dayOfWeekIndex(from);
+        double[] crowd = populationSeries(series, from, trainedUpto);
+        double[] population = indicesOf(crowd, firstDow);
+        // The prior the backtest blends with must not have seen the holdout either: a
+        // population shape fitted over the whole window carries the answer to the days the
+        // model is about to be scored on, and the score would flatter it.
+        double[] backtestPopulation = indicesOf(
+                Arrays.copyOf(crowd, Math.max(0, crowd.length - HoldoutBacktest.HOLDOUT_DAYS)), firstDow);
+
         LocalDateTime now = LocalDateTime.now();
         int written = 0;
+        int validated = 0;
 
         for (Object[] row : series) {
             Long userId = (Long) row[0];
@@ -88,21 +101,25 @@ public class SpendingModelTrainer {
             SeasonalTrendModel pooled = new SeasonalTrendModel(
                     fitted.level(), fitted.trend(), blended, fitted.sigma(), fitted.sampleDays());
 
-            persist(userId, currency, pooled, trainedUpto, now);
+            // Scored on the same series, but fitted again without its last two weeks: the model
+            // persisted above is trained on everything, and a model cannot be scored on days it
+            // has already seen.
+            BacktestResult accuracy = HoldoutBacktest.evaluate(daily, firstDow, backtestPopulation);
+
+            persist(userId, currency, pooled, accuracy, trainedUpto, now);
             written++;
+            if (accuracy != null && accuracy.modelWins()) {
+                validated++;
+            }
         }
 
-        log.info("Spending model training: fitted {} of {} series over {}..{}",
-                written, series.size(), from, trainedUpto);
+        log.info("Spending model training: fitted {} of {} series over {}..{}, {} beat the run rate on holdout",
+                written, series.size(), from, trainedUpto, validated);
         return written;
     }
 
-    /**
-     * The crowd's weekly shape: everyone's daily spend summed into one series and fitted once.
-     * Falls back to a flat week when there is not yet enough data platform-wide, which makes
-     * the blend a no-op rather than dragging every user toward a noisy prior.
-     */
-    private double[] populationIndices(List<Object[]> series, LocalDate from, LocalDate to) {
+    /** Everyone's daily spend summed into one series — the crowd, as a single account. */
+    private double[] populationSeries(List<Object[]> series, LocalDate from, LocalDate to) {
         int days = (int) (to.toEpochDay() - from.toEpochDay()) + 1;
         double[] pooled = new double[days];
         for (Object[] row : series) {
@@ -111,11 +128,19 @@ public class SpendingModelTrainer {
                 pooled[i] += daily[i];
             }
         }
+        return pooled;
+    }
 
-        SeasonalTrendModel model = SeasonalTrendTrainer.fit(pooled, dayOfWeekIndex(from));
+    /**
+     * The weekly shape of a series. Falls back to a flat week when there is not yet enough
+     * data to fit one, which makes the blend a no-op rather than dragging every user toward a
+     * noisy prior.
+     */
+    private double[] indicesOf(double[] series, int firstDow) {
+        SeasonalTrendModel model = SeasonalTrendTrainer.fit(series, firstDow);
         if (model == null) {
             double[] flat = new double[SeasonalTrendModel.WEEK];
-            java.util.Arrays.fill(flat, 1.0);
+            Arrays.fill(flat, 1.0);
             return flat;
         }
         return model.dowIndex();
@@ -145,7 +170,7 @@ public class SpendingModelTrainer {
     }
 
     private void persist(Long userId, String currency, SeasonalTrendModel model,
-                         LocalDate trainedUpto, LocalDateTime now) {
+                         BacktestResult accuracy, LocalDate trainedUpto, LocalDateTime now) {
         Optional<SpendingModel> existing = modelRepository.findByUserIdAndCurrency(userId, currency);
         SpendingModel row = existing.orElseGet(() -> SpendingModel.builder()
                 .id(UUID.randomUUID())
@@ -153,6 +178,9 @@ public class SpendingModelTrainer {
                 .currency(currency)
                 .build());
         row.apply(model, trainedUpto, now);
+        // Always written, including the null that clears a stale score: a row whose fit was
+        // just replaced must not keep the previous fit's evidence.
+        row.applyAccuracy(accuracy);
         modelRepository.save(row);
     }
 

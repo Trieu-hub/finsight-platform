@@ -135,11 +135,35 @@ export default function Analytics() {
         {/* Spend forecast */}
         {forecast && (
           <section data-tour="analytics-forecast" className="rounded-2xl border border-neutral-800 bg-neutral-900 p-5">
-            <h2 className="text-sm font-medium text-neutral-300">{t('an.forecast')}</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-medium text-neutral-300">{t('an.forecast')}</h2>
+              {/* Which projection answered. Same chip as the summary's AI/rule-based badge:
+                  the two numbers are not interchangeable, so the page says which one this is. */}
+              <span
+                className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                  forecast.method === 'MODEL'
+                    ? 'bg-emerald-500/15 text-emerald-300'
+                    : 'bg-neutral-700/50 text-neutral-300'
+                }`}
+              >
+                {forecast.method === 'MODEL' ? t('an.forecastModel') : t('an.forecastRunRate')}
+              </span>
+            </div>
             <p className="mt-3 text-3xl font-semibold text-neutral-100">
               {money(forecast.projectedExpense, currency)}
             </p>
-            <p className="mt-1 text-xs text-neutral-400">{t('an.forecastHint')}</p>
+            <p className="mt-1 text-xs text-neutral-400">
+              {forecast.method === 'MODEL' ? t('an.forecastHintModel') : t('an.forecastHint')}
+            </p>
+            {/* Only the model carries an error estimate; the run rate has none to show. */}
+            {forecast.projectedLow !== null && forecast.projectedHigh !== null && (
+              <p className="mt-1 text-xs text-neutral-500">
+                {t('an.forecastRange', {
+                  low: money(forecast.projectedLow, currency),
+                  high: money(forecast.projectedHigh, currency),
+                })}
+              </p>
+            )}
 
             <div className="mt-4">
               <div className="mb-1 flex justify-between text-xs text-neutral-400">

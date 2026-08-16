@@ -140,7 +140,10 @@ The **spend forecast** in `analytics-service` is the one exception, added delibe
 per-user model (Holt trend + multiplicative weekly season, smoothing constants chosen by grid
 search, parameters persisted in `spending_model`, retrained nightly by `ModelTrainingScheduler`).
 It is still fully deterministic and inspectable — no library, no external service, no randomness —
-and it is **off by default** behind `FINSIGHT_FORECAST_MODEL_ENABLED`.
+and it is **off by default** behind `FINSIGHT_FORECAST_MODEL_ENABLED`. A fit is only *served* once
+a 14-day holdout backtest shows it beating the run-rate projection it would replace (scores in
+`spending_model.{model_mae, baseline_mae}`); unmeasured or beaten, `/forecast` answers from the run
+rate. Do not remove that gate to "make the model show up".
 
 Live in production at <https://vernfy.com> (single VPS, Docker Compose behind Caddy).
 
