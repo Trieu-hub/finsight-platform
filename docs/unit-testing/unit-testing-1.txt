@@ -9,12 +9,12 @@ dashboard, risk, notification, analytics) + frontend `web/` (mục 10).
 
 TỔNG QUAN CON SỐ
 --------------------------------------------------------------------------------
-- Tổng số test method (@Test / @ParameterizedTest):  668
-- Tổng số lớp test:                                  131 (+ vài lớp base/support)
+- Tổng số test method (@Test / @ParameterizedTest):  679
+- Tổng số lớp test:                                  135 (+ vài lớp base/support)
 - Trong đó:
-    * Unit / component test (chạy KHÔNG cần Docker):   466
-    * Integration test (cần Docker – Testcontainers):  202 (62 lớp *IntegrationTest)
-- Frontend (Vitest, ngoài con số 668 ở trên):         130 test / 18 file
+    * Unit / component test (chạy KHÔNG cần Docker):   472
+    * Integration test (cần Docker – Testcontainers):  207 (64 lớp *IntegrationTest)
+- Frontend (Vitest, ngoài con số 679 ở trên):         130 test / 18 file
 - Frontend E2E (Playwright, cần stack đang chạy):       9 test / 4 file (mục 11)
 - Framework: JUnit 5 (Jupiter) + Mockito + AssertJ; frontend dùng Vitest +
   React Testing Library (jsdom) và Playwright cho E2E trình duyệt.
@@ -945,6 +945,21 @@ về mốc cứng — tức chính hợp đồng cold-start. Đã chứng minh 9
      "nhìn trộm" holdout thì level đã kéo lên và điểm số sẽ đẹp giả tạo — test rò rỉ dữ liệu)
    - refusesWhenThereIsNothingLeftToTrainOn  (cắt 14 ngày mà phần còn lại < 14 ⇒ null)
 
+[UNIT] ForecastModelMetricsTest — 4 test  (đo mô hình bằng dữ liệu thật, không phải bằng log)
+   - reportsEachOutcome  (10 mô hình = 3 serving + 2 unvalidated + 5 beaten; `beaten` là suy ra
+     nên 3 nhóm luôn cộng đúng tổng)
+   - usesTheServingThreshold  (bắt tận tay tham số margin gửi xuống repository = 1 −
+     REQUIRED_IMPROVEMENT; gauge đếm "thắng" theo luật KHÁC luật phục vụ thì còn tệ hơn không có)
+   - reportsNaNBeforeAnythingIsScored  (chưa chấm điểm ⇒ NaN, không phải 0 — 0 sẽ vẽ thành
+     "mô hình chính xác vô hạn", đúng ngược ý nghĩa)
+   - survivesARepositoryFailure  (DB chết ⇒ giữ giá trị cũ, không ném; metric không được phép là
+     lý do một sweep hay một lần khởi động thất bại)
+
+[UNIT] ModelTrainingSchedulerTest — 2 test  (sweep hằng đêm)
+   - trainsAndRefreshes  (huấn luyện tới HÔM QUA + đọc lại gauge sau sweep)
+   - survivesAFailedSweep  (sweep lỗi ⇒ đếm vào counter, KHÔNG ném ra — ném thì chết luôn thread
+     scheduler và không còn lần retry nào; và không refresh gauge vì chẳng có gì được ghi)
+
 [UNIT] SpendingModelTrainerTest — 2 test  (dây nối giữa fit, chấm điểm và lưu)
    - writesTheAccuracyItMeasured  (holdout_days/model_mae/baseline_mae ghi cạnh đúng fit đã
      sinh ra chúng, và fit đó học được cuối tuần đắt hơn)
@@ -992,6 +1007,24 @@ về mốc cứng — tức chính hợp đồng cold-start. Đã chứng minh 9
      đã gửi thì không rút lại được)
    - findsEachUserWithActivityInTheMonthOnce (truy vấn duy nhất trong service cắt ngang
      nhiều user — nó là job theo lịch, không có JWT nào để scope theo)
+
+[INTEGRATION] SpendingModelAccuracyIntegrationTest — 3 test  (MySQL thật — mock repository chỉ
+   chứng minh số học trong Java, KHÔNG chứng minh JPQL chạy được, cũng không nói gì về cách
+   NULL và phép so `model_mae < baseline_mae * 0.95` hành xử trong DB)
+   - countsWinnersLosersAndUnscored  (4 dòng: thắng đậm / hơn 4% (THUA vì dưới margin 5%) /
+     thua / chưa chấm. Cái 4% cố ý đặt sát biên — đây là chỗ cả cái gate xoay quanh)
+   - averagesTheErrorRatio  (chỉ tính trên dòng đã chấm điểm)
+   - returnsNullWithoutScores  (null chứ không phải 0 ⇒ gauge ra NaN ⇒ panel để trống, thay vì
+     khoe "mô hình không có sai số")
+
+[INTEGRATION] ForecastModelMetricsIntegrationTest — 2 test  (gauge có THẬT lúc runtime không)
+   Mọi thứ ở metric này đều có điều kiện: bean chỉ tồn tại khi bật cờ, giá trị seed từ
+   `ApplicationReadyEvent`, tên meter là chuỗi ký tự — cả ba đều hỏng âm thầm được và để lại
+   một dashboard trống mà không ai biết vì sao. Test bật cờ, khởi động context thật rồi đọc
+   ngược registry.
+   - registersTheGauges  (3 outcome + error ratio; đồng thời chứng minh gauge
+     `finsight.analytics.forecast.models` và counter `…models.trained` cùng tồn tại được)
+   - countsWhatIsInTheTable  (ghi 3 dòng thật → refresh → 1/1/1)
 
 
 ================================================================================

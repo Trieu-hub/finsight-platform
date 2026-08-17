@@ -116,5 +116,16 @@ Exposed at `/actuator/prometheus`:
 - `finsight.analytics.applied` / `duplicate` / `ignored` / `failed` — consumer outcomes.
 - `finsight.analytics.ai.success` / `fallback` — LLM summary vs template fallback.
 - `finsight.analytics.forecast.models.trained` / `training.failed` — nightly training sweep
-  (only registered when the forecast model is enabled). How many of those fits actually beat the
-  run rate on their holdout is logged by the sweep, not counted here.
+  (only registered when the forecast model is enabled).
+- `finsight.analytics.forecast.models{outcome="serving|beaten|unvalidated"}` — every fitted model
+  split by whether its holdout beat the run rate (`serving`), lost to it (`beaten`), or could not
+  be scored for lack of history (`unvalidated`). The three sum to the table.
+- `finsight.analytics.forecast.model.error.ratio` — mean `model_mae / baseline_mae` across scored
+  fits: **how much** better, not just how often. Below 1.0 is an improvement; NaN until something
+  has been scored.
+
+  These four are the answer to "is the model actually worth serving in production?", which the
+  holdout can only answer per user. `ForecastModelMetrics` refreshes them at startup and after
+  each nightly sweep — **not on every scrape**, since the numbers cannot move in between and a
+  gauge should not put a COUNT query behind an unauthenticated actuator endpoint 5,760 times a
+  day. Dashboard: **FinSight Forecast Model** (`docker/grafana/provisioning/dashboards/`).

@@ -186,9 +186,13 @@ Open <http://localhost:3000> (anonymous admin in the dev stack — no login).
   - **FinSight Event Pipeline** — budget consumer processed / duplicate / ignored / failed.
   - **FinSight Risk** — detected risks by type and severity.
   - **FinSight Consumer Lag** — Kafka consumer lag by service / group / partition (see §6).
+  - **FinSight Forecast Model** — fitted spend models split into served / beaten / unscored, plus
+    their mean error against the run rate.
 
 If a panel is empty, the underlying metric simply hasn't been produced yet — generate activity
-(create transactions/budgets) and re-check.
+(create transactions/budgets) and re-check. **FinSight Forecast Model is the exception**: its
+gauges are not registered at all unless `FINSIGHT_FORECAST_MODEL_ENABLED=true`, and even then they
+only take a value after the 02:40 training sweep (or a restart) — activity alone will not fill it.
 
 ### 5.1 Log aggregation (Loki)
 

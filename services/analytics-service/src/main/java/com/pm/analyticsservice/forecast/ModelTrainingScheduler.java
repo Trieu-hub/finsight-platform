@@ -34,11 +34,15 @@ public class ModelTrainingScheduler {
     private static final Logger log = LoggerFactory.getLogger(ModelTrainingScheduler.class);
 
     private final SpendingModelTrainer trainer;
+    private final ForecastModelMetrics metrics;
     private final Counter trainedCounter;
     private final Counter failedCounter;
 
-    public ModelTrainingScheduler(SpendingModelTrainer trainer, MeterRegistry meterRegistry) {
+    public ModelTrainingScheduler(SpendingModelTrainer trainer,
+                                  ForecastModelMetrics metrics,
+                                  MeterRegistry meterRegistry) {
         this.trainer = trainer;
+        this.metrics = metrics;
         this.trainedCounter = Counter.builder("finsight.analytics.forecast.models.trained")
                 .description("Spending models fitted and persisted")
                 .register(meterRegistry);
@@ -54,6 +58,9 @@ public class ModelTrainingScheduler {
         try {
             int written = trainer.trainAll(trainedUpto);
             trainedCounter.increment(written);
+            // The sweep is the only thing that changes what the gauges measure, so this is the
+            // one moment they need re-reading.
+            metrics.refresh();
         } catch (Exception ex) {
             // A failed sweep must not kill the scheduler thread: the models simply stay at
             // yesterday's fit and the next run retries.
