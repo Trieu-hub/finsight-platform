@@ -1,6 +1,6 @@
 # FinSight — Architecture
 
-_Last updated: 2026-06-14 · Source of truth: the code under `services/` and `docker-compose.yml`._
+_Last updated: 2026-08-17 · Source of truth: the code under `services/` and `docker-compose.yml`._
 
 FinSight is a Spring Boot 4 / Java 21 microservice monorepo. Each service owns its own
 database and never calls another business service at runtime — the only synchronous fan-out
@@ -23,10 +23,13 @@ explicitly under [Not yet built](#not-yet-built).
 | `dashboard-service` | 8085 | _(none, BFF)_ | HTTP | Read-only aggregation over user/transaction/budget; relays the caller's JWT; fail-fast |
 | `risk-service` | 8086 | `risk_db` | Kafka | Risk rules, behavioral insights, anomaly detection, recurring charges; **consumes** `TransactionCreated` + `BudgetChanged`, **produces** `RiskDetected`; read APIs for risks/insights/anomalies/recurring |
 | `notification-service` | 8087 | `notification_db` | HTTP, Kafka | In-app notifications; **consumes** `RiskDetected` + `BudgetExceeded` + `MonthlyReportReady`, idempotency inbox; user-scoped read/mark-read API; delivery channels (SSE, web push, email, signed webhook) with per-user digest batching |
+| `analytics-service` | 8088 | `analytics_db` | HTTP, Kafka | Monthly + daily **rollup read model**; **consumes** `TransactionCreated`, **produces** `MonthlyReportReady`; overview / categories / forecast / summary APIs; optional LLM monthly summary and an optional nightly-trained **spend forecast model** (both off by default) |
 
-Shared infrastructure (not application services): a single **MySQL 8** instance hosting six
+Shared infrastructure (not application services): a single **MySQL 8** instance hosting seven
 logical databases, **Redis** (used only by auth-service), a single-node **Kafka** (KRaft)
-broker, **Prometheus**, and **Grafana**.
+broker, and the observability stack — **Prometheus**, **Alertmanager**, **Grafana**, **Tempo**
+(traces) and **Loki** + **Promtail** (logs), all behind the `monitoring` compose profile so the
+application stack can be started without them.
 
 **Design rules enforced in code:**
 - No runtime cross-service calls between business services. Only `dashboard-service` calls
@@ -39,7 +42,7 @@ broker, **Prometheus**, and **Grafana**.
 
 ### Risk-service API visibility (no OpenAPI/Swagger — by design)
 
-The six user-facing services ship springdoc/OpenAPI; **risk-service deliberately does not**, and
+The seven user-facing services ship springdoc/OpenAPI; **risk-service deliberately does not**, and
 its read endpoints are documented here and in [intelligence.md](intelligence.md) instead of via a
 live `/v3/api-docs`:
 
@@ -48,13 +51,14 @@ live `/v3/api-docs`:
 | `GET /api/v1/risks`, `GET /api/v1/risks/{id}` | persisted risk alerts |
 | `GET /api/v1/insights` | generated behavioral insights |
 | `GET /api/v1/anomalies` | detected anomalies |
+| `GET /api/v1/recurring` | detected recurring charge series |
 
 Why doc-only rather than adding springdoc:
 - **It is not a public/product API.** risk-service is internal — no JWT stack, not behind the
   gateway, not host-published. An OpenAPI/Swagger surface would primarily widen the unauthenticated
   attack surface (the springdoc UI/`api-docs` paths are permit-listed on the other services) for an
   admin/debug read API with no external consumers.
-- **Low churn, fully covered.** The three endpoints are stable, read-only list/get shapes already
+- **Low churn, fully covered.** The four endpoints are stable, read-only list/get shapes already
   specified in [event-catalog.md](event-catalog.md) (record fields) and [intelligence.md](intelligence.md)
   (semantics), so a generated spec would add a dependency and a permit-list entry without new value.
 - If risk-service is ever fronted by the gateway for external consumers, add springdoc then (same
@@ -70,6 +74,8 @@ graph TB
   bud[budget-service :8084]
   dash[dashboard-service :8085]
   risk[risk-service :8086]
+  notif[notification-service :8087]
+  an[analytics-service :8088]
 
   client -->|HTTPS + Bearer JWT| gw
   gw --> auth
@@ -77,16 +83,24 @@ graph TB
   gw --> tx
   gw --> bud
   gw --> dash
+  gw --> notif
+  gw --> an
   dash -.->|REST + relayed JWT| user
   dash -.->|REST + relayed JWT| tx
   dash -.->|REST + relayed JWT| bud
 
   tx ==>|TransactionCreated| K{{Kafka}}
   bud ==>|BudgetChanged| K
+  bud ==>|BudgetExceeded| K
   K ==>|TransactionCreated| bud
   K ==>|TransactionCreated| risk
+  K ==>|TransactionCreated| an
   K ==>|BudgetChanged| risk
+  K ==>|BudgetExceeded| notif
   risk ==>|RiskDetected| K
+  K ==>|RiskDetected| notif
+  an ==>|MonthlyReportReady| K
+  K ==>|MonthlyReportReady| notif
 
   classDef infra fill:#eee,stroke:#999;
   class K infra
@@ -106,10 +120,11 @@ One MySQL 8 instance, one logical database per owning service (DB-per-service is
 |---|---|---|
 | `auth_db` | auth-service | users, roles, refresh-token records |
 | `user_db` | user-service | user_profiles |
-| `transaction_db` | transaction-service | transactions, categories |
+| `transaction_db` | transaction-service | transactions, categories, `wallets`, `outbox` (transactional outbox, incl. `correlation_id`) |
 | `budget_db` | budget-service | budgets (incl. `spent_amount`), `processed_events` (idempotency inbox) |
 | `risk_db` | risk-service | `risk_alerts`, `observed_expenses`, `insights`, `budget_snapshots`, `anomalies`, `recurring_series` |
 | `notification_db` | notification-service | `notifications`, `processed_events` (idempotency inbox), `push_subscriptions`, `notification_preferences` (email/webhook destination + digest mode) |
+| `analytics_db` | analytics-service | `monthly_category_rollup`, `daily_category_rollup` (the day-grained series the forecast learns from), `spending_model` (fitted parameters + holdout score), `processed_events` (idempotency inbox), `monthly_report_sent` (producer-side dedup) |
 
 `dashboard-service` owns **no** database — it composes other services' data on read.
 **Redis** backs only auth-service (refresh tokens + brute-force lockout counters).
@@ -163,11 +178,27 @@ can be repointed afterwards. Redirects are not followed, because a 302 is the ch
 in an address the validator never saw. Payloads are signed `X-Vernfy-Signature: t=…,v1=…`
 (HMAC-SHA256 over `"<t>.<body>"`, the Stripe/GitHub scheme) with a per-user secret shown once.
 
-**Delivery semantics:** at-least-once. Producers publish `@TransactionalEventListener(AFTER_COMMIT)`
-(only after the DB commit; a failed send is logged, not rethrown — the accepted dual-write gap,
-see [ADR-0004](ADR-0004-budget-utilization-via-events.md)). Consumers are made idempotent:
-budget-service via a `processed_events` inbox; risk-service by keying rows on source ids
-(the transaction event id for `observed_expenses`/`anomalies`; the budget id for `budget_snapshots`).
+**Delivery semantics:** at-least-once, but **not by the same mechanism everywhere**:
+
+- **transaction-service publishes through a transactional outbox.** `@TransactionalEventListener(BEFORE_COMMIT)`
+  hands the event to `OutboxWriter`, which inserts a row in the *same* transaction as the
+  transaction itself, and the scheduled `OutboxRelay` (**single-instance**) publishes it
+  afterwards. Either both the row and the event happen or neither does — `TransactionCreated`
+  is the event every downstream read model is built from, so it is the one that could not keep
+  the dual-write gap.
+- **budget-service and risk-service still publish directly**, `@TransactionalEventListener(AFTER_COMMIT)`:
+  only after the DB commit, and a failed send is logged rather than rethrown. That is the
+  accepted dual-write gap — see [ADR-0004](ADR-0004-budget-utilization-via-events.md).
+- **Two producers are schedulers, not event handlers**, because the thing they announce is an
+  absence no service publishes: risk-service's `RecurringSweeper` (a recurring charge that never
+  arrived) and analytics-service's `MonthlyReportScheduler` (the month is over). Both are
+  single-instance, and neither carries a correlation id — there is no request behind them.
+
+Consumers are made idempotent: budget-service, notification-service and analytics-service each via
+a `processed_events` inbox row written in the same transaction as the effect; risk-service by
+keying rows on source ids (the transaction event id for `observed_expenses`/`anomalies`; the budget
+id for `budget_snapshots`); analytics-service's monthly report additionally deduped producer-side
+(`monthly_report_sent`), since a finished month has no upstream event id to key on.
 
 ---
 
@@ -177,13 +208,22 @@ Every Spring Boot service exposes Micrometer metrics at `/actuator/prometheus` (
 unauthenticated — acceptable for the local stack only) and liveness/readiness probes at
 `/actuator/health/{liveness,readiness}`.
 
-- **Prometheus** (`:9090`) scrapes all eight services every 15s (static compose-DNS targets in
-  `docker/prometheus/prometheus.yml`).
+- **Prometheus** (`:9090`) scrapes all **nine** services every 15s (static compose-DNS targets in
+  `docker/prometheus/prometheus.yml`), plus itself and Alertmanager.
+- **Alert rules** live in `docker/prometheus/alerts.yml`: `ServiceDown`, `HighHttpErrorRate`,
+  `HighJvmHeapUsage`, `CircuitBreakerOpen`, `KafkaConsumerLagHigh`. **Alertmanager** (`:9093`)
+  routes firing alerts; in production the receiver is **Telegram**, with the bot token injected
+  from SOPS at launch into a tmpfs file rather than baked into the config.
 - **Grafana** (`:3000`, anonymous admin in the dev stack) auto-provisions the Prometheus
-  datasource and three dashboards from `docker/grafana/provisioning/`:
+  datasource and four dashboards from `docker/grafana/provisioning/`:
   - **FinSight Platform Overview** — request rate, 5xx rate, p95 latency, JVM heap, GC, CPU.
   - **FinSight Event Pipeline** — budget consumer `processed`/`duplicate`/`ignored`/`failed`.
   - **FinSight Risk** — detected risks by type and severity.
+  - **FinSight Consumer Lag** — Kafka consumer lag per group.
+- **Tempo** receives traces over **OTLP**, and **Loki** + **Promtail** collect the container logs
+  Grafana searches. Tracing is wired in every service but **sampled at 0 by default**
+  (`TRACING_SAMPLING_PROBABILITY`): the spans cost something to produce and nothing is watching
+  them unless the `monitoring` profile is up, so it is opt-in rather than always-on.
 
 Structured logging: native Boot 4 ECS JSON on stdout, toggled by
 `LOGGING_STRUCTURED_FORMAT_CONSOLE=ecs` (set in compose for **all nine** services);
@@ -208,11 +248,20 @@ than an unlabelled line. Net effect: `HTTP write → transaction → risk → no
 graph LR
   subgraph services
     a[api-gateway] ; b[auth] ; c[user] ; d[transaction] ; e[budget] ; f[dashboard] ; g[risk]
+    h[notification] ; i[analytics]
   end
   P[(Prometheus :9090)]
+  A[Alertmanager :9093]
+  T[(Tempo)]
+  L[(Loki)]
   G[Grafana :3000]
-  a & b & c & d & e & f & g -->|/actuator/prometheus| P
+  a & b & c & d & e & f & g & h & i -->|/actuator/prometheus| P
+  a & b & c & d & e & f & g & h & i -.->|OTLP traces, sampled 0 by default| T
+  a & b & c & d & e & f & g & h & i -.->|stdout ECS JSON via Promtail| L
+  P --> A
   P --> G
+  T --> G
+  L --> G
 ```
 
 ---
@@ -268,14 +317,17 @@ sequenceDiagram
   participant K as Kafka
   participant B as budget-service
   participant R as risk-service
+  participant A as analytics-service
 
-  T->>T: persist transaction (commit)
-  T->>K: TransactionCreated (key=userId) [AFTER_COMMIT]
+  T->>T: persist transaction + outbox row (one commit)
+  T->>K: TransactionCreated (key=userId) [OutboxRelay]
   K->>B: TransactionCreated
   B->>B: idempotency inbox → atomic spent_amount increment (EXPENSE only)
   K->>R: TransactionCreated
   R->>R: record observed_expense → risk rules, insights, anomaly (EXPENSE/INCOME)
   R-->>K: RiskDetected (only if a rule fires)
+  K->>A: TransactionCreated
+  A->>A: idempotency inbox → monthly + daily rollup upsert (same transaction)
 
   Note over B,R: budget-service also emits BudgetChanged on create/update/delete
   B->>K: BudgetChanged (key=userId)
@@ -290,6 +342,10 @@ What each consumer does with `TransactionCreated`:
   engine; INCOME via the insight service), then evaluates the risk rules (recurring-charge
   detection included), behavioral insights, and the anomaly rule. See
   [intelligence.md](intelligence.md).
+- **analytics-service** — folds the amount into **both** the monthly rollup slot and the daily
+  one, in the same transaction as its inbox row. The day-grained series exists because a month
+  total cannot be taken apart into days afterwards, and the weekly spending pattern the forecast
+  model learns lives entirely in that detail.
 
 ---
 
@@ -299,7 +355,19 @@ These are **absent from the codebase** and must not be implied as present:
 
 - **Full gRPC migration** — gRPC *is* present as one representative internal call (dashboard→
   user-service, via Spring gRPC); the other internal calls (transaction/budget) are still REST.
-- **Edge rate limiting**, **distributed tracing**, **alerting** (Prometheus has no alert rules).
-- **JWKS / JWT key rotation** — signing is RS256 asymmetric (auth signs with the private key,
-  services verify with the public key), but there is no published JWKS endpoint or rotation flow.
-- **Transactional outbox** — the AFTER_COMMIT dual-write gap is accepted (ADR-0004).
+- **A transactional outbox everywhere** — transaction-service has one (§3); budget-service and
+  risk-service still publish `AFTER_COMMIT` and keep the dual-write gap of [ADR-0004](ADR-0004-budget-utilization-via-events.md).
+- **ML behind the risk/insight/anomaly layer** — those remain deterministic thresholds drawn from
+  each user's own history (an average, not a model). The platform's one fitted model is the spend
+  forecast in analytics-service, and even that is **per user and currency, not per category**.
+- **An orchestrated deployment target** (Kubernetes/ECS) **and a managed secrets store**
+  (Vault/KMS) — production is Docker Compose on a single VPS behind Caddy, with secrets
+  SOPS/age-encrypted at rest and injected at launch.
+- **Deployment on merge** — `deploy-prod.yml` exists but is deliberately manual and
+  environment-gated.
+
+Previously listed here and **since built** — do not re-add them as gaps: edge rate limiting
+(gateway `ratelimit` package + a Caddy `rate_limit` rule on the auth routes), distributed tracing
+(OTLP → Tempo, sampled 0 by default), alerting (`docker/prometheus/alerts.yml` + Alertmanager →
+Telegram), and JWKS / JWT key rotation (`/.well-known/jwks.json` + `JwtKeyResolver`, procedure in
+[security/jwt-key-rotation.md](security/jwt-key-rotation.md)).
