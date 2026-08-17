@@ -70,6 +70,13 @@ been fitted, **and only when `SpendingModel.beatsRunRate()`** — the model must
 at least `BacktestResult.REQUIRED_IMPROVEMENT` (5%), so a tie goes to the simpler projection.
 Otherwise the run-rate projection answers unchanged. The response's `method` field says which did.
 
+`ForecastModelMetrics` publishes the population-level answer — `finsight.analytics.forecast.models`
+tagged `serving`/`beaten`/`unvalidated`, plus `…model.error.ratio` (mean `model_mae/baseline_mae`).
+It is **refreshed at startup and after each sweep, never per scrape**: the values change once a
+night, and a gauge supplier would otherwise run COUNT queries on every Prometheus scrape. Counting
+winners uses `SpendingModelRepository.countBeatingRunRate(factor)` with the factor passed in, so
+the gauge and the forecast can never drift onto different definitions of "wins".
+
 Deliberately deferred: category-level models (the fit is per user + currency),
 auto-categorization, and a persisted AI-summary cache (summaries are computed on demand).
 

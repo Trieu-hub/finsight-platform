@@ -223,12 +223,15 @@ probes at `/actuator/health/{liveness,readiness}`.
 
 - **Prometheus** — <http://localhost:9090> — scrapes all nine services every 15s
   (`docker/prometheus/prometheus.yml`); check *Status → Targets*.
-- **Grafana** — <http://localhost:3000> — auto-provisions the Prometheus datasource and four
+- **Grafana** — <http://localhost:3000> — auto-provisions the Prometheus datasource and five
   dashboards (folder **FinSight**, from `docker/grafana/provisioning/`):
   - **FinSight Platform Overview** — request rate, 5xx rate, p95 latency, JVM heap, GC, CPU.
   - **FinSight Event Pipeline** — budget consumer `processed` / `duplicate` / `ignored` / `failed`.
   - **FinSight Risk** — detected risks by type and severity.
   - **FinSight Consumer Lag** — Kafka consumer lag per service / group / partition.
+  - **FinSight Forecast Model** — how many fitted spend models actually beat the run rate on
+    their holdout, how many lost, how many are still unscored, and the mean error ratio between
+    the two. Empty unless the forecast model is enabled.
 - **Structured logs** — all nine services log **ECS JSON** to stdout in compose
   (`LOGGING_STRUCTURED_FORMAT_CONSOLE=ecs`, native to Spring Boot 4 — no logback XML, no extra
   dependency). Each carries `service.name` and a **`correlationId`**: a `CorrelationIdFilter`
@@ -471,7 +474,7 @@ runtime is captured by the committed Grafana dashboard screenshots above.
 | Risk detection executed | ✅ implemented | `risk-service` rules ([`docs/intelligence.md`](docs/intelligence.md)) |
 | Database updated | ✅ implemented | `risk_db.risk_alerts` (Flyway-owned) |
 | Prometheus metrics updated | ✅ implemented | `/actuator/prometheus` · `finsight.risk.events.detected{type,severity}` |
-| Grafana dashboard updated | ✅ provisioned | `docker/grafana/provisioning/` (4 dashboards) |
+| Grafana dashboard updated | ✅ provisioned | `docker/grafana/provisioning/` (5 dashboards) |
 | CI pipeline passing | ✅ workflow + badge | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) |
 | Whole-stack E2E + load test on PR | ✅ workflow | [`.github/workflows/staging.yml`](.github/workflows/staging.yml) stands up the full stack + [`load-test/`](load-test/) k6 smoke/load |
 | Runtime screenshots committed | ✅ committed | `docs/images/` (4 Grafana dashboards, embedded above) |

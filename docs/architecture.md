@@ -215,11 +215,13 @@ unauthenticated — acceptable for the local stack only) and liveness/readiness 
   routes firing alerts; in production the receiver is **Telegram**, with the bot token injected
   from SOPS at launch into a tmpfs file rather than baked into the config.
 - **Grafana** (`:3000`, anonymous admin in the dev stack) auto-provisions the Prometheus
-  datasource and four dashboards from `docker/grafana/provisioning/`:
+  datasource and five dashboards from `docker/grafana/provisioning/`:
   - **FinSight Platform Overview** — request rate, 5xx rate, p95 latency, JVM heap, GC, CPU.
   - **FinSight Event Pipeline** — budget consumer `processed`/`duplicate`/`ignored`/`failed`.
   - **FinSight Risk** — detected risks by type and severity.
   - **FinSight Consumer Lag** — Kafka consumer lag per group.
+  - **FinSight Forecast Model** — fitted spend models split into served / beaten / unscored, and
+    their mean error against the run rate. Registered only when the forecast model is enabled.
 - **Tempo** receives traces over **OTLP**, and **Loki** + **Promtail** collect the container logs
   Grafana searches. Tracing is wired in every service but **sampled at 0 by default**
   (`TRACING_SAMPLING_PROBABILITY`): the spans cost something to produce and nothing is watching

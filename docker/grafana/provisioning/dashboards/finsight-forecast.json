@@ -1,0 +1,133 @@
+{
+  "uid": "finsight-forecast",
+  "title": "FinSight Forecast Model",
+  "tags": ["finsight", "analytics", "forecast"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "1m",
+  "time": { "from": "now-30d", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "What this dashboard answers",
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "The spend forecast serves a trained model **only** where a 14-day holdout showed it beating the run-rate projection it would replace. These panels say whether that is actually happening in production, and by how much. Empty panels mean `FINSIGHT_FORECAST_MODEL_ENABLED` is off — the gauges are not registered at all then. Values move once a night, after the 02:40 training sweep."
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Models served (beat the run rate)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 4 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "text", "value": null },
+            { "color": "green", "value": 1 }
+          ] }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "area" },
+      "targets": [
+        { "refId": "A", "expr": "sum(finsight_analytics_forecast_models{outcome=\"serving\"})" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "piechart",
+      "title": "Every fitted model, by outcome",
+      "description": "serving = beat the run rate and answers requests · beaten = scored and lost · unvalidated = too little history to score. The last two are both unused, for different reasons.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 9, "x": 6, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "pieType": "donut",
+        "legend": { "displayMode": "table", "placement": "right", "values": ["value"] }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (finsight_analytics_forecast_models)",
+          "legendFormat": "{{outcome}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Mean error vs the run rate",
+      "description": "model MAE / run-rate MAE across scored fits. Below 1 the model is more accurate; above 1 it is worse. No data means nothing has been scored yet.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 9, "x": 15, "y": 4 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 2,
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "orange", "value": 0.95 },
+            { "color": "red", "value": 1 }
+          ] }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "area" },
+      "targets": [
+        { "refId": "A", "expr": "avg(finsight_analytics_forecast_model_error_ratio)" }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Outcomes over time",
+      "description": "The shape to watch: 'unvalidated' should drain into the other two as accounts accumulate daily history.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": { "fillOpacity": 20, "stacking": { "mode": "normal", "group": "A" } }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (finsight_analytics_forecast_models)",
+          "legendFormat": "{{outcome}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Nightly training sweep",
+      "description": "Models written per sweep, and sweeps that ended in an error. A flat zero on 'fitted' with users active means the sweep is not running.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(finsight_analytics_forecast_models_trained_total[1d]))",
+          "legendFormat": "fitted"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(increase(finsight_analytics_forecast_training_failed_total[1d]))",
+          "legendFormat": "failed sweeps"
+        }
+      ]
+    }
+  ]
+}
