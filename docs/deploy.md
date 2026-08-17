@@ -184,13 +184,19 @@ Two things must line up or `www.` breaks in ways the apex does not:
 openssl x509 -in docker/caddy/certs/origin.pem -noout -text | grep -A1 'Subject Alternative Name'
 ```
 
-Verify both names end up on the same page once deployed (`-A` because Cloudflare Bot Fight Mode
-403s curl's default User-Agent):
+Verify both names end up on the same page once deployed. `-A` is required because Cloudflare Bot
+Fight Mode 403s curl's default User-Agent — **and a truncated one such as `Mozilla/5.0` as well**,
+so pass the full browser string (the same one `scripts/smoke-test.sh` uses):
 
 ```bash
-curl -sI -A 'Mozilla/5.0' https://www.example.com/   # 308 → https://example.com/
-curl -s  -A 'Mozilla/5.0' https://example.com/ | head -c 200
+UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'
+curl -sI -A "$UA" https://www.example.com/   # 308 → https://example.com/
+curl -s  -A "$UA" https://example.com/ | head -c 200
 ```
+
+If one of these comes back 403, read the headers before assuming an outage: Cloudflare's own block
+carries `server: cloudflare` and `cf-mitigated`, while a 403 from the application arrives through
+Caddy without them.
 
 ## 2. Firewall
 
@@ -466,12 +472,16 @@ rejected without creating a row, whereas `/register` is exactly what produced th
 `/login` is also a poor probe — it feeds the per-email brute-force lockout in Redis.
 
 ```bash
+UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'
 for i in $(seq 1 15); do
-  curl -s -o /dev/null -A 'Mozilla/5.0' -w '%{http_code} retry-after=%header{retry-after}\n' \
+  curl -s -o /dev/null -A "$UA" -w '%{http_code} retry-after=%header{retry-after}\n' \
     -X POST https://vernfy.com/api/v1/auth/refresh \
     -H 'Content-Type: application/json' -d '{"refreshToken":"probe"}'
 done
 ```
+
+A run of 403s here means Bot Fight Mode rejected the User-Agent, not that the limiter fired — the
+limiter answers **429** with a `Retry-After`.
 
 Expect ten `401`s (the token reaches auth-service and is refused), then `429 retry-after=<n>` with
 `n` counting down as the 1-minute sliding window drains. Caddy answers the 429 with an **empty

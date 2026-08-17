@@ -397,8 +397,18 @@ docker run --rm --network container:finsight-auth-service curlimages/curl:latest
   -s http://localhost:8081/actuator/health
 ```
 
-- Cloudflare Bot Fight Mode returns **403 to curl's default User-Agent**. Pass
-  `-A 'Mozilla/5.0 ...'` before concluding the site is down.
+- Cloudflare Bot Fight Mode returns **403 to curl's default User-Agent** — and to a *truncated*
+  one. `-A 'Mozilla/5.0'` still gets 403; the whole browser string is what passes. Copy the one
+  `scripts/smoke-test.sh` already uses rather than inventing a shorter one:
+
+```bash
+UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'
+curl -sI -A "$UA" https://vernfy.com | head -1     # HTTP/2 200
+```
+
+  A 403 that came from the **edge** carries `server: cloudflare` and `cf-mitigated`; a 403 from
+  the **app** comes back through Caddy without them. Check the headers before concluding the site
+  is down.
 
 ---
 
