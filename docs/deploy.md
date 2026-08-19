@@ -664,6 +664,30 @@ decrypts its own `secrets.env`.
   trust-on-first-use). Because `secrets.env`, the age key, and `.env` are gitignored, the
   `git reset --hard` only fast-forwards tracked code and never disturbs them.
 
+  Two traps this setup has actually sprung:
+
+  - **`DEPLOY_SSH_HOST` must be the origin IP, not `vernfy.com`.** The Cloudflare proxy is on
+    (§4), so the apex resolves to Cloudflare's anycast addresses and they do not speak SSH. The
+    IP is intentionally not written down in this repo — publishing it would defeat the proxy's
+    purpose of keeping the box off the public map. Read it off the DNS record or the provider
+    console.
+  - **A missing secret fails with ssh's *usage* text and exit 255**, not with a connection
+    error, because `"$SSH_USER@$SSH_HOST"` collapses to `"@"` and ssh is left without a host.
+    If a deploy run ends in that wall of `usage: ssh [-46AaCfGgKkMNnqsTtVvXxYy] …`, a secret is
+    unset — the box is fine.
+
+  Generate a **dedicated** deploy key rather than reusing a personal one, so it can be revoked
+  without locking a human out:
+
+  ```bash
+  ssh-keygen -t ed25519 -f ~/.ssh/vernfy_deploy -C "github-actions-deploy" -N ""
+  ssh-copy-id -i ~/.ssh/vernfy_deploy.pub root@<origin-ip>      # or append to authorized_keys
+  ssh-keyscan <origin-ip>                                        # → DEPLOY_SSH_KNOWN_HOSTS
+  ```
+
+  `DEPLOY_SSH_KEY` takes the contents of `~/.ssh/vernfy_deploy` (the file **without** `.pub`),
+  including the `BEGIN`/`END` lines.
+
 ---
 
 ## What this Path A deploy does and does NOT cover
