@@ -12,13 +12,22 @@ name: Deploy to production
 #
 # One-time setup (Settings → Environments → "production" → add these secrets; add required
 # reviewers there too for the approval gate):
-#   DEPLOY_SSH_HOST        VPS host or IP           (e.g. vernfy.com)
+#   DEPLOY_SSH_HOST        the VPS's ORIGIN IP — NOT vernfy.com. The Cloudflare proxy is on,
+#                          so the apex resolves to Cloudflare's anycast addresses, which do not
+#                          answer SSH. (The origin IP is deliberately absent from this repo:
+#                          publishing it would undo the proxy's job of hiding the box.)
 #   DEPLOY_SSH_USER        SSH user                 (e.g. root)
-#   DEPLOY_SSH_KEY         private key with access to the box (PEM, the whole file)
+#   DEPLOY_SSH_KEY         private key with access to the box (PEM, the whole file). Use a
+#                          deploy key generated for this workflow, not a human's personal key,
+#                          so it can be revoked on its own.
 #   DEPLOY_APP_DIR         path to the repo on the box (e.g. /root/finsight-platform)
 #   DEPLOY_SSH_PORT        optional, default 22
-#   DEPLOY_SSH_KNOWN_HOSTS optional; the box's SSH host key (`ssh-keyscan <host>`), to pin it
-#                          instead of trust-on-first-use
+#   DEPLOY_SSH_KNOWN_HOSTS optional; the box's SSH host key (`ssh-keyscan <origin-ip>`), to pin
+#                          it instead of trust-on-first-use
+#
+# If any of these is missing the job fails with ssh's *usage* text and exit 255, not with a
+# connection error: the destination collapses to "@", so ssh never gets a host to dial. Read
+# that output as "a secret is unset", not as "the box is unreachable".
 
 on:
   workflow_dispatch:
