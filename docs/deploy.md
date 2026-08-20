@@ -664,7 +664,7 @@ decrypts its own `secrets.env`.
   trust-on-first-use). Because `secrets.env`, the age key, and `.env` are gitignored, the
   `git reset --hard` only fast-forwards tracked code and never disturbs them.
 
-  Two traps this setup has actually sprung:
+  Three traps this setup has actually sprung:
 
   - **`DEPLOY_SSH_HOST` must be the origin IP, not `vernfy.com`.** The Cloudflare proxy is on
     (§4), so the apex resolves to Cloudflare's anycast addresses and they do not speak SSH. The
@@ -675,6 +675,23 @@ decrypts its own `secrets.env`.
     error, because `"$SSH_USER@$SSH_HOST"` collapses to `"@"` and ssh is left without a host.
     If a deploy run ends in that wall of `usage: ssh [-46AaCfGgKkMNnqsTtVvXxYy] …`, a secret is
     unset — the box is fine.
+  - **A key pasted from Windows carries CRLF and dies as `Load key: error in libcrypto`.** That
+    message reads like a corrupt or wrong key; it is line endings. Reproduced directly: the same
+    key file loads with LF and fails with CRLF. The workflow therefore pipes both the key and
+    `known_hosts` through `tr -d '\r'`. Note the second half of that failure — `Permission denied
+    (publickey)` — is only the consequence: no key could be loaded, so ssh had nothing to offer
+    and the server never saw a credential. It does **not** mean the key was rejected or the
+    account lacks access.
+
+    If it still fails **after** the `tr -d '\r'` fix, the secret's content is damaged rather than
+    its line endings: a UTF-8 BOM ahead of `-----BEGIN`, a truncated paste, missing `BEGIN`/`END`
+    lines, or the `.pub` file pasted by mistake. The robust way out is to stop shipping raw text
+    entirely — store the key base64-encoded (one line, no whitespace) and decode it on the runner:
+
+    ```bash
+    # local, once:  [Convert]::ToBase64String([IO.File]::ReadAllBytes("$HOME\.ssh\vernfy_deploy"))
+    echo "${{ secrets.DEPLOY_SSH_KEY_B64 }}" | base64 -d > ~/.ssh/id_deploy
+    ```
 
   Generate a **dedicated** deploy key rather than reusing a personal one, so it can be revoked
   without locking a human out:
