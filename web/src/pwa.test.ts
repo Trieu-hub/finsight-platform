@@ -49,6 +49,26 @@ describe('PWA manifest', () => {
       expect(hasPublicFile(icon.src), `missing ${icon.src}`).toBe(true)
     }
   })
+
+  /*
+   * Shortcuts are the long-press menu on an installed icon. A shortcut pointing at a route the
+   * router does not know still opens — nginx serves index.html for anything — so the user lands
+   * on the SPA's not-found instead of an error, and nothing anywhere reports the typo.
+   */
+  it('sends every shortcut to a route the app actually has', () => {
+    const routes = ['/', '/transactions', '/budgets', '/wallets', '/analytics', '/import']
+    const shortcuts: { name: string; url: string; icons?: { src: string }[] }[] =
+      manifest.shortcuts ?? []
+
+    expect(shortcuts.length).toBeGreaterThan(0)
+    for (const shortcut of shortcuts) {
+      expect(shortcut.name).toBeTruthy()
+      expect(routes, `unknown route ${shortcut.url}`).toContain(shortcut.url)
+      for (const icon of shortcut.icons ?? []) {
+        expect(hasPublicFile(icon.src), `missing ${icon.src}`).toBe(true)
+      }
+    }
+  })
 })
 
 describe('index.html', () => {

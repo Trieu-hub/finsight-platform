@@ -62,6 +62,10 @@ self.addEventListener('message', (event) => {
     token = null
     event.waitUntil(caches.delete(API_CACHE))
   }
+  // The page asks for the handover, rather than this worker taking it. See the install listener.
+  if (event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting()
+  }
 })
 
 /**
@@ -88,7 +92,12 @@ self.addEventListener('install', (event) => {
   // Never let a missing file fail the install: push is the load-bearing half of this worker and
   // must keep working even if the shell could not be primed.
   event.waitUntil(primeShell().catch(() => undefined))
-  self.skipWaiting()
+  // NO skipWaiting here, deliberately. Taking over mid-session swaps the cached bundles under a
+  // page that is still running: React then asks for a lazily-imported chunk whose hashed name the
+  // new build no longer has, and the user gets "Failed to fetch dynamically imported module" —
+  // during a deploy, on a screen they were using. Instead the new worker waits, the page notices
+  // it waiting and offers a reload, and the handover happens when the user says so (SKIP_WAITING
+  // above). The cost is that a new version reaches an open tab one click later than it could.
 })
 
 self.addEventListener('activate', (event) => {

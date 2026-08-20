@@ -222,4 +222,33 @@ describe('service worker offline cache', () => {
     expect(worker.deleted).toContain('vernfy-api-v0')
     expect(worker.deleted).not.toContain('vernfy-shell-v1')
   })
+
+  /*
+   * A new worker must NOT take over a page that is already running. Doing so swaps the cached
+   * bundles under it, and the next lazily-imported route asks for a hashed chunk the new build no
+   * longer has — "Failed to fetch dynamically imported module", mid-deploy, on a live screen.
+   */
+  it('does not take over on install, however new it is', async () => {
+    const worker = bootWorker({ '/': '<!doctype html><html></html>' })
+
+    await worker.dispatch('install')
+
+    expect(worker.self.skipWaiting).not.toHaveBeenCalled()
+  })
+
+  it('hands over only when the page asks it to', async () => {
+    const worker = bootWorker()
+
+    await worker.dispatch('message', { type: 'SKIP_WAITING' })
+
+    expect(worker.self.skipWaiting).toHaveBeenCalled()
+  })
+
+  it('ignores a message it does not understand', async () => {
+    const worker = bootWorker()
+
+    await worker.dispatch('message', { type: 'SOMETHING_ELSE' })
+
+    expect(worker.self.skipWaiting).not.toHaveBeenCalled()
+  })
 })

@@ -311,9 +311,12 @@ stay in the backend.
   The bell and browser notifications stay instant whatever the digest setting: batching a
   payload-free ping would delay the nudge without sparing anyone any reading.
 - **Installable (PWA)**: a web app manifest and maskable icons make the SPA installable to a phone
-  home screen or a desktop, launching standalone without browser chrome. This is also what makes
-  web push reachable on iOS at all — Safari delivers a push only to a site that has been added to
-  the home screen.
+  home screen or a desktop, launching standalone without browser chrome, with **app shortcuts**
+  (long-press the icon for transactions, budgets or analytics). This is also what makes web push
+  reachable on iOS at all — Safari delivers a push only to a site that has been added to the home
+  screen. The app **asks to be installed** rather than waiting to be discovered: Chromium's own
+  mini-infobar is suppressed in favour of a banner that can be dismissed for good, and Safari —
+  which has no install API whatsoever — gets the Share → Add to Home Screen instructions instead.
 - **Offline, read-only**: the service worker keeps the app shell and the last response from the
   read endpoints behind the dashboard, transactions, budgets, wallets and analytics screens, so
   losing the network shows those figures under an "you are offline" banner instead of the
@@ -324,6 +327,11 @@ stay in the backend.
   when the fetch throws) and `/assets/` is content-hashed, so a deploy is picked up on the first
   load that reaches the server. Cached responses are one user's financial data, so the page tells
   the worker to drop them whenever it clears its tokens.
+- **Updates are offered, never forced**: a newly deployed worker does **not** call `skipWaiting()`.
+  Taking over a running page would swap the cached bundles beneath it, and the next lazily-imported
+  route would ask for a hashed chunk the new build no longer has — a "failed to fetch dynamically
+  imported module" on a live screen, mid-deploy. Instead the new worker waits, the page shows a
+  "new version is ready" banner, and the handover happens on the reload the user chooses.
 - **Dev proxy**: Vite forwards `/api` → `http://localhost:8080`, so the browser stays
   same-origin and no backend CORS configuration is needed (a reverse proxy plays this role in
   production).
