@@ -14,7 +14,7 @@ TỔNG QUAN CON SỐ
 - Trong đó:
     * Unit / component test (chạy KHÔNG cần Docker):   472
     * Integration test (cần Docker – Testcontainers):  207 (64 lớp *IntegrationTest)
-- Frontend (Vitest, ngoài con số 679 ở trên):         130 test / 18 file
+- Frontend (Vitest, ngoài con số 679 ở trên):         142 test / 19 file
 - Frontend E2E (Playwright, cần stack đang chạy):       9 test / 4 file (mục 11)
 - Framework: JUnit 5 (Jupiter) + Mockito + AssertJ; frontend dùng Vitest +
   React Testing Library (jsdom) và Playwright cho E2E trình duyệt.
@@ -1205,7 +1205,29 @@ của form; chỉ mock lời gọi mạng)
       tốc độ hiện tại không hề tạo ra. Đã chứng minh test có răng: bỏ điều kiện đi thì
       đúng test này đỏ)
 
-[UNIT] src/pwa.test.ts — 6 test  (cài đặt được như app: manifest + icon + index.html)
+[UNIT] src/hooks/useInstallPrompt.test.ts — 8 test  (luồng mời cài app)
+   Trước đây `beforeinstallprompt` KHÔNG được xử lý ở đâu cả: app cài được nhưng không ai
+   được báo là cài được. Hook này đóng đúng khoảng đó.
+   - offers nothing until the browser says the app is installable
+     (Chromium chỉ bắn sự kiện khi nó thấy đủ điều kiện + user đủ tương tác — có thể vài giây
+      sau, hoặc KHÔNG BAO GIỜ. Hiện nút trước đó là mở một hộp thoại không tồn tại)
+   - offers the real prompt once the event arrives  (kèm khẳng định `defaultPrevented`)
+   - opens the browser dialog and then stands down  (sự kiện dùng một lần, Chromium từ chối
+     `prompt()` lần hai trên cùng một event)
+   - remembers a dismissal, so it never asks twice  (mount lại = tải lại trang)
+   - falls back to instructions on iOS, which fires no event at all
+   - recognises an iPad, which claims to be a Mac  (iPadOS 13+ khai UA là Macintosh ⇒ phải bắt
+     bằng `maxTouchPoints`, không bắt bằng tên)
+   - says nothing once the app is already installed  (`navigator.standalone`)
+   - drops the offer the moment the install completes  (`appinstalled`)
+   📌 **Fixture sai chứ không phải code sai:** `new Event()` mặc định `cancelable: false`, nên
+      `preventDefault()` là no-op im lặng và test báo "không chặn được mini-infobar" oan. Sự
+      kiện thật của Chromium huỷ được ⇒ fixture phải `{ cancelable: true }`.
+
+[UNIT] src/pwa.test.ts — 7 test  (cài đặt được như app: manifest + icon + index.html)
+   - sends every shortcut to a route the app actually has
+     (shortcut trỏ sai route vẫn MỞ được — nginx trả index.html cho mọi đường dẫn — nên người
+      dùng rơi vào trang không tồn tại của SPA, và không chỗ nào báo lỗi gõ nhầm)
    - is named .json, the only extension nginx has a MIME type for
      (ảnh nginx phục vụ SPA KHÔNG có entry `.webmanifest` trong mime.types — đã kiểm
       trên container prod, nginx 1.27.5, 0 entry — nên file đó sẽ đi ra dưới
@@ -1226,7 +1248,15 @@ của form; chỉ mock lời gọi mạng)
    📌 Đọc file bằng `?raw` + `import.meta.glob` của Vite chứ KHÔNG dùng `node:fs`, vì
       `tsconfig.app.json` cố ý chỉ cấp `types: ["vite/client"]` cho `src/`.
 
-[UNIT] src/sw.test.ts — 10 test  (service worker: cache đọc khi mất mạng)
+[UNIT] src/sw.test.ts — 13 test  (service worker: cache đọc khi mất mạng + bàn giao bản mới)
+   +3 test 2026-08-19 cho luồng cập nhật:
+   - does not take over on install, however new it is
+     (BỎ `skipWaiting()`: chiếm quyền giữa phiên sẽ tráo bundle dưới chân trang đang chạy, route
+      lazy-load sau đó xin một chunk mà bản mới không còn ⇒ "Failed to fetch dynamically imported
+      module", đúng lúc deploy, trên màn hình người dùng đang mở. **Đã chứng minh test có răng:**
+      trả `skipWaiting()` về chỗ cũ thì đúng test này đỏ)
+   - hands over only when the page asks it to  (thông điệp `SKIP_WAITING`)
+   - ignores a message it does not understand
    Nạp CHÍNH `public/sw.js` bằng `?raw` rồi chạy trong một scope worker giả (`new
    Function` với `self`/`caches`/`fetch` bơm vào), thay vì viết lại logic trong test —
    `sw.js` là file tĩnh không ai import, nên một test mô phỏng lại sẽ vẫn xanh sau khi
