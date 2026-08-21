@@ -44,3 +44,11 @@ ErrorImage/
 # Personal scratch notes
 /state.md
 /project-status.md
+
+# Android signing + build output, if the Play Store TWA is ever built here (docs/android-twa.md).
+# The keystore IS the app's identity on Play: committing it hands anyone the ability to ship an
+# update as you, and losing it means the listing can never be updated again by anyone.
+*.keystore
+*.jks
+*.aab
+*.apk

@@ -30,6 +30,7 @@ coupling is asynchronous over Kafka.
 | [`docs/intelligence.md`](docs/intelligence.md) | Risk rules, insights, anomalies — triggers & metrics |
 | [`docs/runbook.md`](docs/runbook.md) | Startup, compose workflow, Kafka/Prometheus/Grafana verification, troubleshooting |
 | [`docs/deploy.md`](docs/deploy.md) | Production deployment on a single VPS (Caddy, TLS, SOPS secrets) |
+| [`docs/android-twa.md`](docs/android-twa.md) | Publishing the PWA to Google Play as a Trusted Web Activity — prepared, not published |
 | [`docs/security/jwt-key-rotation.md`](docs/security/jwt-key-rotation.md) | Zero-downtime RS256 signing-key rotation |
 | [`docs/ADR-0004-budget-utilization-via-events.md`](docs/ADR-0004-budget-utilization-via-events.md) | Why budget utilization is event-driven (and its accepted drift) |
 | [`docs/ADR-0001`](docs/ADR-0001-gateway-v1-contract.md) · [`0002`](docs/ADR-0002-identity-auth-contract-freeze.md) · [`0003`](docs/ADR-0003-dashboard-bff-token-relay.md) · [`0005`](docs/ADR-0005-rs256-asymmetric-jwt-signing.md) | Gateway V1 contract, identity/auth freeze, BFF token relay, RS256 signing |
