@@ -14,7 +14,7 @@ TỔNG QUAN CON SỐ
 - Trong đó:
     * Unit / component test (chạy KHÔNG cần Docker):   472
     * Integration test (cần Docker – Testcontainers):  211 (65 lớp *IntegrationTest)
-- Frontend (Vitest, ngoài con số 683 ở trên):         145 test / 20 file
+- Frontend (Vitest, ngoài con số 683 ở trên):         146 test / 20 file
 - Frontend E2E (Playwright, cần stack đang chạy):       9 test / 4 file (mục 11)
 - Framework: JUnit 5 (Jupiter) + Mockito + AssertJ; frontend dùng Vitest +
   React Testing Library (jsdom) và Playwright cho E2E trình duyệt.
@@ -1247,7 +1247,11 @@ của form; chỉ mock lời gọi mạng)
       `preventDefault()` là no-op im lặng và test báo "không chặn được mini-infobar" oan. Sự
       kiện thật của Chromium huỷ được ⇒ fixture phải `{ cancelable: true }`.
 
-[UNIT] src/pwa.test.ts — 7 test  (cài đặt được như app: manifest + icon + index.html)
+[UNIT] src/pwa.test.ts — 8 test  (cài đặt được như app: manifest + icon + index.html)
+   - ships a narrow screenshot, which is the one a phone install dialog uses
+     (thiếu `screenshots` thì Chromium hạ xuống hộp thoại cài tối giản, **không log gì**; chỉ có
+      `wide` mà không có `narrow` thì điện thoại — nơi người ta thực sự cài — cũng mất hộp thoại
+      đầy đủ)
    - sends every shortcut to a route the app actually has
      (shortcut trỏ sai route vẫn MỞ được — nginx trả index.html cho mọi đường dẫn — nên người
       dùng rơi vào trang không tồn tại của SPA, và không chỗ nào báo lỗi gõ nhầm)

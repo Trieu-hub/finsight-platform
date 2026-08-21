@@ -330,6 +330,9 @@ stay in the backend.
   screen. The app **asks to be installed** rather than waiting to be discovered: Chromium's own
   mini-infobar is suppressed in favour of a banner that can be dismissed for good, and Safari —
   which has no install API whatsoever — gets the Share → Add to Home Screen instructions instead.
+  The manifest ships **screenshots** in both form factors, which is what upgrades Chromium's
+  prompt from a one-line bar to the rich install sheet; they are captured from the deployed app by
+  `web/e2e/capture-screenshots.spec.ts` rather than drawn by hand.
 - **Offline, read-only**: the service worker keeps the app shell and the last response from the
   read endpoints behind the dashboard, transactions, budgets, wallets and analytics screens, so
   losing the network shows those figures under an "you are offline" banner instead of the

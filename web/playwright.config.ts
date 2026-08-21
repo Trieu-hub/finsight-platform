@@ -14,6 +14,13 @@ import { defineConfig, devices } from '@playwright/test'
 const API_TARGET = process.env.API_TARGET ?? 'http://localhost:8080'
 const PORT = Number(process.env.PREVIEW_PORT ?? 4173)
 
+/**
+ * Point the run at an already-deployed origin (`E2E_BASE_URL=https://vernfy.com`) instead of
+ * building and serving `dist/` here. Used by the manifest-screenshot capture, which needs the
+ * real deployed app; unset, everything behaves exactly as before.
+ */
+const EXTERNAL = process.env.E2E_BASE_URL
+
 export default defineConfig({
   testDir: './e2e',
   // A journey that writes to the backend cannot safely run twice at once against one stack, and
@@ -30,16 +37,19 @@ export default defineConfig({
     timeout: 15_000,
   },
   use: {
-    baseURL: `http://localhost:${PORT}`,
+    baseURL: EXTERNAL ?? `http://localhost:${PORT}`,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
-  webServer: {
-    command: `npm run preview -- --port ${PORT} --strictPort`,
-    url: `http://localhost:${PORT}`,
-    reuseExistingServer: !process.env.CI,
-    timeout: 60_000,
-    env: { API_TARGET },
-  },
+  // Nothing to serve when the target is already on the internet.
+  webServer: EXTERNAL
+    ? undefined
+    : {
+        command: `npm run preview -- --port ${PORT} --strictPort`,
+        url: `http://localhost:${PORT}`,
+        reuseExistingServer: !process.env.CI,
+        timeout: 60_000,
+        env: { API_TARGET },
+      },
 })

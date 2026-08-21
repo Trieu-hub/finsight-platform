@@ -12,7 +12,7 @@ import manifestRaw from '../public/manifest.json?raw'
 import indexHtml from '../index.html?raw'
 
 const manifest = JSON.parse(manifestRaw)
-const pngs = Object.keys(import.meta.glob('../public/*.png'))
+const pngs = Object.keys(import.meta.glob('../public/**/*.png'))
 const webmanifests = Object.keys(import.meta.glob('../public/*.webmanifest'))
 
 const hasPublicFile = (src: string) => pngs.includes(`../public${src}`)
@@ -47,6 +47,23 @@ describe('PWA manifest', () => {
   it('points every icon at a file that is really there', () => {
     for (const icon of manifest.icons as { src: string }[]) {
       expect(hasPublicFile(icon.src), `missing ${icon.src}`).toBe(true)
+    }
+  })
+
+  /*
+   * Screenshots are what upgrade Chromium's install prompt from a one-line bar to the rich,
+   * app-store-like sheet. They are also the easiest thing in the manifest to get silently wrong:
+   * a missing file, or only a `wide` entry, and the phone — where installs actually happen —
+   * quietly falls back to the minimal prompt with nothing logged.
+   */
+  it('ships a narrow screenshot, which is the one a phone install dialog uses', () => {
+    const shots: { src: string; sizes: string; form_factor?: string }[] = manifest.screenshots ?? []
+
+    expect(shots.length).toBeGreaterThan(0)
+    expect(shots.some((shot) => shot.form_factor === 'narrow')).toBe(true)
+    for (const shot of shots) {
+      expect(hasPublicFile(shot.src), `missing ${shot.src}`).toBe(true)
+      expect(shot.sizes).toMatch(/^\d+x\d+$/)
     }
   })
 

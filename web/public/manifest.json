@@ -16,6 +16,22 @@
     { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
     { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ],
+  "screenshots": [
+    {
+      "src": "/screenshots/dashboard-narrow.png",
+      "sizes": "412x915",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Dashboard: net balance, balance trend and spending by category"
+    },
+    {
+      "src": "/screenshots/dashboard-wide.png",
+      "sizes": "1280x800",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Dashboard: net balance, balance trend and spending by category"
+    }
+  ],
   "shortcuts": [
     {
       "name": "Transactions",
