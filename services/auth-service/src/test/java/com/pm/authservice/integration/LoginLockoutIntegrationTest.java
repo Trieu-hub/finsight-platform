@@ -24,7 +24,7 @@ class LoginLockoutIntegrationTest extends AbstractMockMvcIntegrationTest {
     void lockoutAfterMaxFailedAttemptsBlocksEvenCorrectPassword() throws Exception {
         long id = uniqueId();
         String email = "lockout" + id + "@finsight.test";
-        register("user" + id, email, "password123");
+        register("user" + id, email, "trailhead lantern 88");
 
         // Three failures (max-attempts = 3) — each still a normal 401.
         attemptLogin(email, "wrong", 401);
@@ -34,7 +34,7 @@ class LoginLockoutIntegrationTest extends AbstractMockMvcIntegrationTest {
         // Now locked: even the correct password is refused with 429 ACCOUNT_LOCKED.
         mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\":\"" + email + "\",\"password\":\"password123\"}"))
+                        .content("{\"email\":\"" + email + "\",\"password\":\"trailhead lantern 88\"}"))
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.error.code").value("ACCOUNT_LOCKED"));
     }
@@ -43,18 +43,18 @@ class LoginLockoutIntegrationTest extends AbstractMockMvcIntegrationTest {
     void successfulLoginResetsTheFailureCounter() throws Exception {
         long id = uniqueId();
         String email = "reset" + id + "@finsight.test";
-        register("user" + id, email, "password123");
+        register("user" + id, email, "trailhead lantern 88");
 
         // Two failures (below the threshold of 3)...
         attemptLogin(email, "wrong", 401);
         attemptLogin(email, "wrong", 401);
 
         // ...a success resets the counter...
-        attemptLogin(email, "password123", 200);
+        attemptLogin(email, "trailhead lantern 88", 200);
 
         // ...so two more failures still do not lock (counter restarted).
         attemptLogin(email, "wrong", 401);
         attemptLogin(email, "wrong", 401);
-        attemptLogin(email, "password123", 200);
+        attemptLogin(email, "trailhead lantern 88", 200);
     }
 }

@@ -20,8 +20,8 @@ class JwtSecurityIntegrationTest extends AbstractMockMvcIntegrationTest {
     void meWithValidTokenReturnsEmail() throws Exception {
         long id = uniqueId();
         String email = "me" + id + "@finsight.test";
-        register("user" + id, email, "password123");
-        String accessToken = login(email, "password123").path("accessToken").asText();
+        register("user" + id, email, "trailhead lantern 88");
+        String accessToken = login(email, "trailhead lantern 88").path("accessToken").asText();
 
         mockMvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer " + accessToken))
                 .andExpect(status().isOk())

@@ -285,6 +285,18 @@ stay in the backend.
 - **JWT auth**: the token from `POST /api/v1/auth/login` is stored client-side and attached to
   every request by an Axios interceptor; a `401` clears it and redirects to `/login`. Protected
   routes are gated client-side for UX only — the backend remains the security boundary.
+- **Password policy** (auth-service): minimum 8 characters plus a **blocklist** of the strings a
+  credential-stuffing run tries first — matched case-insensitively and with trailing digits
+  stripped, so `password2026` is refused by the entry `password` — and a rejection of any password
+  containing the account's own username or email. Deliberately **no composition rules**: NIST
+  SP 800-63B dropped them because "must contain a symbol" reliably produces `Password1!`.
+- **Security headers at the edge** (`docker/caddy/Caddyfile`): HSTS, a **CSP with no wildcards**
+  (`default-src 'self'`, `frame-ancestors 'none'`, `object-src 'none'`), `X-Frame-Options`,
+  `nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, a `Permissions-Policy` that turns
+  off every API the app does not use, and no server version in the response. A strict CSP is only
+  safe because the built app loads nothing cross-origin — no CDN, no web fonts, no analytics — and
+  `web/e2e/security-headers.spec.ts` keeps it honest by loading the app in a real browser and
+  failing on any `securitypolicyviolation` it reports.
 - **Pages**: Login / Register, Dashboard (income / expense / balance + recent activity + budget
   progress), Transactions (history newest-first, filterable by month — current month by default —
   + create, incl. wallet selection and wallet-to-wallet transfers, and a CSV export of the chosen
@@ -443,8 +455,14 @@ newly-disclosed CVE turns the build red even when no code changed:
 - **Secret scan** — gitleaks over the **full git history**, not just the tip. Blocking: any finding
   fails the job, so a leaked credential cannot merge.
 - **Dependency scan** — Trivy filesystem scan across every `pom.xml` and `web/package-lock.json`,
-  HIGH/CRITICAL and `--ignore-unfixed`. Report-only (`continue-on-error`) — findings surface in the
-  log and Dependabot opens the PRs that fix them.
+  `--ignore-unfixed` throughout (a CVE with no released fix cannot be acted on, so failing on it
+  would wedge every PR). **CRITICAL blocks the merge; HIGH is reported and does not** — a
+  one-person project that reddens on every new HIGH in a transitive dependency stops reading the
+  results, which is worse than not blocking. Dependabot opens the PRs that fix either.
+  The blocking step distinguishes **a finding from a scanner failure** by asking Trivy for
+  `--exit-code 2`: exit 2 is a CVE and fails immediately, exit 1 is Trivy itself failing (a DB
+  download, a Maven Central 429, a timeout) and is retried three times. Both were observed while
+  writing this, and conflating them is how a scan comes to look green while scanning nothing.
 - **Dependabot** (`.github/dependabot.yml`) — weekly, grouped, across the nine Maven modules, npm
   `web/`, and the workflows themselves. Major `typescript` bumps are held back: typescript-eslint
   declares a peer range that a new major falls outside of, so the bump breaks `npm ci` rather than

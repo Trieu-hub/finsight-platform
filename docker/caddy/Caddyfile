@@ -19,6 +19,38 @@
 
 	encode gzip zstd
 
+	# Security headers. Measured absent on 2026-08-21: the site shipped none of these, which left
+	# clickjacking, MIME sniffing and full referrer leakage available for free. Set at the edge
+	# rather than per-service so one place covers the SPA and the API alike.
+	header {
+		# Force HTTPS for a year. `preload` is deliberately NOT set: getting onto the browsers'
+		# preload list is easy and getting off it takes months, so it is a decision to make on
+		# purpose rather than a header to copy.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+		# Content-Security-Policy. Verified feasible before enforcing: the built app loads NOTHING
+		# cross-origin — no CDN, no web fonts, no analytics — and index.html carries no inline
+		# <script>. So 'self' is enough everywhere except style, where React's `style={{...}}`
+		# attributes (the budget/progress bars) need 'unsafe-inline'.
+		#   frame-ancestors 'none'  — the app is never framed; this is the modern X-Frame-Options
+		#   connect-src 'self'      — the API is same-origin, so nothing should call out
+		#   object-src 'none'       — no plugins, and <object> is a classic injection sink
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+
+		# Kept alongside CSP's frame-ancestors for browsers that predate it.
+		X-Frame-Options "DENY"
+		# Stops a browser guessing a content type — the trick that turns an uploaded file into a
+		# script. The CSV import means user-supplied bytes do reach this origin.
+		X-Content-Type-Options "nosniff"
+		# A finance app's URLs name what the user was looking at; send the origin, never the path.
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# Nothing here needs any of these, and an unused permission is only ever a liability.
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()"
+
+		# The upstream's exact nginx version is free reconnaissance for anyone scanning.
+		-Server
+	}
+
 	# Access log. Without it there is no way to answer "who hit the site, and when" — the
 	# services log their own work but nothing records a request that never reached them (a 404,
 	# a static asset, a bot sweep). Promtail discovers this container over the Docker socket, so

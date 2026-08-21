@@ -45,16 +45,79 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      # Java + a Maven cache, for the step below. Not to build anything — this job never
+      # compiles — but so Trivy can read the dependency tree off ~/.m2 instead of the internet.
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      # Trivy's Java analyzer resolves each pom's parent and BOM to work out the versions Spring
+      # Boot manages for it. With an empty ~/.m2 it fetches those POMs itself, over plain HTTP,
+      # nine projects at a time — and Maven Central answers **429 with Retry-After: 1800**. That
+      # is not retryable: half an hour is longer than any sane CI job, so a retry loop just fails
+      # three times more slowly. Observed on this repo, on a real runner.
+      #
+      # Warming the cache is Trivy's own documented remedy. `|| true`: this step exists to help
+      # the scan, and a resolution hiccup in one module must not fail the security job — a
+      # partially warm cache still spares Central most of the requests.
+      - name: Warm the Maven cache so Trivy resolves POMs locally
+        run: |
+          for service in services/*/; do
+            (cd "$service" && mvn -B -ntp -q dependency:go-offline -DskipTests) || true
+          done
+
       # Run Trivy from its official image (stable `fs` CLI) rather than a marketplace
       # action tag that can fail to resolve. Reads every pom.xml + web/package-lock.json
-      # and reports known CVEs. ignore-unfixed: a CVE with no released fix can't be acted
-      # on, so don't wedge the build on it; fail only on actionable HIGH/CRITICAL.
+      # and reports known CVEs. Pull the vuln DBs from the AWS ECR mirror because ghcr.io's
+      # anonymous rate limit routinely fails Trivy on shared CI runners.
       #
-      # Report-only: continue-on-error keeps a finding (or a flaky DB fetch) from blocking
-      # the merge — CVEs still show in the log and as a step annotation, and Dependabot
-      # opens the PRs that actually fix them. Pull the vuln DBs from the AWS ECR mirror
-      # because ghcr.io's anonymous rate limit routinely fails Trivy on shared CI runners.
-      - name: Run Trivy (report-only)
+      # `ignore-unfixed` throughout: a CVE with no released fix cannot be acted on, so failing
+      # on it would wedge every PR with no move available except waiting for upstream.
+      #
+      # CRITICAL blocks the merge. HIGH is reported below and does not — a one-person project
+      # that reddens on every new HIGH in a transitive dependency stops reading the results,
+      # which is worse than not blocking. Dependabot opens the PRs that fix them either way.
+      - name: Run Trivy (CRITICAL — blocking)
+        env:
+          TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
+          TRIVY_JAVA_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-java-db
+        run: |
+          # `--exit-code 2` for findings, so a finding is distinguishable from Trivy failing to
+          # run (which exits 1). Without that split, a flaky DB download reads as a CVE and a
+          # real CVE reads as flakiness — the reason this step used to be continue-on-error at all.
+          #
+          # `if docker run …; then … else code=$?; fi` and NOT a bare call followed by `code=$?`:
+          # GitHub runs `run:` blocks under `bash -eo pipefail`, so a non-zero exit aborts the
+          # script *before* the next line. Written the obvious way, this loop never ran a second
+          # time and never printed why — the step just died with exit 1. A command inside an `if`
+          # condition is the one place `set -e` does not fire.
+          #
+          # ~/.m2 is mounted read-only so the Java analyzer reads the warmed cache above rather
+          # than asking Maven Central for every parent POM.
+          for attempt in 1 2 3; do
+            if docker run --rm \
+              -e TRIVY_DB_REPOSITORY -e TRIVY_JAVA_DB_REPOSITORY \
+              -v "$PWD:/repo" -v "$HOME/.m2:/root/.m2:ro" aquasec/trivy:latest \
+              fs --scanners vuln --severity CRITICAL --ignore-unfixed \
+              --exit-code 2 --no-progress --timeout 15m /repo; then
+              code=0
+            else
+              code=$?
+            fi
+            case "$code" in
+              0) echo "No actionable CRITICAL vulnerability."; exit 0 ;;
+              2) echo "::error::Trivy found an actionable CRITICAL vulnerability — see the scan output above."; exit 1 ;;
+              *) echo "Trivy could not complete (exit $code) — attempt $attempt of 3"; sleep 30 ;;
+            esac
+          done
+          echo "::error::Trivy failed to run three times. This is a scanner or network failure, NOT a vulnerability — check the log for a 429 from Maven Central or a DB download error before treating it as a finding."
+          exit 1
+
+      # Everything below CRITICAL, for the record. Never blocks.
+      - name: Run Trivy (HIGH — report only)
         continue-on-error: true
         env:
           TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
@@ -62,6 +125,6 @@ jobs:
         run: |
           docker run --rm \
             -e TRIVY_DB_REPOSITORY -e TRIVY_JAVA_DB_REPOSITORY \
-            -v "$PWD:/repo" aquasec/trivy:latest \
-            fs --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed \
-            --exit-code 1 --no-progress /repo
+            -v "$PWD:/repo" -v "$HOME/.m2:/root/.m2:ro" aquasec/trivy:latest \
+            fs --scanners vuln --severity HIGH --ignore-unfixed \
+            --exit-code 0 --no-progress --timeout 15m /repo

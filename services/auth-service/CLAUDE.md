@@ -46,6 +46,13 @@ Spring Boot 4.0.6 / Java 21 microservice handling authentication for the `finsig
 - `security/jwt/` — `JwtKeyRegistry` (holds the signing key, derives each `kid` as an RFC 7638 thumbprint, renders the JWK Set), `JwtService`, `JwtProperties`.
 - `controller/` — `AuthController` (`/auth/register`, `/auth/login`, `/auth/refresh`, `/auth/logout`), `AdminController`, `JwksController` (`/.well-known/jwks.json`).
 
+**Password policy** (`validation/StrongPassword` + `common-passwords.txt`): minimum 8 characters,
+a blocklist checked case-insensitively *and* with trailing digits stripped (`password2026` is
+caught by `password`), and a refusal of any password containing the username or the email's local
+part (with `+tag` removed first). **No composition rules on purpose** — NIST SP 800-63B dropped
+them because "must contain a symbol" produces `Password1!`. Changing this policy breaks every test
+fixture that registers with a weak password; that is the policy working, not a regression.
+
 **This service alone holds `JWT_PRIVATE_KEY`** — it is the only component that can mint a token. Every other service verifies with the public key. See [docs/security/jwt-key-rotation.md](../../docs/security/jwt-key-rotation.md) for how rotation works.
 
 ## Key constraints

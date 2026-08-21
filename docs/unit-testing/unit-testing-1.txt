@@ -9,13 +9,15 @@ dashboard, risk, notification, analytics) + frontend `web/` (mục 10).
 
 TỔNG QUAN CON SỐ
 --------------------------------------------------------------------------------
-- Tổng số test method (@Test / @ParameterizedTest):  687
-- Tổng số lớp test:                                  137 (+ vài lớp base/support)
+- Tổng số test method (@Test / @ParameterizedTest):  698
+- Tổng số lớp test:                                  138 (+ vài lớp base/support)
 - Trong đó:
-    * Unit / component test (chạy KHÔNG cần Docker):   472
+    * Unit / component test (chạy KHÔNG cần Docker):   483
     * Integration test (cần Docker – Testcontainers):  215 (66 lớp *IntegrationTest)
 - Frontend (Vitest, ngoài con số 687 ở trên):         166 test / 22 file
-- Frontend E2E (Playwright, cần stack đang chạy):       9 test / 4 file (mục 11)
+- Frontend E2E (Playwright, cần stack đang chạy):      12 test / 5 file (mục 11)
+    * trong đó 3 test chỉ chạy khi đặt `E2E_BASE_URL` (kiểm header bảo mật của một origin
+      đã deploy — `vite preview` không phát header nào nên không có gì để khẳng định)
 - Framework: JUnit 5 (Jupiter) + Mockito + AssertJ; frontend dùng Vitest +
   React Testing Library (jsdom) và Playwright cho E2E trình duyệt.
 - Integration test dùng Testcontainers (MySQL 8, Kafka KRaft, Redis) và WireMock
@@ -126,6 +128,24 @@ Quy ước chung của test:
 ================================================================================
 2) AUTH-SERVICE  (đăng ký/đăng nhập, JWT RS256, refresh, khóa tài khoản)
 ================================================================================
+
+[UNIT] StrongPasswordValidatorTest — 11 test  (chính sách mật khẩu, thuần logic)
+   Theo NIST SP 800-63B: **độ dài + blocklist, KHÔNG có luật thành phần**. Bắt buộc phải có ký tự
+   đặc biệt/chữ hoa/chữ số chỉ đẻ ra `Password1!` — thoả mọi luật và nằm đầu mọi danh sách bẻ khoá.
+   - blocklistIsPresent  (📌 file resource không đọc được thì mọi mật khẩu đều lọt và chính sách
+     **trông như đang bật**; phải khẳng định nó đã nạp chứ không giả định)
+   - acceptsAReasonablePassword / imposesNoCompositionRules
+   - rejectsShortPasswords / rejectsCommonPasswords / rejectsCommonPasswordsInAnyCase
+   - rejectsCommonPasswordsWithDigitsAppended  (`password2026` — cách "làm mạnh" phổ biến nhất,
+     và vô dụng vì máy bẻ khoá tự nối số)
+   - ignoresNull  (để `@NotBlank` lo; hai thông báo cho một ô trống thì tệ hơn một)
+   - rejectsIdentityEchoes / shortIdentifiersAreNotMatched  (tên `an` không được cấm luôn "banana")
+   - stripsSubAddressingBeforeComparing
+     📌 Phát hiện khi kiểm xem thay đổi này phá cái gì: load-test đăng ký bằng
+        `loadtest+<stamp>@…` với mật khẩu `LoadTest123!`. So nguyên cả local part thì lọt — mà đó
+        đúng là mẫu mà check này sinh ra để bắt. `+tag` là định tuyến, không phải danh tính.
+   📌 **Đổi chính sách thì phá 21 test cũ** — vì fixture dùng `password123`, đúng loại vừa bị chặn.
+      Đó là chính sách đang làm đúng việc, không phải hồi quy. Đã đổi fixture sang cụm từ dài.
 
 [UNIT] JwtServiceTest — 5 test
   Xác thực token cục bộ bằng public key (pin thuật toán + iss/aud).
@@ -1393,6 +1413,21 @@ ký dùng chung ở `e2e/support/account.ts` (không phải file test nên Playw
    auth-service còn đang lên. Container báo `healthy` KHÔNG có nghĩa mạch qua gateway đã
    thông, và triệu chứng của nó là form đăng ký im lặng không đi đâu cả, trông y hệt lỗi
    test. Đã tái hiện được bằng `docker compose restart auth-service` rồi chạy ngay.
+
+[E2E] e2e/security-headers.spec.ts — 3 test  (chỉ chạy khi có `E2E_BASE_URL`)
+   Kiểm header bảo mật trên một origin ĐANG CHẠY, không kiểm file cấu hình đáng lẽ sinh ra chúng.
+   - serves the security headers  (CSP/X-Frame/X-Content-Type/Referrer/Permissions, và CSP không
+     được chứa `*` — CSP có wildcard chỉ là trang trí)
+   - does not tell the world which server version it runs
+   - the CSP does not break the app it protects
+     📌 **Đây là test khó nhất, và bản đầu SAI.** Thiếu header thì dễ thấy trong diff; một CSP
+        **có mặt nhưng quá chặt** thì không: mọi header trông đúng, còn app thì im lặng mất một
+        stylesheet trên máy người dùng. Bản đầu nghe qua `page.on('console')` → **không bao giờ
+        kêu**, tôi chặn hẳn manifest mà test vẫn xanh. Phải đổi sang sự kiện DOM chuẩn
+        `securitypolicyviolation`. Rồi lại phát hiện `manifest-src 'none'` cũng không kích hoạt
+        được vì **Chromium headless không tải manifest**. Cuối cùng chặn `style-src` mới ra:
+        `style-src-elem blocked .../index-*.css` ⇒ lúc đó mới biết listener thật sự hoạt động.
+        **Một listener không thể đỏ còn tệ hơn không có listener, vì nó bị nhầm là bằng chứng.**
 
 [E2E] e2e/journey.spec.ts — 3 test  (chromium)
    - a new user can sign up, record income and find it in their history

@@ -46,11 +46,11 @@ class LoginObservabilityIntegrationTest extends AbstractMockMvcIntegrationTest {
     void recordsASuccessfulLogin() throws Exception {
         long id = uniqueId();
         String email = "obs" + id + "@finsight.test";
-        register("user" + id, email, "password123");
+        register("user" + id, email, "trailhead lantern 88");
         assertThat(userRepository.findByEmail(email).orElseThrow().getLastLoginAt()).isNull();
 
         double before = loginCount("success");
-        login(email, "password123", 200);
+        login(email, "trailhead lantern 88", 200);
 
         assertThat(loginCount("success")).isEqualTo(before + 1);
         // The column is what answers "how many distinct people used this last week" — a counter
@@ -63,7 +63,7 @@ class LoginObservabilityIntegrationTest extends AbstractMockMvcIntegrationTest {
     void recordsAFailedLogin() throws Exception {
         long id = uniqueId();
         String email = "obsfail" + id + "@finsight.test";
-        register("user" + id, email, "password123");
+        register("user" + id, email, "trailhead lantern 88");
 
         double before = loginCount("bad_credentials");
         login(email, "wrong-password", 401);
