@@ -471,8 +471,11 @@ Do not add ad-hoc try/catch in controllers to produce error responses.
   `fail-fast: false`, Surefire reports uploaded on failure.
   **Adding a service means adding it to this matrix** — there is no aggregator pom to pick it up.
 - `.github/workflows/security.yml` — gitleaks over full history (**blocking**) + Trivy filesystem
-  scan (report-only via `continue-on-error`, vuln DBs pulled from the AWS ECR mirror to avoid
-  ghcr rate limits).
+  scan (vuln DBs pulled from the AWS ECR mirror to avoid ghcr rate limits). Trivy runs twice:
+  **CRITICAL blocks**, HIGH is report-only. The blocking step asks for `--exit-code 2` so a
+  finding (2) is distinguishable from Trivy failing to run (1 — DB download, Maven Central 429,
+  timeout), and retries only the latter. Do not collapse them back into one step: with
+  `continue-on-error` a scanner failure is indistinguishable from a clean scan.
 - `.github/workflows/codeql-java.yml` + `codeql-web.yml` — SAST, split by language and
   path-filtered (`services/**` vs `web/**`) so a change to one side does not run the other's
   analysis; the weekly cron in both is deliberately *not* path-filtered. Both are

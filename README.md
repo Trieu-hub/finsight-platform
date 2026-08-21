@@ -455,8 +455,14 @@ newly-disclosed CVE turns the build red even when no code changed:
 - **Secret scan** — gitleaks over the **full git history**, not just the tip. Blocking: any finding
   fails the job, so a leaked credential cannot merge.
 - **Dependency scan** — Trivy filesystem scan across every `pom.xml` and `web/package-lock.json`,
-  HIGH/CRITICAL and `--ignore-unfixed`. Report-only (`continue-on-error`) — findings surface in the
-  log and Dependabot opens the PRs that fix them.
+  `--ignore-unfixed` throughout (a CVE with no released fix cannot be acted on, so failing on it
+  would wedge every PR). **CRITICAL blocks the merge; HIGH is reported and does not** — a
+  one-person project that reddens on every new HIGH in a transitive dependency stops reading the
+  results, which is worse than not blocking. Dependabot opens the PRs that fix either.
+  The blocking step distinguishes **a finding from a scanner failure** by asking Trivy for
+  `--exit-code 2`: exit 2 is a CVE and fails immediately, exit 1 is Trivy itself failing (a DB
+  download, a Maven Central 429, a timeout) and is retried three times. Both were observed while
+  writing this, and conflating them is how a scan comes to look green while scanning nothing.
 - **Dependabot** (`.github/dependabot.yml`) — weekly, grouped, across the nine Maven modules, npm
   `web/`, and the workflows themselves. Major `typescript` bumps are held back: typescript-eslint
   declares a peer range that a new major falls outside of, so the bump breaks `npm ci` rather than
