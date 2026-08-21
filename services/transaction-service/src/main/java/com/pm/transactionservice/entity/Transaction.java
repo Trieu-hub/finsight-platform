@@ -97,6 +97,14 @@ public class Transaction {
     @Column(name = "import_fingerprint", length = 64)
     private String importFingerprint;
 
+    /**
+     * An opaque token the client attaches to one intended write, so replaying it — from the
+     * offline outbox, or after a response was lost — resolves to this same row instead of a
+     * second one. Null for an ordinary create; unique per user where present (V14).
+     */
+    @Column(name = "client_request_id", length = 64)
+    private String clientRequestId;
+
     @CreatedDate
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;

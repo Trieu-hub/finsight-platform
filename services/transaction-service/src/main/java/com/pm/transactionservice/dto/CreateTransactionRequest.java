@@ -55,4 +55,12 @@ public class CreateTransactionRequest {
     private UUID budgetId;
 
     private Map<String, Object> metadata;
+
+    /**
+     * Optional idempotency token. Send the same value when retrying a write and the server returns
+     * the transaction it already created rather than creating another. The SPA sets it for every
+     * transaction it queues offline; a normal online create can leave it null.
+     */
+    @Size(max = 64, message = "clientRequestId must be at most 64 characters")
+    private String clientRequestId;
 }

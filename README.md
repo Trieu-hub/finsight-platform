@@ -336,13 +336,22 @@ stay in the backend.
 - **Offline, read-only**: the service worker keeps the app shell and the last response from the
   read endpoints behind the dashboard, transactions, budgets, wallets and analytics screens, so
   losing the network shows those figures under an "you are offline" banner instead of the
-  browser's error page. It is deliberately read-only — **no write queue**. A transaction composed
-  offline and replayed later would land with the wrong date, race the balance the server owns, and
-  reach budgets and the risk rules out of order, so every non-GET simply fails while offline.
+  browser's error page.
   Nothing pins a user to a stale bundle: navigations are **network-first** (the cache answers only
   when the fetch throws) and `/assets/` is content-hashed, so a deploy is picked up on the first
   load that reaches the server. Cached responses are one user's financial data, so the page tells
   the worker to drop them whenever it clears its tokens.
+- **Offline writes are queued, not faked**: a transaction composed without a network is held on
+  the device and replayed when it returns — but the service worker still refuses to answer any
+  non-GET from cache, because a cached "created" response would be a lie. Three objections used to
+  rule a write queue out, and each is answered rather than ignored: the **date** is chosen by the
+  user and travels with the queued write, so a Tuesday expense replayed on Thursday still books
+  Tuesday; the **balance** is server-owned and applied at write time, so a late write is late, not
+  wrong; and a **replay cannot double-count**, because the client attaches a `clientRequestId` and
+  transaction-service enforces one row per `(user, clientRequestId)` with a unique index rather
+  than trusting the client to send it once. The queue shows what it is holding, drops a write the
+  server permanently rejects so one bad row cannot pin the rest, and is capped so a long offline
+  stretch cannot fill the origin's storage.
 - **Updates are offered, never forced**: a newly deployed worker does **not** call `skipWaiting()`.
   Taking over a running page would swap the cached bundles beneath it, and the next lazily-imported
   route would ask for a hashed chunk the new build no longer has — a "failed to fetch dynamically

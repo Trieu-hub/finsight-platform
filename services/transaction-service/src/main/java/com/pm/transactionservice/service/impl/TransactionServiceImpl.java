@@ -42,6 +42,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -72,7 +73,31 @@ public class TransactionServiceImpl implements TransactionService {
     @Override
     @Transactional
     public TransactionResponse create(Long userId, CreateTransactionRequest request) {
-        return toResponse(write(userId, request, null));
+        String clientRequestId = blankToNull(request.getClientRequestId());
+        if (clientRequestId == null) {
+            return toResponse(write(userId, request, null));
+        }
+
+        // A replay — the SPA queued this write offline, or never saw the response to the first
+        // attempt. Return what that attempt created instead of creating a second transaction the
+        // user would then have to find and delete.
+        //
+        // The unique index on (user_id, client_request_id) is the real guarantee; this check just
+        // makes the ordinary sequential replay cheap. Two replays arriving *simultaneously* can
+        // both pass it, and the loser gets a constraint violation — deliberately not caught here,
+        // because the catch would run inside a transaction already marked rollback-only and could
+        // not read anything. The client retries, this check finds the row, and the outcome is the
+        // same. What can never happen is two rows.
+        Optional<Transaction> alreadyWritten =
+                transactionRepository.findByUserIdAndClientRequestId(userId, clientRequestId);
+        return alreadyWritten
+                .map(this::toResponse)
+                .orElseGet(() -> toResponse(write(userId, request, null)));
+    }
+
+    /** Treats "" and "   " as absent, so a client sending an empty field does not claim the index. */
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     /**
@@ -108,6 +133,8 @@ public class TransactionServiceImpl implements TransactionService {
                 .isDeleted(false)
                 .metadata(request.getMetadata())
                 .importFingerprint(importFingerprint)
+                // Null for an ordinary create; set when the client is replaying a queued write.
+                .clientRequestId(blankToNull(request.getClientRequestId()))
                 .build();
 
         Transaction saved = transactionRepository.save(transaction);

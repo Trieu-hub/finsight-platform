@@ -11,6 +11,8 @@ import { errorMessage } from '../api/client'
 import type { Budget, Category, Transaction, TransactionType, Wallet } from '../api/types'
 import { monthRange, saveBlob } from '../lib/download'
 import { catLabel, categoryName, groupThousands, money, sanitizeMoneyInput } from '../lib/format'
+import { enqueue } from '../lib/outbox'
+import { useOutbox } from '../hooks/useOutbox'
 import { useI18n } from '../i18n'
 
 const today = () => new Date().toISOString().slice(0, 10)
@@ -62,6 +64,10 @@ export default function Transactions() {
   >(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+  // Drains anything composed offline as soon as the network is back, and reports what is waiting.
+  // `load` is a hoisted function declaration below; reloading once the queue lands is what makes
+  // the transaction appear in the list without the user refreshing.
+  const outbox = useOutbox(() => void load())
   // History period filter: 'YYYY-MM' shows just that month, '' shows all. Defaults to this month.
   const [month, setMonth] = useState(today().slice(0, 7))
   const [exporting, setExporting] = useState(false)
@@ -239,7 +245,7 @@ export default function Transactions() {
           }
         }
         setSubmitting(true)
-        const created = await createTransaction({
+        const payload = {
           type,
           amount: value,
           currency: effectiveCurrency,
@@ -248,7 +254,24 @@ export default function Transactions() {
           transactionDate: date,
           walletId: sourceWallet ? sourceWallet.id : undefined,
           budgetId: type === 'EXPENSE' ? effectiveBudgetId : undefined,
-        })
+        }
+
+        // Offline: queue it rather than firing a request that can only fail. `transactionDate` is
+        // already in the payload, so replaying this on Thursday still books it on the day the
+        // user picked — the drift that made a write queue a bad idea before.
+        if (!navigator.onLine) {
+          const item = enqueue(payload)
+          setError(item ? '' : t('outbox.full'))
+          if (item) {
+            setAmount('')
+            setDescription('')
+            outbox.refresh()
+          }
+          setSubmitting(false)
+          return
+        }
+
+        const created = await createTransaction(payload)
         // Warn immediately if this expense pushes the chosen budget over its limit. Computed
         // client-side (this budget's prior spend + this amount) so the popup is instant, ahead of
         // the asynchronous budget tally that arrives over Kafka.
@@ -474,6 +497,16 @@ export default function Transactions() {
 
       {/* List */}
       <section data-tour="tx-list" className="min-w-0 md:col-span-2">
+        {/* Queued offline. Shown online too: the drain needs a moment, and silence in between
+            would read as "my transaction vanished". */}
+        {outbox.pending > 0 && (
+          <p
+            role="status"
+            className="mb-3 rounded-lg border border-amber-900/60 bg-amber-950/40 px-3 py-2 text-xs text-amber-200"
+          >
+            {t('outbox.pending', { n: outbox.pending })}
+          </p>
+        )}
         <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-400">
             {t('tx.title')}
