@@ -20,8 +20,8 @@ class JwtClaimsIntegrationTest extends AbstractMockMvcIntegrationTest {
     void issuedTokenCarriesIssuerAndAudience() throws Exception {
         long id = uniqueId();
         String email = "claims" + id + "@finsight.test";
-        register("user" + id, email, "password123");
-        String accessToken = login(email, "password123").path("accessToken").asText();
+        register("user" + id, email, "trailhead lantern 88");
+        String accessToken = login(email, "trailhead lantern 88").path("accessToken").asText();
 
         // The login token is RS256-signed with the test private key; verify it with the
         // matching public key (the same pair the app is configured with).
@@ -37,7 +37,7 @@ class JwtClaimsIntegrationTest extends AbstractMockMvcIntegrationTest {
     void tokenWithoutIssuerOrAudienceIsRejected() throws Exception {
         long id = uniqueId();
         String email = "noaud" + id + "@finsight.test";
-        register("user" + id, email, "password123");
+        register("user" + id, email, "trailhead lantern 88");
 
         // Correctly signed and addressed to an existing user, but with no iss/aud claims.
         // Issuer/audience are now enforced, so the request must be rejected.

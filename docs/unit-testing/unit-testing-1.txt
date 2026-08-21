@@ -9,10 +9,10 @@ dashboard, risk, notification, analytics) + frontend `web/` (mục 10).
 
 TỔNG QUAN CON SỐ
 --------------------------------------------------------------------------------
-- Tổng số test method (@Test / @ParameterizedTest):  687
-- Tổng số lớp test:                                  137 (+ vài lớp base/support)
+- Tổng số test method (@Test / @ParameterizedTest):  698
+- Tổng số lớp test:                                  138 (+ vài lớp base/support)
 - Trong đó:
-    * Unit / component test (chạy KHÔNG cần Docker):   472
+    * Unit / component test (chạy KHÔNG cần Docker):   483
     * Integration test (cần Docker – Testcontainers):  215 (66 lớp *IntegrationTest)
 - Frontend (Vitest, ngoài con số 687 ở trên):         166 test / 22 file
 - Frontend E2E (Playwright, cần stack đang chạy):      12 test / 5 file (mục 11)
@@ -128,6 +128,24 @@ Quy ước chung của test:
 ================================================================================
 2) AUTH-SERVICE  (đăng ký/đăng nhập, JWT RS256, refresh, khóa tài khoản)
 ================================================================================
+
+[UNIT] StrongPasswordValidatorTest — 11 test  (chính sách mật khẩu, thuần logic)
+   Theo NIST SP 800-63B: **độ dài + blocklist, KHÔNG có luật thành phần**. Bắt buộc phải có ký tự
+   đặc biệt/chữ hoa/chữ số chỉ đẻ ra `Password1!` — thoả mọi luật và nằm đầu mọi danh sách bẻ khoá.
+   - blocklistIsPresent  (📌 file resource không đọc được thì mọi mật khẩu đều lọt và chính sách
+     **trông như đang bật**; phải khẳng định nó đã nạp chứ không giả định)
+   - acceptsAReasonablePassword / imposesNoCompositionRules
+   - rejectsShortPasswords / rejectsCommonPasswords / rejectsCommonPasswordsInAnyCase
+   - rejectsCommonPasswordsWithDigitsAppended  (`password2026` — cách "làm mạnh" phổ biến nhất,
+     và vô dụng vì máy bẻ khoá tự nối số)
+   - ignoresNull  (để `@NotBlank` lo; hai thông báo cho một ô trống thì tệ hơn một)
+   - rejectsIdentityEchoes / shortIdentifiersAreNotMatched  (tên `an` không được cấm luôn "banana")
+   - stripsSubAddressingBeforeComparing
+     📌 Phát hiện khi kiểm xem thay đổi này phá cái gì: load-test đăng ký bằng
+        `loadtest+<stamp>@…` với mật khẩu `LoadTest123!`. So nguyên cả local part thì lọt — mà đó
+        đúng là mẫu mà check này sinh ra để bắt. `+tag` là định tuyến, không phải danh tính.
+   📌 **Đổi chính sách thì phá 21 test cũ** — vì fixture dùng `password123`, đúng loại vừa bị chặn.
+      Đó là chính sách đang làm đúng việc, không phải hồi quy. Đã đổi fixture sang cụm từ dài.
 
 [UNIT] JwtServiceTest — 5 test
   Xác thực token cục bộ bằng public key (pin thuật toán + iss/aud).

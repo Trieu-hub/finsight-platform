@@ -1,5 +1,6 @@
 package com.pm.authservice.dto.auth;
 
+import com.pm.authservice.validation.StrongPassword;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -22,7 +23,8 @@ public class RegisterRequest {
     @Email(message = "Invalid email format")
     private String email;
 
+    // @StrongPassword covers the length itself, so there is no @Size here to disagree with it.
     @NotBlank(message = "Password is required")
-    @Size(min = 8, message = "Password must be at least 8 characters")
+    @StrongPassword
     private String password;
 }

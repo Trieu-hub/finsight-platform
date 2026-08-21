@@ -48,8 +48,8 @@ class JwksEndpointIntegrationTest extends AbstractMockMvcIntegrationTest {
     private String loginAndGetAccessToken() throws Exception {
         long id = uniqueId();
         String email = "jwks" + id + "@finsight.test";
-        register("user" + id, email, "password123");
-        return login(email, "password123").path("accessToken").asText();
+        register("user" + id, email, "trailhead lantern 88");
+        return login(email, "trailhead lantern 88").path("accessToken").asText();
     }
 
     @Test

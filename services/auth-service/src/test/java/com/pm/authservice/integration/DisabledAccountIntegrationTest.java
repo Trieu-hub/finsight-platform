@@ -20,7 +20,7 @@ class DisabledAccountIntegrationTest extends AbstractMockMvcIntegrationTest {
     void disabledUserCannotLogin() throws Exception {
         long id = uniqueId();
         String email = "disabled" + id + "@finsight.test";
-        register("user" + id, email, "password123");
+        register("user" + id, email, "trailhead lantern 88");
 
         User user = userRepository.findByEmail(email).orElseThrow();
         user.setEnabled(false);
@@ -28,7 +28,7 @@ class DisabledAccountIntegrationTest extends AbstractMockMvcIntegrationTest {
 
         mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\":\"" + email + "\",\"password\":\"password123\"}"))
+                        .content("{\"email\":\"" + email + "\",\"password\":\"trailhead lantern 88\"}"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error.code").value("ACCOUNT_DISABLED"));
     }

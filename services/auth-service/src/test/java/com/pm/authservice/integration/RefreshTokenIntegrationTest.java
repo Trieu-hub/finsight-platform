@@ -14,8 +14,8 @@ class RefreshTokenIntegrationTest extends AbstractMockMvcIntegrationTest {
     private JsonNode registerAndLogin() throws Exception {
         long id = uniqueId();
         String email = "refresh" + id + "@finsight.test";
-        register("user" + id, email, "password123");
-        return login(email, "password123");
+        register("user" + id, email, "trailhead lantern 88");
+        return login(email, "trailhead lantern 88");
     }
 
     @Test

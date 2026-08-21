@@ -19,6 +19,7 @@ import com.pm.authservice.service.AuthService;
 import com.pm.authservice.service.LoginAttemptService;
 import com.pm.authservice.service.RefreshTokenService;
 import com.pm.authservice.service.TokenRevocationService;
+import com.pm.authservice.validation.StrongPasswordValidator;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -89,6 +90,16 @@ public class AuthServiceImpl implements AuthService {
 
         if (userRepository.existsByUsername(request.getUsername())) {
             throw new DuplicateResourceException("Username is already taken");
+        }
+
+        // Checked here rather than in the annotation because it needs three fields at once, and a
+        // field-level constraint only ever sees one. A password containing the username or the
+        // email's local part is guessable by anyone who knows the address — and the address is
+        // how you sign in, so that is everyone.
+        if (StrongPasswordValidator.echoesIdentity(
+                request.getPassword(), request.getUsername(), request.getEmail())) {
+            throw new IllegalArgumentException(
+                    "Password must not contain your username or email address");
         }
 
         Role userRole = roleRepository.findByName(RoleName.ROLE_USER)

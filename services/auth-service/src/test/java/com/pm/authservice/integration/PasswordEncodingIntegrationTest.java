@@ -26,7 +26,7 @@ class PasswordEncodingIntegrationTest extends AbstractMockMvcIntegrationTest {
     void newRegistrationsAreStoredWithBcryptPrefix() throws Exception {
         long id = uniqueId();
         String email = "enc" + id + "@finsight.test";
-        register("user" + id, email, "password123");
+        register("user" + id, email, "trailhead lantern 88");
 
         User stored = userRepository.findByEmail(email).orElseThrow();
         assertTrue(stored.getPassword().startsWith("{bcrypt}"),
@@ -43,7 +43,7 @@ class PasswordEncodingIntegrationTest extends AbstractMockMvcIntegrationTest {
         User legacy = User.builder()
                 .username("legacy" + id)
                 .email(email)
-                .password(new BCryptPasswordEncoder().encode("password123"))
+                .password(new BCryptPasswordEncoder().encode("trailhead lantern 88"))
                 .enabled(true)
                 .role(role)
                 .createdAt(LocalDateTime.now())
@@ -51,6 +51,6 @@ class PasswordEncodingIntegrationTest extends AbstractMockMvcIntegrationTest {
         userRepository.save(legacy);
 
         // login() asserts HTTP 200 — proves the default decoder verifies prefix-less hashes.
-        login(email, "password123");
+        login(email, "trailhead lantern 88");
     }
 }

@@ -51,7 +51,9 @@ export function register() {
   const iter = typeof __ITER !== 'undefined' ? __ITER : 0;
   const stamp = `${Date.now()}-${vu}-${iter}-${Math.floor(Math.random() * 1e9)}`;
   const email = `loadtest+${stamp}@loadtest.local`;
-  const password = 'LoadTest123!';
+  // Not `LoadTest123!`: auth-service now refuses a password echoing the account's own address,
+  // and this signs up as `loadtest+<stamp>@…`. The rule is right; the fixture was the problem.
+  const password = 'ridge harbour 4417';
   const body = JSON.stringify({
     username: `lt${stamp}`.replace(/-/g, '').slice(0, 50),
     email,

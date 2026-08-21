@@ -285,6 +285,11 @@ stay in the backend.
 - **JWT auth**: the token from `POST /api/v1/auth/login` is stored client-side and attached to
   every request by an Axios interceptor; a `401` clears it and redirects to `/login`. Protected
   routes are gated client-side for UX only — the backend remains the security boundary.
+- **Password policy** (auth-service): minimum 8 characters plus a **blocklist** of the strings a
+  credential-stuffing run tries first — matched case-insensitively and with trailing digits
+  stripped, so `password2026` is refused by the entry `password` — and a rejection of any password
+  containing the account's own username or email. Deliberately **no composition rules**: NIST
+  SP 800-63B dropped them because "must contain a symbol" reliably produces `Password1!`.
 - **Security headers at the edge** (`docker/caddy/Caddyfile`): HSTS, a **CSP with no wildcards**
   (`default-src 'self'`, `frame-ancestors 'none'`, `object-src 'none'`), `X-Frame-Options`,
   `nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, a `Permissions-Policy` that turns
