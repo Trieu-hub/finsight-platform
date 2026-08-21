@@ -14,7 +14,7 @@ TỔNG QUAN CON SỐ
 - Trong đó:
     * Unit / component test (chạy KHÔNG cần Docker):   472
     * Integration test (cần Docker – Testcontainers):  215 (66 lớp *IntegrationTest)
-- Frontend (Vitest, ngoài con số 687 ở trên):         155 test / 21 file
+- Frontend (Vitest, ngoài con số 687 ở trên):         158 test / 21 file
 - Frontend E2E (Playwright, cần stack đang chạy):       9 test / 4 file (mục 11)
 - Framework: JUnit 5 (Jupiter) + Mockito + AssertJ; frontend dùng Vitest +
   React Testing Library (jsdom) và Playwright cho E2E trình duyệt.
@@ -1228,7 +1228,18 @@ bàn phím; useAuth mock thành admin vì đồng xu chỉ rigged xanh cho admin
       bàn phím/screen reader với tới được. Tên nút kèm tên game: "Play" lặp trên
       mọi card thì screen reader không biết đang ở card nào)
 
-[COMPONENT] src/pages/Transactions.test.tsx — 3 test  (bất biến category ↔ type
+[COMPONENT] src/pages/Transactions.test.tsx — 6 test  (bất biến category ↔ type
+   +3 test 2026-08-21 cho ghi offline — **phát hiện bằng cách dùng app thật trên iPhone ở chế độ
+   máy bay, toàn bộ test tự động lúc đó đều xanh**:
+   - queues an expense even when no budget data could be loaded
+     📌 **Hai cửa chặn, không phải một.** (1) `handleSubmit` bắt buộc EXPENSE phải gắn ngân sách,
+        mà offline `budgets` rỗng ⇒ `return` trước khi tới hàng đợi. (2) Tệ hơn: **nút submit
+        `disabled` luôn** khi không có ngân sách khớp ⇒ bấm không ra gì, **không lỗi, không dấu
+        vết**. Mà EXPENSE là loại MẶC ĐỊNH ⇒ tính năng ghi offline không thể chạm tới trong đúng
+        tình huống nó sinh ra để phục vụ. Nay cả hai đều bỏ qua khi offline.
+   - gives the queued write the date the user chose, not the day it is sent
+   - tells the user it is holding something, rather than going quiet
+   (cùng lúc: nhánh TRANSFER trước đó **chưa hề nối** vào hàng đợi — sót, không phải chủ ý)
 của form; chỉ mock lời gọi mạng)
    - defaults the category to one of the current type
    - moves the category to the new type instead of keeping a contradictory pair
