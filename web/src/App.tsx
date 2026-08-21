@@ -1,4 +1,6 @@
 import { Route, Routes } from 'react-router-dom'
+import InstallBanner from './components/InstallBanner'
+import UpdateBanner from './components/UpdateBanner'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
 import AdminRoute from './components/AdminRoute'
@@ -16,7 +18,16 @@ import LuckyMe from './pages/LuckyMe'
 
 export default function App() {
   return (
-    <Routes>
+    <>
+      {/*
+       * Above the routes, not inside Layout: Layout only wraps the signed-in screens, so a banner
+       * living there is invisible to exactly the person it is for — the first-time visitor sitting
+       * on /login, who has not installed anything yet. The update banner has the same problem in
+       * reverse: a new build must be offered even to someone stuck on the sign-in page.
+       */}
+      <UpdateBanner />
+      <InstallBanner />
+      <Routes>
       {/* Public */}
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
@@ -40,6 +51,7 @@ export default function App() {
           </Route>
         </Route>
       </Route>
-    </Routes>
+      </Routes>
+    </>
   )
 }

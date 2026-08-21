@@ -2,8 +2,6 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { useOnline } from '../hooks/useOnline'
-import InstallBanner from './InstallBanner'
-import UpdateBanner from './UpdateBanner'
 import { useI18n } from '../i18n'
 import NotificationBell from './NotificationBell'
 import OnboardingTour from './OnboardingTour'
@@ -253,8 +251,6 @@ export default function Layout() {
           {t('offline.banner')}
         </div>
       )}
-      <UpdateBanner />
-      <InstallBanner />
       <main className="mx-auto max-w-6xl overflow-x-clip px-4 py-8 sm:px-5 sm:py-10">
         <Outlet />
       </main>

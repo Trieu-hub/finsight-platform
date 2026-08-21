@@ -14,7 +14,7 @@ TỔNG QUAN CON SỐ
 - Trong đó:
     * Unit / component test (chạy KHÔNG cần Docker):   472
     * Integration test (cần Docker – Testcontainers):  207 (64 lớp *IntegrationTest)
-- Frontend (Vitest, ngoài con số 679 ở trên):         142 test / 19 file
+- Frontend (Vitest, ngoài con số 679 ở trên):         145 test / 20 file
 - Frontend E2E (Playwright, cần stack đang chạy):       9 test / 4 file (mục 11)
 - Framework: JUnit 5 (Jupiter) + Mockito + AssertJ; frontend dùng Vitest +
   React Testing Library (jsdom) và Playwright cho E2E trình duyệt.
@@ -1204,6 +1204,16 @@ của form; chỉ mock lời gọi mạng)
      (hồi quy: chú thích trước đây LUÔN là "at the current pace" — kể cả với con số mà
       tốc độ hiện tại không hề tạo ra. Đã chứng minh test có răng: bỏ điều kiện đi thì
       đúng test này đỏ)
+
+[COMPONENT] src/App.test.tsx — 3 test  (banner phải nằm ĐÚNG CHỖ trong cây route)
+   - offers the install on the sign-in screen, where a new visitor actually lands
+     📌 **Hồi quy có thật:** banner cài đặt ban đầu đặt trong `Layout`, mà `Layout` chỉ bọc các
+        route ĐÃ đăng nhập ⇒ nó vô hình với đúng người nó viết cho: khách lần đầu đang đứng ở
+        `/login`. Không lỗi, không log, chỉ đơn giản là không bao giờ render. Người dùng mở
+        vernfy.com trên Safari iOS và không thấy gì — đó là cách lỗi này bị phát hiện.
+   - still offers it on a signed-in route
+   - says nothing once the app already runs from the home screen
+   📌 Đã chứng minh có răng: bỏ `<InstallBanner />` khỏi `App` thì 2 test đầu đỏ.
 
 [UNIT] src/hooks/useInstallPrompt.test.ts — 8 test  (luồng mời cài app)
    Trước đây `beforeinstallprompt` KHÔNG được xử lý ở đâu cả: app cài được nhưng không ai
