@@ -45,4 +45,11 @@ public class User {
     @LastModifiedDate
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
+
+    /**
+     * Last successful sign-in. Null until this account signs in for the first time *after* the
+     * column existed (V7) — it is not evidence that a pre-existing account never signed in.
+     */
+    @Column(name = "last_login_at")
+    private LocalDateTime lastLoginAt;
 }

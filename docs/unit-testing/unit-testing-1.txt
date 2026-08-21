@@ -9,12 +9,12 @@ dashboard, risk, notification, analytics) + frontend `web/` (mục 10).
 
 TỔNG QUAN CON SỐ
 --------------------------------------------------------------------------------
-- Tổng số test method (@Test / @ParameterizedTest):  679
-- Tổng số lớp test:                                  135 (+ vài lớp base/support)
+- Tổng số test method (@Test / @ParameterizedTest):  683
+- Tổng số lớp test:                                  136 (+ vài lớp base/support)
 - Trong đó:
     * Unit / component test (chạy KHÔNG cần Docker):   472
-    * Integration test (cần Docker – Testcontainers):  207 (64 lớp *IntegrationTest)
-- Frontend (Vitest, ngoài con số 679 ở trên):         145 test / 20 file
+    * Integration test (cần Docker – Testcontainers):  211 (65 lớp *IntegrationTest)
+- Frontend (Vitest, ngoài con số 683 ở trên):         145 test / 20 file
 - Frontend E2E (Playwright, cần stack đang chạy):       9 test / 4 file (mục 11)
 - Framework: JUnit 5 (Jupiter) + Mockito + AssertJ; frontend dùng Vitest +
   React Testing Library (jsdom) và Playwright cho E2E trình duyệt.
@@ -158,6 +158,19 @@ Quy ước chung của test:
    - rotationInvalidatesPreviousRefreshToken
    - logoutRevokesRefreshToken
    - refreshWithUnknownTokenIsUnauthorized
+
+[INTEGRATION] LoginObservabilityIntegrationTest — 4 test  (MySQL + Redis thật)
+   Trước đây một lần đăng nhập KHÔNG để lại dấu vết nào đọc được: bằng chứng duy nhất là refresh
+   token trong Redis, hết hạn là mất. Hỏi "ngày 19 có ai đăng nhập không?" thì không gì trên box
+   trả lời được. Phải là integration test chứ không mock: cột phải sống qua một commit thật, và
+   counter phải được đăng ký trong context thật.
+   - recordsASuccessfulLogin  (counter +1 VÀ `last_login_at` được đóng dấu)
+   - recordsAFailedLogin  (counter +1 nhưng KHÔNG đóng dấu — đóng dấu ở đây sẽ khiến một đợt
+     brute-force trông như làn sóng người dùng hoạt động)
+   - doesNotLeakAccountExistenceThroughMetrics  (email lạ và sai mật khẩu dùng CHUNG một counter;
+     tách ra là rò rỉ qua Prometheus đúng thứ mà API cố tình không tiết lộ)
+   - registersAllOutcomesUpFront  (counter chưa từng bắn thì VẮNG MẶT khỏi /actuator/prometheus,
+     và một series vắng mặt hiện là "no data" — không phân biệt được với service chết)
 
 [INTEGRATION] LoginLockoutIntegrationTest — 2 test
    - lockoutAfterMaxFailedAttemptsBlocksEvenCorrectPassword
