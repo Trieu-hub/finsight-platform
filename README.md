@@ -285,6 +285,13 @@ stay in the backend.
 - **JWT auth**: the token from `POST /api/v1/auth/login` is stored client-side and attached to
   every request by an Axios interceptor; a `401` clears it and redirects to `/login`. Protected
   routes are gated client-side for UX only — the backend remains the security boundary.
+- **Security headers at the edge** (`docker/caddy/Caddyfile`): HSTS, a **CSP with no wildcards**
+  (`default-src 'self'`, `frame-ancestors 'none'`, `object-src 'none'`), `X-Frame-Options`,
+  `nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, a `Permissions-Policy` that turns
+  off every API the app does not use, and no server version in the response. A strict CSP is only
+  safe because the built app loads nothing cross-origin — no CDN, no web fonts, no analytics — and
+  `web/e2e/security-headers.spec.ts` keeps it honest by loading the app in a real browser and
+  failing on any `securitypolicyviolation` it reports.
 - **Pages**: Login / Register, Dashboard (income / expense / balance + recent activity + budget
   progress), Transactions (history newest-first, filterable by month — current month by default —
   + create, incl. wallet selection and wallet-to-wallet transfers, and a CSV export of the chosen

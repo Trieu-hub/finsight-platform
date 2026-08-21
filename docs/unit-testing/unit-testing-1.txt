@@ -15,7 +15,9 @@ TỔNG QUAN CON SỐ
     * Unit / component test (chạy KHÔNG cần Docker):   472
     * Integration test (cần Docker – Testcontainers):  215 (66 lớp *IntegrationTest)
 - Frontend (Vitest, ngoài con số 687 ở trên):         166 test / 22 file
-- Frontend E2E (Playwright, cần stack đang chạy):       9 test / 4 file (mục 11)
+- Frontend E2E (Playwright, cần stack đang chạy):      12 test / 5 file (mục 11)
+    * trong đó 3 test chỉ chạy khi đặt `E2E_BASE_URL` (kiểm header bảo mật của một origin
+      đã deploy — `vite preview` không phát header nào nên không có gì để khẳng định)
 - Framework: JUnit 5 (Jupiter) + Mockito + AssertJ; frontend dùng Vitest +
   React Testing Library (jsdom) và Playwright cho E2E trình duyệt.
 - Integration test dùng Testcontainers (MySQL 8, Kafka KRaft, Redis) và WireMock
@@ -1393,6 +1395,21 @@ ký dùng chung ở `e2e/support/account.ts` (không phải file test nên Playw
    auth-service còn đang lên. Container báo `healthy` KHÔNG có nghĩa mạch qua gateway đã
    thông, và triệu chứng của nó là form đăng ký im lặng không đi đâu cả, trông y hệt lỗi
    test. Đã tái hiện được bằng `docker compose restart auth-service` rồi chạy ngay.
+
+[E2E] e2e/security-headers.spec.ts — 3 test  (chỉ chạy khi có `E2E_BASE_URL`)
+   Kiểm header bảo mật trên một origin ĐANG CHẠY, không kiểm file cấu hình đáng lẽ sinh ra chúng.
+   - serves the security headers  (CSP/X-Frame/X-Content-Type/Referrer/Permissions, và CSP không
+     được chứa `*` — CSP có wildcard chỉ là trang trí)
+   - does not tell the world which server version it runs
+   - the CSP does not break the app it protects
+     📌 **Đây là test khó nhất, và bản đầu SAI.** Thiếu header thì dễ thấy trong diff; một CSP
+        **có mặt nhưng quá chặt** thì không: mọi header trông đúng, còn app thì im lặng mất một
+        stylesheet trên máy người dùng. Bản đầu nghe qua `page.on('console')` → **không bao giờ
+        kêu**, tôi chặn hẳn manifest mà test vẫn xanh. Phải đổi sang sự kiện DOM chuẩn
+        `securitypolicyviolation`. Rồi lại phát hiện `manifest-src 'none'` cũng không kích hoạt
+        được vì **Chromium headless không tải manifest**. Cuối cùng chặn `style-src` mới ra:
+        `style-src-elem blocked .../index-*.css` ⇒ lúc đó mới biết listener thật sự hoạt động.
+        **Một listener không thể đỏ còn tệ hơn không có listener, vì nó bị nhầm là bằng chứng.**
 
 [E2E] e2e/journey.spec.ts — 3 test  (chromium)
    - a new user can sign up, record income and find it in their history
