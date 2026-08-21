@@ -658,11 +658,25 @@ decrypts its own `secrets.env`.
   gateway's in-network `/actuator/health` before reporting success.
 
   **One-time setup** — in *Settings → Environments → `production`*, add the required reviewers
-  (the approval gate) and these secrets: `DEPLOY_SSH_HOST`, `DEPLOY_SSH_USER`, `DEPLOY_SSH_KEY`
-  (private key with box access), `DEPLOY_APP_DIR` (repo path on the box); optional
-  `DEPLOY_SSH_PORT` (default 22) and `DEPLOY_SSH_KNOWN_HOSTS` (pin the host key instead of
-  trust-on-first-use). Because `secrets.env`, the age key, and `.env` are gitignored, the
-  `git reset --hard` only fast-forwards tracked code and never disturbs them.
+  (the approval gate) and these secrets: `DEPLOY_SSH_HOST`, `DEPLOY_SSH_USER`,
+  **`DEPLOY_SSH_KEY_B64`** (the deploy key, base64-encoded — see below), `DEPLOY_APP_DIR` (repo
+  path on the box); optional `DEPLOY_SSH_PORT` (default 22) and `DEPLOY_SSH_KNOWN_HOSTS` (pin the
+  host key instead of trust-on-first-use). Because `secrets.env`, the age key, and `.env` are
+  gitignored, the `git reset --hard` only fast-forwards tracked code and never disturbs them.
+
+  **Encode the key, do not paste the PEM.** A multi-line private key survives the trip from
+  clipboard to GitHub secret only if nothing between them touches the newlines — and on Windows
+  something always does. Base64 is one line with no whitespace, so there is nothing left to
+  mangle:
+
+  ```powershell
+  [Convert]::ToBase64String([IO.File]::ReadAllBytes("$HOME\.ssh\vernfy_deploy")) | Set-Clipboard
+  ```
+
+  The workflow still accepts a raw `DEPLOY_SSH_KEY` when `_B64` is unset, so an older setup keeps
+  working; it just carries the fragility this replaces. Either way the key is now validated with
+  `ssh-keygen -y` **at setup time**, so a damaged secret fails with a sentence saying so instead
+  of surfacing as a rejected login further down.
 
   Three traps this setup has actually sprung:
 
