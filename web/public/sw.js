@@ -12,11 +12,21 @@
  * below still shows a generic notification, and the next page load re-arms it.
  *
  * == Offline ==
- * Read-only, and deliberately so. Losing the network gets you the app shell and the figures from
- * the last time you loaded them, instead of the browser's error page. It does NOT get you a
- * queue of pending writes: a transaction composed offline and replayed later would land with the
- * wrong date, race the balance the server keeps, and reach budgets and risk rules out of order.
- * Every non-GET therefore fails loudly while offline, which is the honest answer.
+ * Reads are served from cache: losing the network gets you the app shell and the figures from the
+ * last time you loaded them, instead of the browser's error page.
+ *
+ * Writes are still never answered from here — a cached "created" response would be a lie, and
+ * this worker has no way to make one true. What changed is where the write goes instead: the page
+ * queues it (`src/lib/outbox.ts`) and replays it when the network returns. That was refused for a
+ * long time on three grounds, all since answered:
+ *   - "it would land with the wrong date" — `transactionDate` is chosen by the user and travels
+ *     with the queued write, so replaying on Thursday still books Tuesday;
+ *   - "it would race the balance the server keeps" — the balance is server-owned and applied at
+ *     write time, so a late write is simply a late write, not a wrong one;
+ *   - "it would be applied twice" — `clientRequestId` makes a replay idempotent, enforced by a
+ *     unique index in transaction-service, not by hoping the client only sends it once.
+ * So every non-GET still fails here, loudly and on purpose. The queue lives in the page, where it
+ * can tell the user what it is holding.
  *
  * The cached API responses are one user's financial data sitting on disk, so the page sends
  * PURGE whenever it clears its tokens. Without that, signing out on a shared browser would

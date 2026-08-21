@@ -74,4 +74,10 @@ public interface TransactionRepository
      * their fingerprint cleared, so they never make a re-import look like a duplicate.
      */
     boolean existsByUserIdAndImportFingerprint(Long userId, String importFingerprint);
+
+    /**
+     * The transaction a previous attempt at this same intended write already produced, if any.
+     * Used to make a replayed create idempotent — see {@code TransactionServiceImpl.create}.
+     */
+    Optional<Transaction> findByUserIdAndClientRequestId(Long userId, String clientRequestId);
 }

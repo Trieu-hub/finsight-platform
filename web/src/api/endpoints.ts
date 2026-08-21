@@ -71,6 +71,9 @@ export async function createTransaction(body: {
   walletId?: number
   toWalletId?: number
   budgetId?: string
+  // Idempotency token for a replayed write (see lib/outbox.ts). The server returns the
+  // transaction an earlier attempt already created rather than making a second one.
+  clientRequestId?: string
 }): Promise<Transaction> {
   const { data } = await api.post<ApiResponse<Transaction>>('/transactions', body)
   return data.data

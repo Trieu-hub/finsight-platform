@@ -9,12 +9,12 @@ dashboard, risk, notification, analytics) + frontend `web/` (mục 10).
 
 TỔNG QUAN CON SỐ
 --------------------------------------------------------------------------------
-- Tổng số test method (@Test / @ParameterizedTest):  683
-- Tổng số lớp test:                                  136 (+ vài lớp base/support)
+- Tổng số test method (@Test / @ParameterizedTest):  687
+- Tổng số lớp test:                                  137 (+ vài lớp base/support)
 - Trong đó:
     * Unit / component test (chạy KHÔNG cần Docker):   472
-    * Integration test (cần Docker – Testcontainers):  211 (65 lớp *IntegrationTest)
-- Frontend (Vitest, ngoài con số 683 ở trên):         145 test / 20 file
+    * Integration test (cần Docker – Testcontainers):  215 (66 lớp *IntegrationTest)
+- Frontend (Vitest, ngoài con số 687 ở trên):         155 test / 21 file
 - Frontend E2E (Playwright, cần stack đang chạy):       9 test / 4 file (mục 11)
 - Framework: JUnit 5 (Jupiter) + Mockito + AssertJ; frontend dùng Vitest +
   React Testing Library (jsdom) và Playwright cho E2E trình duyệt.
@@ -334,6 +334,19 @@ Quy ước chung của test:
    - rejectsInvalidCurrencyWithStructuredError
    - rejectsMissingTransactionDateWithStructuredError
    - rejectsUnknownCategoryWithStructuredError
+
+[INTEGRATION] TransactionIdempotencyIntegrationTest — 4 test  (gửi lại một lệnh ghi, MySQL thật)
+   Nền tảng của hàng đợi offline: hàng đợi KHÔNG thể biết một request lỗi giữa chừng đã được áp
+   hay chưa, nên gửi lại phải an toàn. Bảo đảm thật nằm ở **unique index
+   `(user_id, client_request_id)`** (`V14`) — kiểm tra trong service chỉ làm ca tuần tự rẻ đi,
+   và chỉ test trên MySQL thật mới chạm tới cái index đó.
+   - replayIsIdempotent  (lần 2 trả về ĐÚNG id lần 1, và sổ chỉ có 1 dòng)
+   - tokensAreScopedPerUser  (2 client tự sinh token, có thể trùng chuỗi — lệnh của người này
+     không bao giờ được rơi vào giao dịch của người kia)
+   - staysUnchangedWithoutAToken  (2 ly cà phê gõ tay giống hệt nhau là 2 ly; gộp lại là app tự
+     cho rằng mình biết rõ hơn người vừa gõ)
+   - blankTokenDoesNotClaimTheIndex  (token rỗng phải coi như KHÔNG có; lưu "" thì nó chiếm ô
+     unique và lần ghi rỗng kế tiếp của user sẽ rơi vào giao dịch cũ)
 
 [INTEGRATION] TransactionImportIntegrationTest — 9 test  (nhập sao kê + chống trùng)
    - importWritesEveryRow
@@ -1090,6 +1103,21 @@ Test trình duyệt thật nằm ở mục 11.
    - parseDate: rejects a day that does not exist in that month
    - parseDate: rejects text that is not a date
 
+[UNIT] src/lib/outbox.test.ts — 9 test  (hàng đợi ghi offline)
+   - keeps a queued write, with a token of its own  (ngày người dùng chọn ĐI CÙNG lệnh ghi —
+     nếu không, giao dịch soạn thứ Ba gửi thứ Năm sẽ ghi vào thứ Năm)
+   - gives each queued write a distinct token
+   - survives a reload, which is the entire point of storing it
+   - refuses to grow without bound  (từ chối cái thứ 101 để form còn báo được cho người dùng,
+     thay vì giả vờ đã lưu một thứ sẽ không bao giờ gửi)
+   - sends oldest first and clears what landed
+   - stops at the first failure and keeps the rest queued  (mạng còn hỏng thì gửi tiếp cũng vô
+     ích, chỉ tốn pin)
+   - drops a write the server will never accept, so it cannot block the queue  (4xx vĩnh viễn bị
+     bỏ; 408/429 KHÔNG — hai mã đó nghĩa là "lát nữa", đúng việc của hàng đợi)
+   - clears on sign-out, since a queue belongs to the account that filled it
+   - treats unreadable storage as an empty queue rather than throwing
+
 [UNIT] src/lib/download.test.ts — 5 test  (khoảng ngày cho nút Xuất CSV)
    - monthRange: covers a whole 31-day month / a 30-day month
    - monthRange: gets February right in a common year and a leap year
@@ -1247,7 +1275,11 @@ của form; chỉ mock lời gọi mạng)
       `preventDefault()` là no-op im lặng và test báo "không chặn được mini-infobar" oan. Sự
       kiện thật của Chromium huỷ được ⇒ fixture phải `{ cancelable: true }`.
 
-[UNIT] src/pwa.test.ts — 7 test  (cài đặt được như app: manifest + icon + index.html)
+[UNIT] src/pwa.test.ts — 8 test  (cài đặt được như app: manifest + icon + index.html)
+   - ships a narrow screenshot, which is the one a phone install dialog uses
+     (thiếu `screenshots` thì Chromium hạ xuống hộp thoại cài tối giản, **không log gì**; chỉ có
+      `wide` mà không có `narrow` thì điện thoại — nơi người ta thực sự cài — cũng mất hộp thoại
+      đầy đủ)
    - sends every shortcut to a route the app actually has
      (shortcut trỏ sai route vẫn MỞ được — nginx trả index.html cho mọi đường dẫn — nên người
       dùng rơi vào trang không tồn tại của SPA, và không chỗ nào báo lỗi gõ nhầm)
