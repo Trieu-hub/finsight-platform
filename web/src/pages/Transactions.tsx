@@ -12,6 +12,7 @@ import type { Budget, Category, Transaction, TransactionType, Wallet } from '../
 import { monthRange, saveBlob } from '../lib/download'
 import { catLabel, categoryName, groupThousands, money, sanitizeMoneyInput } from '../lib/format'
 import { enqueue } from '../lib/outbox'
+import { loadFailure, valueOr } from '../lib/settled'
 import { useOnline } from '../hooks/useOnline'
 import { useOutbox } from '../hooks/useOutbox'
 import { useI18n } from '../i18n'
@@ -165,22 +166,24 @@ export default function Transactions() {
   }
 
   async function load() {
-    try {
-      const [tx, cats, ws, bs] = await Promise.all([
-        listTransactions(),
-        listCategories(),
-        listWallets(),
-        listBudgets(),
-      ])
-      setTransactions(tx)
-      setCategories(cats)
-      setWallets(ws)
-      setBudgets(bs)
-    } catch (err) {
-      setError(errorMessage(err))
-    } finally {
-      setLoading(false)
-    }
+    // allSettled, not all: offline these come from the service worker's cache, and a single miss
+    // — a month whose transactions were never fetched, say — used to reject the whole batch and
+    // leave `categories` empty. An empty category list makes the form unusable, so one missing
+    // figure took the entire page down with it.
+    const results = await Promise.allSettled([
+      listTransactions(),
+      listCategories(),
+      listWallets(),
+      listBudgets(),
+    ])
+    const [tx, cats, ws, bs] = results
+    setTransactions(valueOr(tx, []))
+    setCategories(valueOr(cats, []))
+    setWallets(valueOr(ws, []))
+    setBudgets(valueOr(bs, []))
+    const failure = loadFailure(results, navigator.onLine)
+    setError(failure ? errorMessage(failure) : '')
+    setLoading(false)
   }
 
   useEffect(() => {

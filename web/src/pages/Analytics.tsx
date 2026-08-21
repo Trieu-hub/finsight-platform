@@ -6,6 +6,7 @@ import {
   analyticsSummary,
 } from '../api/endpoints'
 import { errorMessage } from '../api/client'
+import { loadFailure, valueOr } from '../lib/settled'
 import type {
   AnalyticsOverview,
   CategorySlice,
@@ -28,22 +29,23 @@ export default function Analytics() {
 
   useEffect(() => {
     ;(async () => {
-      try {
-        const [ov, cats, fc, sm] = await Promise.all([
-          analyticsOverview(),
-          analyticsCategories(),
-          analyticsForecast(),
-          analyticsSummary(),
-        ])
-        setOverview(ov)
-        setCategories(cats)
-        setForecast(fc)
-        setSummary(sm)
-      } catch (err) {
-        setError(errorMessage(err))
-      } finally {
-        setLoading(false)
-      }
+      // allSettled: offline these are served from cache, and one miss must not blank the page.
+      // The summary is the likeliest to be absent — it is not cached at all — and losing the
+      // overview with it would be a poor trade.
+      const results = await Promise.allSettled([
+        analyticsOverview(),
+        analyticsCategories(),
+        analyticsForecast(),
+        analyticsSummary(),
+      ])
+      const [ov, cats, fc, sm] = results
+      setOverview(valueOr(ov, null))
+      setCategories(valueOr(cats, []))
+      setForecast(valueOr(fc, null))
+      setSummary(valueOr(sm, null))
+      const failure = loadFailure(results, navigator.onLine)
+      if (failure) setError(errorMessage(failure))
+      setLoading(false)
     })()
   }, [])
 

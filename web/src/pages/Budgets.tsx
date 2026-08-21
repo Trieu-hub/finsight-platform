@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { createBudget, listBudgets, listCategories, listWallets } from '../api/endpoints'
 import { errorMessage } from '../api/client'
+import { loadFailure, valueOr } from '../lib/settled'
 import type { Budget, BudgetPeriod, Category, Wallet } from '../api/types'
 import { catLabel, categoryName, groupThousands, money, sanitizeMoneyInput } from '../lib/format'
 import { useI18n } from '../i18n'
@@ -75,23 +76,23 @@ export default function Budgets() {
   const { t } = useI18n()
 
   async function load() {
-    try {
-      const [bs, cats, ws] = await Promise.all([
-        listBudgets(showExpired ? undefined : toISODate(new Date())),
-        listCategories(),
-        listWallets(),
-      ])
-      setBudgets(bs)
-      setCategories(cats)
-      setWallets(ws)
-      // Budgets cap spending, so only EXPENSE categories make sense.
-      const firstExpense = cats.find((c) => c.type === 'EXPENSE')
-      if (firstExpense && !categoryId) setCategoryId(String(firstExpense.id))
-    } catch (err) {
-      setError(errorMessage(err))
-    } finally {
-      setLoading(false)
-    }
+    // allSettled: offline these are served from cache, and one miss must not blank the page.
+    const results = await Promise.allSettled([
+      listBudgets(showExpired ? undefined : toISODate(new Date())),
+      listCategories(),
+      listWallets(),
+    ])
+    const [bs, cats, ws] = results
+    const categoryList = valueOr(cats, [])
+    setBudgets(valueOr(bs, []))
+    setCategories(categoryList)
+    setWallets(valueOr(ws, []))
+    // Budgets cap spending, so only EXPENSE categories make sense.
+    const firstExpense = categoryList.find((c) => c.type === 'EXPENSE')
+    if (firstExpense && !categoryId) setCategoryId(String(firstExpense.id))
+    const failure = loadFailure(results, navigator.onLine)
+    setError(failure ? errorMessage(failure) : '')
+    setLoading(false)
   }
 
   useEffect(() => {
