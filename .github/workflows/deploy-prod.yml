@@ -71,7 +71,10 @@ jobs:
           # The raw form still works (with the CRLF strip that made it survivable), so an existing
           # setup does not break the day this lands.
           if [ -n "${{ secrets.DEPLOY_SSH_KEY_B64 }}" ]; then
-            printf '%s' "${{ secrets.DEPLOY_SSH_KEY_B64 }}" | tr -d '\r\n' | base64 -d > ~/.ssh/id_deploy
+            # `|| true` so a malformed secret does NOT abort here under `set -o pipefail`: it
+            # would exit with base64's own "invalid input" and skip the explanation below. One
+            # bad secret, one error message, whichever way it is broken.
+            printf '%s' "${{ secrets.DEPLOY_SSH_KEY_B64 }}" | tr -d '\r\n' | base64 -d > ~/.ssh/id_deploy 2>/dev/null || true
           else
             printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" | tr -d '\r' > ~/.ssh/id_deploy
           fi
