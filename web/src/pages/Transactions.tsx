@@ -12,6 +12,7 @@ import type { Budget, Category, Transaction, TransactionType, Wallet } from '../
 import { monthRange, saveBlob } from '../lib/download'
 import { catLabel, categoryName, groupThousands, money, sanitizeMoneyInput } from '../lib/format'
 import { enqueue } from '../lib/outbox'
+import { useOnline } from '../hooks/useOnline'
 import { useOutbox } from '../hooks/useOutbox'
 import { useI18n } from '../i18n'
 
@@ -64,6 +65,10 @@ export default function Transactions() {
   >(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+  // Reactive, for what the form *renders*. The submit path reads `navigator.onLine` directly
+  // instead: that is the authoritative value at the moment the decision is made, where a state
+  // update that has not flushed yet would be a bug.
+  const online = useOnline()
   // Drains anything composed offline as soon as the network is back, and reports what is waiting.
   // `load` is a hoisted function declaration below; reloading once the queue lands is what makes
   // the transaction appear in the list without the user refreshing.
@@ -197,6 +202,28 @@ export default function Transactions() {
     if (next !== 'TRANSFER') setToWalletId('')
   }
 
+  /**
+   * Queues a write instead of sending it, when there is no network to send it on.
+   *
+   * `transactionDate` is already in the payload, so replaying this on Thursday still books it on
+   * the day the user picked — the drift that made a write queue a bad idea before this existed.
+   *
+   * @returns true when it was queued and the caller should stop; false to carry on and POST.
+   */
+  function queueWhileOffline(payload: Parameters<typeof enqueue>[0]): boolean {
+    if (navigator.onLine) return false
+    const item = enqueue(payload)
+    if (!item) {
+      // The queue is full. Say so rather than clearing the form, which would look like a save.
+      setError(t('outbox.full'))
+      return true
+    }
+    setAmount('')
+    setDescription('')
+    outbox.refresh()
+    return true
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError('')
@@ -220,9 +247,8 @@ export default function Transactions() {
           setError(t('tx.errTransferCat'))
           return
         }
-        setSubmitting(true)
-        await createTransaction({
-          type: 'TRANSFER',
+        const transfer = {
+          type: 'TRANSFER' as const,
           amount: value,
           currency: sourceWallet!.currency,
           categoryId: transferCat.id,
@@ -230,11 +256,25 @@ export default function Transactions() {
           transactionDate: date,
           walletId: Number(walletId),
           toWalletId: Number(toWalletId),
-        })
+        }
+        // A transfer queues like anything else. Leaving it out was an oversight, not a decision:
+        // moving money between your own wallets is exactly the sort of thing recorded away from
+        // a signal.
+        if (!queueWhileOffline(transfer)) {
+          setSubmitting(true)
+          await createTransaction(transfer)
+        }
       } else {
         // An expense must be charged to a budget (the user picks which). Block if the category
         // has no eligible budget in this period, or none is chosen.
-        if (type === 'EXPENSE') {
+        //
+        // Enforced only while online, and that exception is the whole reason the offline queue is
+        // reachable at all: offline, `budgets` holds whatever the cache had — usually nothing —
+        // so this guard fired on every expense and returned before the queue was ever consulted.
+        // Since EXPENSE is the default type, that made the feature unreachable in exactly the
+        // case it exists for. A queued expense may therefore land unattributed; the user can
+        // charge it to a budget afterwards, which is a far smaller loss than not capturing it.
+        if (type === 'EXPENSE' && navigator.onLine) {
           if (matchingBudgets.length === 0) {
             setError(t('tx.errNoBudget'))
             return
@@ -256,20 +296,7 @@ export default function Transactions() {
           budgetId: type === 'EXPENSE' ? effectiveBudgetId : undefined,
         }
 
-        // Offline: queue it rather than firing a request that can only fail. `transactionDate` is
-        // already in the payload, so replaying this on Thursday still books it on the day the
-        // user picked — the drift that made a write queue a bad idea before.
-        if (!navigator.onLine) {
-          const item = enqueue(payload)
-          setError(item ? '' : t('outbox.full'))
-          if (item) {
-            setAmount('')
-            setDescription('')
-            outbox.refresh()
-          }
-          setSubmitting(false)
-          return
-        }
+        if (queueWhileOffline(payload)) return
 
         const created = await createTransaction(payload)
         // Warn immediately if this expense pushes the chosen budget over its limit. Computed
@@ -422,7 +449,7 @@ export default function Transactions() {
 
               {type === 'EXPENSE' && (
                 <Field label={t('tx.budget')}>
-                  {matchingBudgets.length === 0 ? (
+                  {matchingBudgets.length === 0 && online ? (
                     // Amber stays on the border, the words use the neutral ramp: index.css flips
                     // the neutral scale with the theme but leaves accents alone, so amber ink on
                     // an amber tint is only legible in the dark.
@@ -487,7 +514,11 @@ export default function Transactions() {
 
           <button
             type="submit"
-            disabled={submitting || (type === 'EXPENSE' && matchingBudgets.length === 0)}
+            // The budget requirement is lifted while offline — see handleSubmit. Leaving it here
+            // made the button unclickable exactly when the offline queue was meant to catch the
+            // write, so the feature could not be reached at all: no error, no clue, just a button
+            // that does nothing.
+            disabled={submitting || (type === 'EXPENSE' && online && matchingBudgets.length === 0)}
             className="w-full rounded-lg bg-emerald-600 py-2.5 font-semibold text-white shadow-lg shadow-emerald-900/40 transition hover:bg-emerald-500 disabled:opacity-60"
           >
             {submitting ? t('tx.saving') : t('tx.add')}
