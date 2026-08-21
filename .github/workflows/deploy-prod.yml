@@ -59,12 +59,31 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          # `tr -d '\r'` is load-bearing: a key pasted into the secret from Windows carries CRLF,
-          # and OpenSSH rejects the file with the unhelpful `Load key: error in libcrypto` —
-          # which reads like a corrupt key rather than a line-ending problem. Reproduced: the
-          # same key fails with CRLF and loads with LF.
-          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" | tr -d '\r' > ~/.ssh/id_deploy
+          # Two ways in, and DEPLOY_SSH_KEY_B64 is the one to use.
+          #
+          # A PEM pasted as text is one long multi-line secret, and every tool between the
+          # clipboard and this runner gets an opinion about it: Windows turns the newlines into
+          # CRLF, editors add a BOM, a partial selection drops the END line. OpenSSH answers all
+          # of that with the same `Load key: error in libcrypto` — which reads like a corrupt key
+          # and sends you looking at permissions instead of whitespace. Base64 has none of those
+          # failure modes: one line, no spaces, byte-for-byte.
+          #
+          # The raw form still works (with the CRLF strip that made it survivable), so an existing
+          # setup does not break the day this lands.
+          if [ -n "${{ secrets.DEPLOY_SSH_KEY_B64 }}" ]; then
+            printf '%s' "${{ secrets.DEPLOY_SSH_KEY_B64 }}" | tr -d '\r\n' | base64 -d > ~/.ssh/id_deploy
+          else
+            printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" | tr -d '\r' > ~/.ssh/id_deploy
+          fi
           chmod 600 ~/.ssh/id_deploy
+          # Fail here rather than at connect time. Without this the job dies further down as
+          # `error in libcrypto` + `Permission denied (publickey)`, which reads as "the server
+          # rejected me" when in fact no key was ever loaded to be rejected. `-y` only derives the
+          # public half; nothing secret reaches the log.
+          if ! ssh-keygen -y -f ~/.ssh/id_deploy > /dev/null 2>&1; then
+            echo "::error::The deploy key secret is not a readable private key. Set DEPLOY_SSH_KEY_B64 to the base64 of ~/.ssh/<key> (the file WITHOUT .pub). This is not a permissions or access problem." >&2
+            exit 1
+          fi
           PORT="${{ secrets.DEPLOY_SSH_PORT || '22' }}"
           if [ -n "${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}" ]; then
             # Same CRLF trap: a stray \r makes the pinned host key silently fail to match, and
