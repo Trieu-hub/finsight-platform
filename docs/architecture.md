@@ -118,7 +118,7 @@ One MySQL 8 instance, one logical database per owning service (DB-per-service is
 
 | Database | Owner | Notable tables |
 |---|---|---|
-| `auth_db` | auth-service | users, roles, refresh-token records |
+| `auth_db` | auth-service | users (incl. `last_login_at`), roles, refresh-token records |
 | `user_db` | user-service | user_profiles |
 | `transaction_db` | transaction-service | transactions, categories, `wallets`, `outbox` (transactional outbox, incl. `correlation_id`) |
 | `budget_db` | budget-service | budgets (incl. `spent_amount`), `processed_events` (idempotency inbox) |
@@ -222,6 +222,11 @@ unauthenticated — acceptable for the local stack only) and liveness/readiness 
   - **FinSight Consumer Lag** — Kafka consumer lag per group.
   - **FinSight Forecast Model** — fitted spend models split into served / beaten / unscored, and
     their mean error against the run rate. Registered only when the forecast model is enabled.
+- **Caddy writes a JSON access log to stdout**, so the edge itself is observable — requests that
+  never reach a service (404s, static assets, bot sweeps) exist nowhere else. Promtail picks it up
+  via Docker service discovery like any other container. A `format filter` **deletes the
+  `Authorization`, `Cookie` and `Set-Cookie` headers** from every line; the prod overlay caps the
+  container's log at 3×10 MB, since this is the one container that writes a line per request.
 - **Tempo** receives traces over **OTLP**, and **Loki** + **Promtail** collect the container logs
   Grafana searches. Tracing is wired in every service but **sampled at 0 by default**
   (`TRACING_SAMPLING_PROBABILITY`): the spans cost something to produce and nothing is watching

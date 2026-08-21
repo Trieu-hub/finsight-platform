@@ -243,6 +243,19 @@ probes at `/actuator/health/{liveness,readiness}`.
   into the MDC, so budget/risk/analytics/notification lines join the trace of the write that caused
   them. Under the `monitoring` profile **Loki + Promtail** make that searchable in Grafana (see
   [`docs/runbook.md`](docs/runbook.md) §5.1).
+- **Edge access log** — Caddy writes one JSON line per request, which is the only record of
+  traffic that never reaches a service at all: a 404, a static asset, a bot sweep. Promtail
+  discovers the container over the Docker socket, so it lands in Loki alongside the application
+  logs. `Authorization`, `Cookie` and `Set-Cookie` are **deleted from every line** — this origin
+  carries a bearer token on each authenticated call, and logging it would turn the log into a
+  credential store outliving the token itself.
+- **Sign-in visibility** — `finsight.auth.login{outcome=success|bad_credentials|locked|disabled}`
+  counts attempts, and `users.last_login_at` records who was actually here. The two answer
+  different questions: the counter gives the rate, the column gives *distinct people over a
+  period*, which a counter cannot. All four outcomes are registered at startup so a quiet day
+  reads as zero rather than as a missing panel. Unknown email and wrong password share one
+  counter, deliberately: splitting them would leak through Prometheus exactly what the API
+  refuses to reveal.
 - **Alertmanager** — <http://localhost:9093> — receives firing alerts from Prometheus. Rules in
   `docker/prometheus/alerts.yml`: service down, 5xx rate, JVM heap, Kafka consumer lag, dashboard
   circuit-breaker open. Locally no delivery channel is configured (a Slack/email/webhook stub is in

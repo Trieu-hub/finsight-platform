@@ -19,6 +19,26 @@
 
 	encode gzip zstd
 
+	# Access log. Without it there is no way to answer "who hit the site, and when" — the
+	# services log their own work but nothing records a request that never reached them (a 404,
+	# a static asset, a bot sweep). Promtail discovers this container over the Docker socket, so
+	# stdout lands in Loki and is queryable in Grafana with no further wiring.
+	#
+	# The filter is not optional. Caddy's JSON encoder logs the request headers, and this origin
+	# carries bearer tokens on every authenticated call — writing them to disk would turn the log
+	# into a credential store that outlives the token's own expiry.
+	log {
+		output stdout
+		format filter {
+			wrap json
+			fields {
+				request>headers>Authorization delete
+				request>headers>Cookie delete
+				request>headers>Set-Cookie delete
+			}
+		}
+	}
+
 	# Edge rate limiting on the token-minting auth endpoints — stops bulk registration / login
 	# brute-force (a load test once created ~84k accounts here) and abuse of /refresh, which also
 	# issues fresh access tokens. Keyed on the REAL client IP via Cloudflare's CF-Connecting-IP

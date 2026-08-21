@@ -32,7 +32,11 @@ Spring Boot 4.0.6 / Java 21 microservice handling authentication for the `finsig
 
 **Domain model (3 tables):**
 - `roles` — stores `RoleName` enum values (`USER`, `PREMIUM`, `ADMIN`).
-- `users` — email + bcrypt password, `enabled` flag, single `Role` FK (EAGER-loaded).
+- `users` — email + bcrypt password, `enabled` flag, single `Role` FK (EAGER-loaded), and
+  `last_login_at` (V7). The column is stamped on a **successful** login only, inside the existing
+  `@Transactional` login method (dirty-check flush, no explicit save). It is what answers "how
+  many distinct people used this last week" — the `finsight.auth.login` counter beside it only
+  ever answers "how many logins". A NULL means "not seen since V7", not "never signed in".
 - `refresh_tokens` — opaque token string + `expiryDate`, FK to `users` (LAZY-loaded).
 
 **Package layout under `com.pm.authservice`:**
