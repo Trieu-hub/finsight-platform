@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { listBudgets, listCategories, listTransactions } from '../api/endpoints'
 import { errorMessage } from '../api/client'
+import { loadFailure, valueOr } from '../lib/settled'
 import type { Budget, Category, Transaction } from '../api/types'
 import { categoryName, money } from '../lib/format'
 import { useI18n } from '../i18n'
@@ -18,20 +19,19 @@ export default function Dashboard() {
 
   useEffect(() => {
     ;(async () => {
-      try {
-        const [tx, bs, cats] = await Promise.all([
-          listTransactions(),
-          listBudgets(),
-          listCategories(),
-        ])
-        setTransactions(tx)
-        setBudgets(bs)
-        setCategories(cats)
-      } catch (err) {
-        setError(errorMessage(err))
-      } finally {
-        setLoading(false)
-      }
+      // allSettled: offline these are served from cache, and one miss must not blank the page.
+      const results = await Promise.allSettled([
+        listTransactions(),
+        listBudgets(),
+        listCategories(),
+      ])
+      const [tx, bs, cats] = results
+      setTransactions(valueOr(tx, []))
+      setBudgets(valueOr(bs, []))
+      setCategories(valueOr(cats, []))
+      const failure = loadFailure(results, navigator.onLine)
+      if (failure) setError(errorMessage(failure))
+      setLoading(false)
     })()
   }, [])
 

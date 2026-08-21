@@ -127,6 +127,37 @@ describe('Transactions', () => {
       expect(queued()[0].body.transactionDate).toBe('2026-06-01')
     })
 
+    /*
+     * Reported from a phone in airplane mode: "the category list is empty, I cannot add
+     * anything". The service worker HAD cached the categories — the page threw them away.
+     * `Promise.all` rejects the moment any one call does, and offline the transactions request
+     * misses whenever the cached copy was for another month, so one absent figure blanked the
+     * whole form.
+     */
+    it('still renders the form when one of the four requests misses the cache', async () => {
+      vi.mocked(listTransactions).mockRejectedValue(new Error('offline: not in cache'))
+
+      renderPage()
+
+      // Categories arrived and must survive their neighbour's failure.
+      await waitFor(() => expect(categorySelect().value).toBe('4'))
+      fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '25000' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Add transaction' }))
+
+      await waitFor(() => expect(queued()).toHaveLength(1))
+    })
+
+    it('does not shout an error for a partial load it already explains with a banner', async () => {
+      vi.mocked(listTransactions).mockRejectedValue(new Error('offline: not in cache'))
+
+      renderPage()
+      await waitFor(() => expect(categorySelect().value).toBe('4'))
+
+      // The offline banner in Layout already tells the user the figures are stale; repeating it
+      // as an error would claim something is broken when the app is doing what it promised.
+      expect(screen.queryByText(/offline: not in cache/i)).not.toBeInTheDocument()
+    })
+
     it('tells the user it is holding something, rather than going quiet', async () => {
       renderPage()
       await waitFor(() => expect(categorySelect().value).toBe('4'))

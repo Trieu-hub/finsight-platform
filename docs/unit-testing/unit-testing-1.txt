@@ -14,7 +14,7 @@ TỔNG QUAN CON SỐ
 - Trong đó:
     * Unit / component test (chạy KHÔNG cần Docker):   472
     * Integration test (cần Docker – Testcontainers):  215 (66 lớp *IntegrationTest)
-- Frontend (Vitest, ngoài con số 687 ở trên):         158 test / 21 file
+- Frontend (Vitest, ngoài con số 687 ở trên):         166 test / 22 file
 - Frontend E2E (Playwright, cần stack đang chạy):       9 test / 4 file (mục 11)
 - Framework: JUnit 5 (Jupiter) + Mockito + AssertJ; frontend dùng Vitest +
   React Testing Library (jsdom) và Playwright cho E2E trình duyệt.
@@ -1103,6 +1103,18 @@ Test trình duyệt thật nằm ở mục 11.
    - parseDate: rejects a day that does not exist in that month
    - parseDate: rejects text that is not a date
 
+[UNIT] src/lib/settled.test.ts — 6 test  (nạp trang mà một request hỏng không kéo cả trang xuống)
+   Cả 4 trang chính đều dùng `Promise.all` ⇒ **hỏng một là hỏng tất**. Offline, một request
+   trượt cache (thường là `listTransactions` vì URL kèm tháng) làm rơi luôn 3 câu trả lời ĐÃ về
+   ⇒ ô Category rỗng ⇒ form không dùng được. Người dùng thấy là "app hỏng", không phải "thiếu
+   một con số".
+   - keeps what arrived / falls back for what did not
+   - reports nothing when everything arrived
+   - reports a failure while online, exactly as before  (không nới lỏng hành vi online)
+   - stays quiet about a partial failure while offline  (banner offline đã giải thích rồi; báo lỗi
+     thêm là nói app hỏng trong khi nó đang làm đúng điều đã hứa)
+   - still speaks up when offline leaves nothing at all to show
+
 [UNIT] src/lib/outbox.test.ts — 9 test  (hàng đợi ghi offline)
    - keeps a queued write, with a token of its own  (ngày người dùng chọn ĐI CÙNG lệnh ghi —
      nếu không, giao dịch soạn thứ Ba gửi thứ Năm sẽ ghi vào thứ Năm)
@@ -1228,7 +1240,7 @@ bàn phím; useAuth mock thành admin vì đồng xu chỉ rigged xanh cho admin
       bàn phím/screen reader với tới được. Tên nút kèm tên game: "Play" lặp trên
       mọi card thì screen reader không biết đang ở card nào)
 
-[COMPONENT] src/pages/Transactions.test.tsx — 6 test  (bất biến category ↔ type
+[COMPONENT] src/pages/Transactions.test.tsx — 8 test  (bất biến category ↔ type
    +3 test 2026-08-21 cho ghi offline — **phát hiện bằng cách dùng app thật trên iPhone ở chế độ
    máy bay, toàn bộ test tự động lúc đó đều xanh**:
    - queues an expense even when no budget data could be loaded
@@ -1239,6 +1251,10 @@ bàn phím; useAuth mock thành admin vì đồng xu chỉ rigged xanh cho admin
         tình huống nó sinh ra để phục vụ. Nay cả hai đều bỏ qua khi offline.
    - gives the queued write the date the user chose, not the day it is sent
    - tells the user it is holding something, rather than going quiet
+   - still renders the form when one of the four requests misses the cache
+     📌 **Cửa chặn thứ BA**, báo từ điện thoại: "ô Category rỗng, không thêm được gì". Service
+        worker CÓ cache categories — chính trang vứt đi, vì `Promise.all` hỏng một là hỏng tất.
+   - does not shout an error for a partial load it already explains with a banner
    (cùng lúc: nhánh TRANSFER trước đó **chưa hề nối** vào hàng đợi — sót, không phải chủ ý)
 của form; chỉ mock lời gọi mạng)
    - defaults the category to one of the current type
