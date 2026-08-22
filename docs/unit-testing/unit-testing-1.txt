@@ -7,17 +7,38 @@ test, loại (unit / integration), số lượng test và những gì nó kiểm
 Phạm vi tính đến: 9 microservice (api-gateway, auth, user, transaction, budget,
 dashboard, risk, notification, analytics) + frontend `web/` (mục 10).
 
+Cập nhật: 2026-08-21 — số liệu bên dưới ĐẾM LẠI BẰNG LỆNH ở ngày đó, không cộng dồn
+(xem khối "Cách đếm lại cho đúng"). Đối chiếu gần nhất: backend khớp, 3 chỗ lệch đã sửa.
+
 TỔNG QUAN CON SỐ
 --------------------------------------------------------------------------------
 - Tổng số test method (@Test / @ParameterizedTest):  698
-- Tổng số lớp test:                                  138 (+ vài lớp base/support)
+- Tổng số lớp test:                                  135 (+ 12 lớp base/support `Abstract*Test`)
 - Trong đó:
     * Unit / component test (chạy KHÔNG cần Docker):   483
-    * Integration test (cần Docker – Testcontainers):  215 (66 lớp *IntegrationTest)
-- Frontend (Vitest, ngoài con số 687 ở trên):         166 test / 22 file
-- Frontend E2E (Playwright, cần stack đang chạy):      12 test / 5 file (mục 11)
-    * trong đó 3 test chỉ chạy khi đặt `E2E_BASE_URL` (kiểm header bảo mật của một origin
-      đã deploy — `vite preview` không phát header nào nên không có gì để khẳng định)
+    * Integration test (cần Docker – Testcontainers):  215 (55 lớp *IntegrationTest)
+- Frontend (Vitest, ngoài con số 698 ở trên):         166 test / 22 file
+- Frontend E2E (Playwright, cần stack đang chạy):      13 test / 6 file (mục 11)
+    * 3 trong số đó chỉ chạy khi đặt `E2E_BASE_URL` (kiểm header bảo mật của một origin đã
+      deploy — `vite preview` không phát header nào nên không có gì để khẳng định), và 1 là
+      trình chụp ảnh manifest chứ không phải test (bỏ qua nếu thiếu `SHOT_EMAIL`/`SHOT_PASSWORD`).
+    * `capture-screenshots.spec.ts` khai 1 `test(...)` trong vòng lặp 2 form factor ⇒ đếm tĩnh
+      là 1, chạy thật ra 2. Con số 13 ở trên là đếm tĩnh.
+
+PHÂN RÃ THEO SERVICE (đếm 2026-08-21)
+--------------------------------------------------------------------------------
+    api-gateway            50 test / 9 lớp        risk-service          101 / 18
+    auth-service           62 test / 18 lớp       notification-service  107 / 23
+    user-service           49 test / 10 lớp       analytics-service      66 / 16
+    transaction-service   109 test / 23 lớp       ------------------------------
+    budget-service         97 test / 20 lớp       TỔNG                  698 / 147*
+    dashboard-service      57 test / 10 lớp       (*gồm 12 lớp Abstract*Test)
+
+📌 **Cách đếm lại cho đúng** (đừng cộng dồn bằng trí nhớ — đã lệch 3 chỗ khi kiểm ngày 2026-08-21):
+    grep -rhoE "^\s*@(Test|ParameterizedTest)\b" services/*/src/test | wc -l      # backend
+    find services/*/src/test -name "*Test.java" ! -name "Abstract*" | wc -l       # số lớp
+    grep -rhoE "^\s*(it|test)\(" web/src --include=*.test.ts* | wc -l             # vitest
+    grep -rhoE "^\s*test\(" web/e2e/*.spec.ts | wc -l                             # playwright
 - Framework: JUnit 5 (Jupiter) + Mockito + AssertJ; frontend dùng Vitest +
   React Testing Library (jsdom) và Playwright cho E2E trình duyệt.
 - Integration test dùng Testcontainers (MySQL 8, Kafka KRaft, Redis) và WireMock
@@ -1419,7 +1440,7 @@ ký dùng chung ở `e2e/support/account.ts` (không phải file test nên Playw
    - serves the security headers  (CSP/X-Frame/X-Content-Type/Referrer/Permissions, và CSP không
      được chứa `*` — CSP có wildcard chỉ là trang trí)
    - does not tell the world which server version it runs
-   - the CSP does not break the app it protects
+   - the CSP does not block anything this app serves  (2 khẳng định trong 1 test)
      📌 **Đây là test khó nhất, và bản đầu SAI.** Thiếu header thì dễ thấy trong diff; một CSP
         **có mặt nhưng quá chặt** thì không: mọi header trông đúng, còn app thì im lặng mất một
         stylesheet trên máy người dùng. Bản đầu nghe qua `page.on('console')` → **không bao giờ
@@ -1428,6 +1449,22 @@ ký dùng chung ở `e2e/support/account.ts` (không phải file test nên Playw
         được vì **Chromium headless không tải manifest**. Cuối cùng chặn `style-src` mới ra:
         `style-src-elem blocked .../index-*.css` ⇒ lúc đó mới biết listener thật sự hoạt động.
         **Một listener không thể đỏ còn tệ hơn không có listener, vì nó bị nhầm là bằng chứng.**
+     📌 **Chạy vào prod thật thì bắt được 2 script bị chặn, cả hai KHÔNG nằm trong repo** —
+        Cloudflare tiêm ở tầng edge: beacon Web Analytics (đã tắt) và `__CF$cv$params` của
+        Challenge Platform. HTML gốc từ nginx có 0 lần nhắc tới chúng.
+     📌 Vì thế test **dung thứ vi phạm inline**, nhưng sự kiện chỉ nói `blockedURI: "inline"` và
+        `sample` **rỗng** ⇒ không biết script của ai. Lỗ hổng đó được bịt từ phía kia bằng khẳng
+        định thứ hai: **mọi script inline trên trang phải là của Cloudflare**. App mà bắt đầu sinh
+        inline script là đỏ ngay, và lúc đó việc dung thứ ở trên hết an toàn.
+
+[E2E] e2e/capture-screenshots.spec.ts — 1 test (chạy ra 2 ảnh)  — **trình sinh ảnh, không phải test**
+   Chụp `screenshots` cho manifest từ app ĐÃ DEPLOY. Bỏ qua nếu thiếu `SHOT_EMAIL`/`SHOT_PASSWORD`.
+   📌 Ba lần chụp mới dùng được, mà **cả ba lần Playwright đều báo passed**: (1) tour "Vera" che
+      mờ toàn bộ; (2) giao diện sáng lệch `theme_color` tối của manifest; (3) Analytics/Budgets/
+      Transactions **rỗng** vì lọc theo tháng hiện tại còn dữ liệu demo ở tháng 7 ⇒ chỉ ship
+      Dashboard. Bài học: **mở ảnh ra xem**, dấu tick không nói gì về nội dung ảnh.
+   📌 `networkidle` **không bao giờ xảy ra** trên app này — có kết nối SSE thường trực cho thông
+      báo. Phải chờ bằng `load` + một khoảng lặng.
 
 [E2E] e2e/journey.spec.ts — 3 test  (chromium)
    - a new user can sign up, record income and find it in their history
