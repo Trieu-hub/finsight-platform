@@ -43,7 +43,7 @@ test('does not tell the world which server version it runs', async ({ request })
   expect(response.headers()['server'] ?? '').not.toMatch(/nginx\/[\d.]+/)
 })
 
-test('the CSP does not break the app it protects', async ({ page }) => {
+test('the CSP does not block anything this app serves', async ({ page }) => {
   // The `securitypolicyviolation` DOM event, not `page.on('console')`. The console route looks
   // like it works and silently never fires: verified by blocking the manifest outright, where
   // the console listener still reported a clean run. A listener that cannot fail is worse than
@@ -64,5 +64,31 @@ test('the CSP does not break the app it protects', async ({ page }) => {
   await page.waitForTimeout(1500)
 
   const violations = await page.evaluate(() => (window as unknown as { __csp: string[] }).__csp)
-  expect(violations, `CSP blocked something the app needs:\n${violations.join('\n')}`).toEqual([])
+
+  // Only violations for something WE serve. Cloudflare injects its own challenge script into the
+  // HTML at the edge (`window.__CF$cv$params`), the CSP refuses it, and that is neither our bug
+  // nor our loss — the app never depended on it. It cannot be excluded by inspecting the event:
+  // `blockedURI` is the literal string "inline" and Chromium leaves `sample` empty, so an inline
+  // violation carries nothing that says whose script it was. The second assertion below closes
+  // that gap from the other side instead.
+  const ours = violations.filter((entry) => !entry.endsWith('blocked inline'))
+  expect(ours, `CSP blocked something this app serves:\n${ours.join('\n')}`).toEqual([])
+
+  // ...so prove separately that the only inline script on the page is the edge's. If a build ever
+  // starts emitting an inline <script> of our own, this fails — and the "blocked inline" we
+  // tolerate above stops being safe to tolerate.
+  // Search the whole body, truncate only for the message: Cloudflare's marker sits ~150
+  // characters in, so slicing first hid it and made its own script look like ours.
+  const inlineScripts = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('script'))
+      .filter((script) => !script.src)
+      .map((script) => script.textContent || ''),
+  )
+  const notCloudflare = inlineScripts
+    .filter((body) => !body.includes('__CF$cv$params'))
+    .map((body) => body.slice(0, 120))
+  expect(
+    notCloudflare,
+    `This app now ships an inline <script>, which the CSP blocks:\n${notCloudflare.join('\n')}`,
+  ).toEqual([])
 })
