@@ -467,6 +467,32 @@ the `@auth` matcher) capped at 10 req/min/IP, keyed on `CF-Connecting-IP` → HT
 `Retry-After` header. Cloudflare **Bot Fight Mode** + a rate-limiting rule add a second edge layer.
 **Never run load tests against production** — a load test once created ~84k junk accounts here.
 
+> **Checking Bot Fight Mode: it must be done from a datacenter IP, or the answer is meaningless.**
+>
+> Bot Fight Mode lives only in the Cloudflare dashboard, so nothing in this repo reflects its
+> state. The obvious check — send a User-Agent no browser would send and expect a challenge —
+> is **unreliable from a home connection**, because Cloudflare scores the *source IP* as well as
+> the request. Measured on 2026-08-21, the same command in the same minute:
+>
+> ```bash
+> curl -sI -A 'Mozilla/5.0' https://vernfy.com | grep -iE '^HTTP|cf-mitigated'
+> #   from a residential IP  → HTTP/1.1 200          ← says nothing; the IP is trusted
+> #   from the VPS (Hetzner) → HTTP/2 403 + cf-mitigated: challenge   ← the real answer
+> ```
+>
+> A residential address that has been browsing the site all day earns a good reputation and stops
+> being challenged at all. So run the probe **from the box**, where the address is a datacenter
+> range Cloudflare distrusts by default:
+>
+> ```bash
+> ssh vernfy "curl -sI -A 'Mozilla/5.0' https://vernfy.com | grep -iE '^HTTP|cf-mitigated'"
+> ```
+>
+> **403 + `cf-mitigated: challenge` means it is on.** Note the inversion: everywhere else in this
+> document a 403 from a truncated UA is the false alarm you are told to ignore — here it is the
+> passing result. A 200 from that command is worth investigating; a 200 from your laptop is not
+> evidence of anything.
+
 To confirm the limiter is alive, probe **`/refresh`**, never `/register`: a bogus refresh token is
 rejected without creating a row, whereas `/register` is exactly what produced those 84k accounts.
 `/login` is also a poor probe — it feeds the per-email brute-force lockout in Redis.
