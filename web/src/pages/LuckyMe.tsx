@@ -302,7 +302,7 @@ export default function LuckyMe() {
         {/* The grid is flex-1 so the four cards stretch to fill the viewport height. */}
         <section className="flex min-h-[calc(100vh-11rem)] flex-col">
           <header className="mb-7 shrink-0 text-center">
-            <h2 className="bg-gradient-to-r from-emerald-300 via-teal-300 to-sky-300 bg-clip-text text-4xl font-black tracking-tight text-transparent sm:text-5xl">
+            <h2 className="bg-gradient-to-r from-emerald-800 via-teal-800 to-sky-800 bg-clip-text dark:from-emerald-300 dark:via-teal-300 dark:to-sky-300 text-4xl font-black tracking-tight text-transparent sm:text-5xl">
               {t('luckyme.games.title')}
             </h2>
             <p className="mt-2 text-base text-neutral-400">{t('luckyme.games.subtitle')}</p>
@@ -333,7 +333,7 @@ export default function LuckyMe() {
                   </p>
                   {g.playable ? (
                     <div className="mt-1 flex items-center gap-2">
-                      <span className="inline-flex w-fit rounded-full border border-emerald-500/40 bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-300">
+                      <span className="inline-flex w-fit rounded-full border border-emerald-500/40 bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-800 dark:text-emerald-300">
                         {t('luckyme.games.available')}
                       </span>
                       {/*
@@ -359,7 +359,7 @@ export default function LuckyMe() {
                           setGame(g.key)
                         }}
                         aria-label={`${t('luckyme.games.play')} ${t(`luckyme.game.${g.key}.name`)}`}
-                        className="rounded text-xs font-semibold text-emerald-400 opacity-0 transition group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
+                        className="rounded text-xs font-semibold text-emerald-700 dark:text-emerald-400 opacity-0 transition group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
                       >
                         {t('luckyme.games.play')} →
                       </button>
@@ -383,7 +383,7 @@ export default function LuckyMe() {
   return (
     <div className="flex min-h-[calc(100vh-11rem)] flex-col items-center justify-center gap-12 text-center">
       <header>
-        <h1 className="bg-gradient-to-r from-amber-300 via-emerald-300 to-teal-300 bg-clip-text text-4xl font-black tracking-tight text-transparent sm:text-5xl">
+        <h1 className="bg-gradient-to-r from-amber-800 via-emerald-800 to-teal-800 bg-clip-text dark:from-amber-300 dark:via-emerald-300 dark:to-teal-300 text-4xl font-black tracking-tight text-transparent sm:text-5xl">
           {t('luckyme.title')}
         </h1>
         <p className="mt-3 text-base text-neutral-300">{t('luckyme.subtitle')}</p>

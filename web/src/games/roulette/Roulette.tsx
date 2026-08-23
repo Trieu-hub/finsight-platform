@@ -41,8 +41,8 @@ const CHIP_STYLE: Record<number, string> = {
   // zinc, not neutral: a chip is a physical token and keeps its own colour in both themes,
   // while the neutral ramp is reversed for light mode (see index.css).
   10_000: 'from-zinc-200 to-zinc-400 text-black',
-  50_000: 'from-red-400 to-red-600 text-white',
-  100_000: 'from-emerald-400 to-emerald-600 text-white',
+  50_000: 'from-red-600 to-red-800 text-white',
+  100_000: 'from-emerald-400 to-emerald-600 text-black',
   500_000: 'from-zinc-800 to-black text-amber-300 ring-1 ring-amber-400/60',
 }
 
@@ -185,15 +185,15 @@ function Banned({
         </svg>
       </div>
 
-      <h2 className="text-3xl font-black text-red-400">{t('roulette.ban.title')}</h2>
+      <h2 className="text-3xl font-black text-red-700 dark:text-red-400">{t('roulette.ban.title')}</h2>
       <p className="mt-3 text-neutral-300">
         {t('roulette.ban.desc', { debt: money(ban.debt, currency) })}
       </p>
 
       <div className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-900 px-8 py-5">
         <p className="text-xs uppercase tracking-wide text-neutral-500">{t('roulette.ban.unlocksIn')}</p>
-        <p className="mt-1 font-mono text-3xl font-black text-amber-300">{formatRemaining(remaining)}</p>
-        <p className="mt-2 text-xs text-neutral-600">{t(`roulette.ban.tier.${ban.tier}`)}</p>
+        <p className="mt-1 font-mono text-3xl font-black text-amber-800 dark:text-amber-300">{formatRemaining(remaining)}</p>
+        <p className="mt-2 text-xs text-neutral-500">{t(`roulette.ban.tier.${ban.tier}`)}</p>
       </div>
 
       <p className="mt-6 max-w-sm text-sm text-neutral-500">{t('roulette.ban.advice')}</p>
@@ -212,8 +212,8 @@ function Banned({
 
 const CELL_BG: Record<string, string> = {
   red: 'bg-red-700 hover:bg-red-600',
-  black: 'bg-neutral-900 hover:bg-neutral-800',
-  green: 'bg-emerald-700 hover:bg-emerald-600',
+  black: 'bg-zinc-900 hover:bg-zinc-800',
+  green: 'bg-emerald-700 hover:bg-emerald-800',
 }
 
 export default function Roulette({ onBack }: { onBack: () => void }) {
@@ -333,7 +333,7 @@ export default function Roulette({ onBack }: { onBack: () => void }) {
   if (loadError) {
     return (
       <section className="mx-auto flex min-h-[50vh] max-w-md flex-col items-center justify-center gap-4 text-center">
-        <p className="text-sm text-red-400">{loadError}</p>
+        <p className="text-sm text-red-700 dark:text-red-400">{loadError}</p>
         <p className="text-sm text-neutral-500">{t('roulette.needWallet')}</p>
         <button
           onClick={onBack}
@@ -382,7 +382,7 @@ export default function Roulette({ onBack }: { onBack: () => void }) {
         key={def.id}
         onClick={() => addBet(def)}
         disabled={spinning || chip > available}
-        className={`relative flex items-center justify-center rounded border border-neutral-700 bg-emerald-950/60 px-2 py-2 text-xs font-bold text-neutral-200 transition hover:bg-emerald-900/60 disabled:cursor-not-allowed disabled:opacity-50 ${extra}`}
+        className={`relative flex items-center justify-center rounded border border-emerald-800 bg-emerald-900 px-2 py-2 text-xs font-bold text-zinc-100 transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50 ${extra}`}
       >
         {def.label}
         {amount > 0 && (
@@ -408,14 +408,14 @@ export default function Roulette({ onBack }: { onBack: () => void }) {
           >
             ← {t('roulette.back')}
           </button>
-          <h2 className="bg-gradient-to-r from-amber-300 to-red-400 bg-clip-text text-2xl font-black text-transparent">
+          <h2 className="bg-gradient-to-r from-amber-800 to-red-700 bg-clip-text dark:from-amber-300 dark:to-red-400 text-2xl font-black text-transparent">
             {t('roulette.title')}
           </h2>
         </div>
         <div className="rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-2 text-right">
           <span className="block text-xs text-neutral-500">{t('roulette.walletBalance')}</span>
           <span
-            className={`font-mono text-lg font-bold ${status.balance < 0 ? 'text-red-400' : 'text-amber-300'}`}
+            className={`font-mono text-lg font-bold ${status.balance < 0 ? 'text-red-700 dark:text-red-400' : 'text-amber-800 dark:text-amber-300'}`}
           >
             {money(status.balance, status.currency)}
           </span>
@@ -423,7 +423,7 @@ export default function Roulette({ onBack }: { onBack: () => void }) {
       </header>
 
       {!status.canPlay && !status.ban && (
-        <p className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
+        <p className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-300">
           {t('roulette.brokeWarning')}
         </p>
       )}
@@ -447,15 +447,15 @@ export default function Roulette({ onBack }: { onBack: () => void }) {
                     outcome.colour === 'red'
                       ? 'bg-red-600'
                       : outcome.colour === 'black'
-                        ? 'bg-neutral-800 ring-1 ring-neutral-600'
-                        : 'bg-emerald-600'
+                        ? 'bg-zinc-800 ring-1 ring-zinc-600'
+                        : 'bg-emerald-700'
                   }`}
                 >
                   {outcome.result}
                 </div>
                 <p
                   className={`mt-2 text-sm font-bold ${
-                    outcome.net > 0 ? 'text-emerald-400' : outcome.net < 0 ? 'text-red-400' : 'text-neutral-400'
+                    outcome.net > 0 ? 'text-emerald-700 dark:text-emerald-400' : outcome.net < 0 ? 'text-red-700 dark:text-red-400' : 'text-neutral-400'
                   }`}
                 >
                   {outcome.net > 0
@@ -464,7 +464,7 @@ export default function Roulette({ onBack }: { onBack: () => void }) {
                       ? t('roulette.netLoss', { amount: money(-outcome.net, outcome.currency) })
                       : t('roulette.push')}
                 </p>
-                <p className="mt-1 text-xs text-neutral-600">{t('roulette.recorded')}</p>
+                <p className="mt-1 text-xs text-neutral-500">{t('roulette.recorded')}</p>
               </>
             )}
           </div>
@@ -482,7 +482,7 @@ export default function Roulette({ onBack }: { onBack: () => void }) {
                       colourOf(p) === 'red'
                         ? 'bg-red-700'
                         : colourOf(p) === 'black'
-                          ? 'bg-neutral-800'
+                          ? 'bg-zinc-800'
                           : 'bg-emerald-700'
                     }`}
                   >
@@ -496,7 +496,7 @@ export default function Roulette({ onBack }: { onBack: () => void }) {
 
         {/* Felt + controls */}
         <div className="flex flex-col gap-4">
-          <div className="rounded-2xl border border-emerald-900/60 bg-emerald-950/40 p-3">
+          <div className="rounded-2xl border border-emerald-900 bg-emerald-950 p-3">
             <div className="flex gap-1">
               <div className="flex w-12 flex-col gap-1">
                 {(['0', '00'] as Pocket[]).map((p) => (
@@ -504,7 +504,7 @@ export default function Roulette({ onBack }: { onBack: () => void }) {
                     key={p}
                     onClick={() => togglePocket(p)}
                     disabled={spinning}
-                    className={`flex flex-1 items-center justify-center rounded bg-emerald-700 py-3 font-mono text-sm font-bold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed ${
+                    className={`flex flex-1 items-center justify-center rounded bg-emerald-700 py-3 font-mono text-sm font-bold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed ${
                       selection.includes(p)
                         ? 'ring-2 ring-amber-400'
                         : covered.has(p)
@@ -596,7 +596,7 @@ export default function Roulette({ onBack }: { onBack: () => void }) {
               </div>
             ) : (
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="text-sm text-red-400">{t('roulette.invalidSelection')}</p>
+                <p className="text-sm text-red-700 dark:text-red-400">{t('roulette.invalidSelection')}</p>
                 <button
                   onClick={() => setSelection([])}
                   className="rounded-lg border border-neutral-700 px-3 py-2 text-sm text-neutral-400 transition hover:bg-neutral-800"
@@ -613,14 +613,14 @@ export default function Roulette({ onBack }: { onBack: () => void }) {
               <p className="text-xs uppercase tracking-wide text-neutral-500">{t('roulette.bets')}</p>
               <p className="text-sm text-neutral-400">
                 {t('roulette.totalStake')}{' '}
-                <span className="font-mono font-bold text-amber-300">
+                <span className="font-mono font-bold text-amber-800 dark:text-amber-300">
                   {money(staked, status.currency)}
                 </span>
               </p>
             </div>
 
             {bets.length === 0 ? (
-              <p className="text-sm text-neutral-600">{t('roulette.noBets')}</p>
+              <p className="text-sm text-neutral-500">{t('roulette.noBets')}</p>
             ) : (
               <ul className="flex flex-col gap-1.5">
                 {bets.map((b) => (
@@ -634,12 +634,12 @@ export default function Roulette({ onBack }: { onBack: () => void }) {
                       </span>{' '}
                       <span className="font-mono text-xs text-neutral-500">{b.covers.join(',')}</span>
                     </span>
-                    <span className="font-mono font-bold text-amber-300">{chipFace(b.amount)}</span>
+                    <span className="font-mono font-bold text-amber-800 dark:text-amber-300">{chipFace(b.amount)}</span>
                     <button
                       onClick={() => removeBet(b.id)}
                       disabled={spinning}
                       aria-label={t('roulette.remove')}
-                      className="text-neutral-500 transition hover:text-red-400 disabled:opacity-40"
+                      className="text-neutral-500 transition hover:text-red-700 dark:hover:text-red-400 disabled:opacity-40"
                     >
                       ✕
                     </button>
@@ -648,7 +648,7 @@ export default function Roulette({ onBack }: { onBack: () => void }) {
               </ul>
             )}
 
-            {betError && <p className="mt-3 text-sm text-red-400">{betError}</p>}
+            {betError && <p className="mt-3 text-sm text-red-700 dark:text-red-400">{betError}</p>}
 
             <div className="mt-4 flex gap-3">
               <button
@@ -668,7 +668,7 @@ export default function Roulette({ onBack }: { onBack: () => void }) {
             </div>
           </div>
 
-          <p className="text-center text-xs text-neutral-600">{t('roulette.edge')}</p>
+          <p className="text-center text-xs text-neutral-500">{t('roulette.edge')}</p>
         </div>
       </div>
     </section>

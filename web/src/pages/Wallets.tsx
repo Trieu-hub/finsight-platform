@@ -150,7 +150,7 @@ export default function Wallets() {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full rounded-lg bg-emerald-600 py-2.5 font-semibold text-white shadow-lg shadow-emerald-900/40 transition hover:bg-emerald-500 disabled:opacity-60"
+            className="w-full rounded-lg bg-emerald-700 py-2.5 font-semibold text-white shadow-lg shadow-emerald-900/40 transition hover:bg-emerald-800 disabled:opacity-60"
           >
             {submitting ? t('wallet.saving') : t('wallet.add')}
           </button>
@@ -171,7 +171,7 @@ export default function Wallets() {
             </span>
           )}
         </div>
-        {error && <p className="mb-3 text-sm text-red-400">{error}</p>}
+        {error && <p className="mb-3 text-sm text-red-700 dark:text-red-400">{error}</p>}
         {loading ? (
           <p className="text-neutral-500">{t('common.loading')}</p>
         ) : wallets.length === 0 ? (
@@ -191,14 +191,14 @@ export default function Wallets() {
                 </div>
                 <div className="flex items-center gap-4">
                   <span
-                    className={`font-semibold ${w.balance < 0 ? 'text-rose-400' : 'text-neutral-100'}`}
+                    className={`font-semibold ${w.balance < 0 ? 'text-rose-700 dark:text-rose-400' : 'text-neutral-100'}`}
                   >
                     {money(w.balance, w.currency)}
                   </span>
                   <button
                     onClick={() => handleDelete(w)}
                     title={t('wallet.deleteTitle')}
-                    className="rounded-lg border border-neutral-800 px-2.5 py-1 text-xs text-neutral-400 transition hover:border-rose-800 hover:bg-rose-950/40 hover:text-rose-300"
+                    className="rounded-lg border border-neutral-800 px-2.5 py-1 text-xs text-neutral-400 transition hover:border-rose-800 hover:bg-rose-950/40 hover:text-rose-800 dark:hover:text-rose-300"
                   >
                     {t('wallet.delete')}
                   </button>

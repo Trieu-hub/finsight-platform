@@ -522,7 +522,7 @@ export default function Transactions() {
             // write, so the feature could not be reached at all: no error, no clue, just a button
             // that does nothing.
             disabled={submitting || (type === 'EXPENSE' && online && matchingBudgets.length === 0)}
-            className="w-full rounded-lg bg-emerald-600 py-2.5 font-semibold text-white shadow-lg shadow-emerald-900/40 transition hover:bg-emerald-500 disabled:opacity-60"
+            className="w-full rounded-lg bg-emerald-700 py-2.5 font-semibold text-white shadow-lg shadow-emerald-900/40 transition hover:bg-emerald-800 disabled:opacity-60"
           >
             {submitting ? t('tx.saving') : t('tx.add')}
           </button>
@@ -536,7 +536,7 @@ export default function Transactions() {
         {outbox.pending > 0 && (
           <p
             role="status"
-            className="mb-3 rounded-lg border border-amber-900/60 bg-amber-950/40 px-3 py-2 text-xs text-amber-200"
+            className="mb-3 rounded-lg border border-amber-300 bg-amber-100 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200"
           >
             {t('outbox.pending', { n: outbox.pending })}
           </p>
@@ -564,14 +564,14 @@ export default function Transactions() {
                 type="button"
                 onClick={handleExport}
                 disabled={exporting}
-                className="rounded-lg border border-neutral-700 px-2 py-1 text-xs text-neutral-300 transition hover:border-emerald-500 hover:text-emerald-400 disabled:opacity-60"
+                className="rounded-lg border border-neutral-700 px-2 py-1 text-xs text-neutral-300 transition hover:border-emerald-500 hover:text-emerald-700 dark:hover:text-emerald-400 disabled:opacity-60"
               >
                 {exporting ? t('tx.exporting') : t('tx.export')}
               </button>
             </div>
           )}
         </div>
-        {error && <p className="mb-3 text-sm text-red-400">{error}</p>}
+        {error && <p className="mb-3 text-sm text-red-700 dark:text-red-400">{error}</p>}
         {loading ? (
           <p className="text-neutral-500">{t('common.loading')}</p>
         ) : visibleTransactions.length === 0 ? (
@@ -591,10 +591,10 @@ export default function Transactions() {
                 {visibleTransactions.map((tx) => {
                   const xfer = tx.type === 'TRANSFER'
                   const color = xfer
-                    ? 'text-sky-400'
+                    ? 'text-sky-700 dark:text-sky-400'
                     : tx.type === 'INCOME'
-                      ? 'text-emerald-400'
-                      : 'text-rose-400'
+                      ? 'text-emerald-700 dark:text-emerald-400'
+                      : 'text-rose-700 dark:text-rose-400'
                   const prefix = xfer ? '⇄ ' : tx.type === 'INCOME' ? '+' : '-'
                   return (
                     <tr key={tx.id} className="border-t border-neutral-800 transition hover:bg-neutral-800/40">
@@ -648,7 +648,7 @@ function OverBudgetToast({
         <button
           onClick={onClose}
           aria-label="Close"
-          className="shrink-0 rounded-md px-1.5 text-rose-300 transition hover:bg-rose-900/60 hover:text-rose-100"
+          className="shrink-0 rounded-md px-1.5 text-rose-800 dark:text-rose-300 transition hover:bg-rose-900/60 hover:text-rose-100"
         >
           ✕
         </button>

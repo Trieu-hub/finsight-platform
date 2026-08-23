@@ -81,6 +81,21 @@ pub=$(curl -s -o /dev/null -w '%{http_code}' \
   https://vernfy.com 2>/dev/null || echo 000)
 if [ "$pub" = 200 ]; then note "https://vernfy.com" "200"; else fail "https://vernfy.com" "$pub"; fi
 
+# The crawler files must come back as themselves, not as the SPA shell. nginx serves the app
+# with `try_files $uri $uri/ /index.html`, so a file that was never deployed answers 200 with
+# HTML instead of 404 — which is how a missing robots.txt went unnoticed until Lighthouse
+# reported 50 syntax errors in it. Check the content type, not the status code.
+for f in robots.txt llms.txt sitemap.xml; do
+  ct=$(curl -s -o /dev/null -w '%{content_type}' \
+    -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36' \
+    "https://vernfy.com/$f" 2>/dev/null || echo none)
+  case "$ct" in
+    text/html*) fail "/$f" "served the SPA shell (index.html fallback) — file not deployed";;
+    none)       fail "/$f" "unreachable";;
+    *)          note "/$f" "$ct";;
+  esac
+done
+
 # --- optional deeper end-to-end (opt-in, no data created here) -----------------------
 if [ "${1:-}" = "--full" ]; then
   echo "== 5. full auth flow (login + authenticated call) =="

@@ -53,7 +53,7 @@ export default function Analytics() {
 
   if (error) {
     return (
-      <div className="rounded-xl border border-rose-900/50 bg-rose-950/30 p-4 text-sm text-rose-300">
+      <div className="rounded-xl border border-rose-300 bg-rose-100 p-4 text-sm text-rose-900 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300">
         {error}
       </div>
     )
@@ -76,11 +76,11 @@ export default function Analytics() {
       {summary && (
         <section data-tour="analytics-summary" className="rounded-2xl border border-emerald-900/40 bg-gradient-to-br from-emerald-950/40 to-neutral-900 p-5">
           <div className="mb-2 flex items-center gap-2">
-            <span className="text-sm font-medium text-emerald-300">{t('an.monthlySummary')}</span>
+            <span className="text-sm font-medium text-emerald-800 dark:text-emerald-300">{t('an.monthlySummary')}</span>
             <span
               className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
                 summary.aiGenerated
-                  ? 'bg-emerald-500/15 text-emerald-300'
+                  ? 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-300'
                   : 'bg-neutral-700/50 text-neutral-300'
               }`}
             >
@@ -98,23 +98,23 @@ export default function Analytics() {
             <div className="text-3xl font-semibold text-neutral-100">{pct(overview.savingsRate)}</div>
             <p className="mt-1 text-xs text-neutral-400">
               {savingsDelta >= 0 ? (
-                <span className="text-emerald-400">▲ {pct(Math.abs(savingsDelta))}</span>
+                <span className="text-emerald-700 dark:text-emerald-400">▲ {pct(Math.abs(savingsDelta))}</span>
               ) : (
-                <span className="text-rose-400">▼ {pct(Math.abs(savingsDelta))}</span>
+                <span className="text-rose-700 dark:text-rose-400">▼ {pct(Math.abs(savingsDelta))}</span>
               )}{' '}
               {t('an.vsLastMonth')}
             </p>
           </StatCard>
 
           <StatCard label={t('an.income')}>
-            <div className="text-2xl font-semibold text-emerald-400">{money(overview.income, currency)}</div>
+            <div className="text-2xl font-semibold text-emerald-700 dark:text-emerald-400">{money(overview.income, currency)}</div>
             <div className="mt-1">
               <DeltaChip value={overview.incomeChangePct} goodWhenUp />
             </div>
           </StatCard>
 
           <StatCard label={t('an.expense')}>
-            <div className="text-2xl font-semibold text-rose-400">{money(overview.expense, currency)}</div>
+            <div className="text-2xl font-semibold text-rose-700 dark:text-rose-400">{money(overview.expense, currency)}</div>
             <div className="mt-1">
               <DeltaChip value={overview.expenseChangePct} goodWhenUp={false} />
             </div>
@@ -123,7 +123,7 @@ export default function Analytics() {
           <StatCard label={t('an.net')}>
             <div
               className={`text-2xl font-semibold ${
-                overview.net >= 0 ? 'text-neutral-100' : 'text-rose-400'
+                overview.net >= 0 ? 'text-neutral-100' : 'text-rose-700 dark:text-rose-400'
               }`}
             >
               {money(overview.net, currency)}
@@ -144,7 +144,7 @@ export default function Analytics() {
               <span
                 className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
                   forecast.method === 'MODEL'
-                    ? 'bg-emerald-500/15 text-emerald-300'
+                    ? 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-300'
                     : 'bg-neutral-700/50 text-neutral-300'
                 }`}
               >
@@ -264,7 +264,7 @@ function DeltaChip({ value, goodWhenUp }: { value: number | null; goodWhenUp: bo
   }
   const up = value >= 0
   const good = up === goodWhenUp
-  const color = good ? 'text-emerald-400' : 'text-rose-400'
+  const color = good ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-700 dark:text-rose-400'
   return (
     <span className={`text-xs font-medium ${color}`}>
       {up ? '▲' : '▼'} {Math.abs(value).toFixed(1)}%

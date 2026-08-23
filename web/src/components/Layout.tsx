@@ -178,7 +178,7 @@ export default function Layout() {
                         className={({ isActive }) =>
                           `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition ${
                             isActive
-                              ? 'bg-emerald-500/15 text-emerald-300'
+                              ? 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-300'
                               : 'text-neutral-300 hover:bg-neutral-800 hover:text-neutral-100'
                           }`
                         }
@@ -216,7 +216,7 @@ export default function Layout() {
                 </div>
               )}
             </div>
-            <span className="shrink-0 bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-lg font-extrabold tracking-tight text-transparent">
+            <span className="shrink-0 bg-gradient-to-r from-emerald-700 to-teal-700 bg-clip-text dark:from-emerald-400 dark:to-teal-400 text-lg font-extrabold tracking-tight text-transparent">
               Vernfy
             </span>
           </div>
@@ -246,7 +246,7 @@ export default function Layout() {
         // live region would cut across whatever the user is reading.
         <div
           role="status"
-          className="border-b border-amber-900/60 bg-amber-950/60 px-4 py-2 text-center text-sm text-amber-200 sm:px-5"
+          className="border-b border-amber-300 bg-amber-100 px-4 py-2 text-center text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/60 dark:text-amber-200 sm:px-5"
         >
           {t('offline.banner')}
         </div>
@@ -254,7 +254,7 @@ export default function Layout() {
       <main className="mx-auto max-w-6xl overflow-x-clip px-4 py-8 sm:px-5 sm:py-10">
         <Outlet />
       </main>
-      <footer className="mx-auto max-w-6xl px-5 py-8 text-center text-xs text-neutral-600">
+      <footer className="mx-auto max-w-6xl px-5 py-8 text-center text-xs text-neutral-500">
         Vernfy · {t('footer.tagline')} · Spring Boot · Kafka · React
       </footer>
 

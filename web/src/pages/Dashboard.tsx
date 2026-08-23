@@ -76,7 +76,7 @@ export default function Dashboard() {
   ).sort((a, b) => b.total - a.total)
 
   if (loading) return <DashboardSkeleton />
-  if (error) return <p className="text-red-400">{error}</p>
+  if (error) return <p className="text-red-700 dark:text-red-400">{error}</p>
 
   return (
     <div className="space-y-8">
@@ -93,7 +93,7 @@ export default function Dashboard() {
         </div>
         <div
           className={`mt-3 text-4xl font-bold tracking-tight sm:text-5xl ${
-            balance >= 0 ? 'text-neutral-50' : 'text-rose-400'
+            balance >= 0 ? 'text-neutral-50' : 'text-rose-700 dark:text-rose-400'
           }`}
         >
           {money(balance, currency)}
@@ -130,7 +130,7 @@ export default function Dashboard() {
                   </div>
                   <span
                     className={`text-sm font-semibold ${
-                      tx.type === 'INCOME' ? 'text-emerald-400' : 'text-rose-400'
+                      tx.type === 'INCOME' ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-700 dark:text-rose-400'
                     }`}
                   >
                     {tx.type === 'INCOME' ? '+' : '-'}
@@ -218,7 +218,7 @@ function TrendChart({
             </h2>
             <div
               className={`mt-1 text-2xl font-bold tracking-tight ${
-                last.value >= 0 ? 'text-neutral-50' : 'text-rose-400'
+                last.value >= 0 ? 'text-neutral-50' : 'text-rose-700 dark:text-rose-400'
               }`}
             >
               {money(last.value, currency)}
@@ -228,8 +228,8 @@ function TrendChart({
             <span
               className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-semibold ${
                 delta >= 0
-                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                  : 'border-rose-500/30 bg-rose-500/10 text-rose-300'
+                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300'
+                  : 'border-rose-500/30 bg-rose-500/10 text-rose-800 dark:text-rose-300'
               }`}
             >
               {delta >= 0 ? '▲' : '▼'} {money(Math.abs(delta), currency)}
@@ -245,7 +245,7 @@ function TrendChart({
           {ticks.map((f) => (
             <span
               key={f}
-              className="absolute left-0 w-14 -translate-y-1/2 pr-2 text-right text-[10px] text-neutral-600"
+              className="absolute left-0 w-14 -translate-y-1/2 pr-2 text-right text-[10px] text-neutral-500"
               style={{ top: `${tickTop(f)}%` }}
             >
               {money(tickVal(f), currency)}
@@ -318,8 +318,8 @@ function SavingsPill({ rate, hasIncome }: { rate: number; hasIncome: boolean }) 
     <span
       className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${
         positive
-          ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-          : 'border border-rose-500/30 bg-rose-500/10 text-rose-300'
+          ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300'
+          : 'border border-rose-500/30 bg-rose-500/10 text-rose-800 dark:text-rose-300'
       }`}
     >
       {positive ? '▲' : '▼'} {t('dashboard.savedPct', { pct: Math.abs(rate).toFixed(0) })}
@@ -377,7 +377,7 @@ function CategoryColumns({
               className="absolute inset-x-0 flex items-center"
               style={{ top: `${f * 100}%` }}
             >
-              <span className="w-16 -translate-y-1/2 pr-2 text-right text-[10px] text-neutral-600">
+              <span className="w-16 -translate-y-1/2 pr-2 text-right text-[10px] text-neutral-500">
                 {money(max * (1 - f), currency)}
               </span>
               <div className="h-px flex-1 bg-neutral-800/70" />

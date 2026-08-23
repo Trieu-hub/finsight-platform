@@ -165,7 +165,7 @@ export default function NotificationBell() {
             {unread > 0 && (
               <button
                 onClick={onMarkAll}
-                className="text-xs font-medium text-emerald-400 hover:text-emerald-300"
+                className="text-xs font-medium text-emerald-700 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300"
               >
                 {t('notif.markAll')}
               </button>

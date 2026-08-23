@@ -234,7 +234,7 @@ export default function OnboardingTour({
         <div className="flex gap-3.5 p-4">
           <NpcAvatar image={step.image} emoji={step.emoji} />
           <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-400">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
               {t('tour.guide')}
             </p>
             <h2 className="mt-0.5 text-base font-bold text-neutral-100">
@@ -265,7 +265,7 @@ export default function OnboardingTour({
             {t('tour.skip')}
           </button>
           <div className="flex items-center gap-2">
-            <span className="mr-1 text-xs text-neutral-600">
+            <span className="mr-1 text-xs text-neutral-500">
               {i + 1}/{STEPS.length}
             </span>
             {!isFirst && (
@@ -278,7 +278,7 @@ export default function OnboardingTour({
             )}
             <button
               onClick={isLast ? onClose : next}
-              className="rounded-lg bg-emerald-600 px-4 py-1.5 text-sm font-semibold text-white shadow-lg shadow-emerald-900/40 transition hover:bg-emerald-500"
+              className="rounded-lg bg-emerald-700 px-4 py-1.5 text-sm font-semibold text-white shadow-lg shadow-emerald-900/40 transition hover:bg-emerald-500"
             >
               {isLast ? t('tour.getStarted') : t('tour.next')}
             </button>

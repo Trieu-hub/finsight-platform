@@ -1,0 +1,15 @@
+# Vernfy — https://vernfy.com
+#
+# This file has to exist as a real file. nginx serves the SPA with
+# `try_files $uri $uri/ /index.html` (web/nginx.conf), so a missing /robots.txt comes back as a
+# 200 full of HTML rather than a 404 — Lighthouse read the index shell and reported 50 syntax
+# errors in a file nobody had written.
+
+User-agent: *
+Allow: /
+
+# Everything under /api is JSON behind a JWT: a crawler gets 401s, and the URLs name what a user
+# was looking at. Nothing there belongs in an index.
+Disallow: /api/
+
+Sitemap: https://vernfy.com/sitemap.xml
