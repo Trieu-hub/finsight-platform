@@ -24,7 +24,7 @@ export default function InstallBanner() {
           <button
             type="button"
             onClick={install}
-            className="rounded-md bg-emerald-500/20 px-2.5 py-1 text-xs font-medium text-emerald-200 hover:bg-emerald-500/30"
+            className="rounded-md bg-emerald-500/20 px-2.5 py-1 text-xs font-medium text-emerald-900 hover:bg-emerald-500/30 dark:text-emerald-200"
           >
             {t('install.cta')}
           </button>

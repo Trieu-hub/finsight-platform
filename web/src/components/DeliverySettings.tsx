@@ -126,7 +126,7 @@ export default function DeliverySettings() {
             aria-pressed={emailOn}
             className={`rounded-lg border px-2 py-1 text-xs font-medium transition disabled:opacity-50 ${
               emailOn
-                ? 'border-emerald-600/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
+                ? 'border-emerald-600/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/20'
                 : 'border-neutral-700 text-neutral-300 hover:bg-neutral-800'
             }`}
           >
@@ -150,7 +150,7 @@ export default function DeliverySettings() {
               aria-pressed={state === 'on'}
               className={`rounded-lg border px-2 py-1 text-xs font-medium transition disabled:opacity-50 ${
                 state === 'on'
-                  ? 'border-emerald-600/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
+                  ? 'border-emerald-600/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/20'
                   : 'border-neutral-700 text-neutral-300 hover:bg-neutral-800'
               }`}
             >
@@ -169,7 +169,7 @@ export default function DeliverySettings() {
             onChange={(e) => setWebhookUrl(e.target.value)}
             placeholder={t('notif.webhookPlaceholder')}
             aria-label={t('notif.webhook')}
-            className="min-w-0 flex-1 rounded-lg border border-neutral-700 bg-neutral-900 px-2 py-1 text-xs text-neutral-200 placeholder:text-neutral-600"
+            className="min-w-0 flex-1 rounded-lg border border-neutral-700 bg-neutral-900 px-2 py-1 text-xs text-neutral-200 placeholder:text-neutral-500"
           />
           <button
             onClick={() => saveWebhook(trimmedUrl)}
@@ -189,12 +189,12 @@ export default function DeliverySettings() {
           )}
         </div>
         {webhookError && (
-          <p role="alert" className="text-xs text-red-400">
+          <p role="alert" className="text-xs text-red-700 dark:text-red-400">
             {webhookError}
           </p>
         )}
         {freshSecret && (
-          <p className="break-all text-xs text-amber-400">
+          <p className="break-all text-xs text-amber-800 dark:text-amber-400">
             {t('notif.webhookSecret')} <code className="font-mono">{freshSecret}</code>
           </p>
         )}
@@ -211,7 +211,7 @@ export default function DeliverySettings() {
               aria-pressed={digest === mode}
               className={`rounded-lg border px-2 py-1 text-xs font-medium transition disabled:opacity-50 ${
                 digest === mode
-                  ? 'border-emerald-600/40 bg-emerald-500/10 text-emerald-400'
+                  ? 'border-emerald-600/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
                   : 'border-neutral-700 text-neutral-300 hover:bg-neutral-800'
               }`}
             >
@@ -219,7 +219,7 @@ export default function DeliverySettings() {
             </button>
           ))}
         </div>
-        <p className="text-xs text-neutral-600">{t('notif.digestHint')}</p>
+        <p className="text-xs text-neutral-500">{t('notif.digestHint')}</p>
       </div>
     </div>
   )

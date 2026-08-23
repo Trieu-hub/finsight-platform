@@ -24,13 +24,13 @@ export default function UpdateBanner() {
   return (
     <div
       role="status"
-      className="flex items-center justify-center gap-3 border-b border-emerald-900/60 bg-emerald-950/60 px-4 py-2 text-center text-sm text-emerald-200 sm:px-5"
+      className="flex items-center justify-center gap-3 border-b border-emerald-300 bg-emerald-100 px-4 py-2 text-center text-sm text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/60 dark:text-emerald-200 sm:px-5"
     >
       <span>{t('update.ready')}</span>
       <button
         type="button"
         onClick={applyServiceWorkerUpdate}
-        className="rounded-md bg-emerald-500/20 px-2.5 py-1 text-xs font-medium text-emerald-100 hover:bg-emerald-500/30"
+        className="rounded-md bg-emerald-500/20 px-2.5 py-1 text-xs font-medium text-emerald-900 hover:bg-emerald-500/30 dark:text-emerald-100"
       >
         {t('update.reload')}
       </button>

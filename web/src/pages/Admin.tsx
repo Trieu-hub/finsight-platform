@@ -50,7 +50,7 @@ export default function Admin() {
         <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-400">
           Admin · User management
         </h2>
-        <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-300">
+        <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:text-emerald-300">
           ROLE_ADMIN
         </span>
       </div>
@@ -67,7 +67,7 @@ export default function Admin() {
         just hidden in the UI. You cannot modify your own account.
       </p>
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-red-700 dark:text-red-400">{error}</p>}
 
       {loading ? (
         <p className="text-neutral-500">Loading…</p>
@@ -91,7 +91,7 @@ export default function Admin() {
                     <td className="px-4 py-2.5">
                       <div className="font-medium text-neutral-200">
                         {u.username}
-                        {isSelf && <span className="ml-2 text-xs text-emerald-400">(you)</span>}
+                        {isSelf && <span className="ml-2 text-xs text-emerald-700 dark:text-emerald-400">(you)</span>}
                       </div>
                       <div className="text-xs text-neutral-500">{u.email}</div>
                     </td>
@@ -112,7 +112,7 @@ export default function Admin() {
                       </select>
                     </td>
                     <td className="px-4 py-2.5">
-                      <span className={u.enabled ? 'text-emerald-400' : 'text-rose-400'}>
+                      <span className={u.enabled ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-700 dark:text-rose-400'}>
                         {u.enabled ? 'Active' : 'Disabled'}
                       </span>
                     </td>
@@ -132,7 +132,7 @@ export default function Admin() {
                               run(u.id, () => deleteUser(u.id))
                             }
                           }}
-                          className="rounded-lg border border-rose-500/30 px-2.5 py-1 text-xs font-medium text-rose-300 transition hover:bg-rose-500/10 disabled:opacity-40"
+                          className="rounded-lg border border-rose-500/30 px-2.5 py-1 text-xs font-medium text-rose-800 dark:text-rose-300 transition hover:bg-rose-500/10 disabled:opacity-40"
                         >
                           Delete
                         </button>

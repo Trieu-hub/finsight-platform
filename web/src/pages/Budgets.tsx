@@ -173,7 +173,7 @@ export default function Budgets() {
             <p className="text-sm text-neutral-400">{t('budget.needWalletHint')}</p>
             <Link
               to="/wallets"
-              className="inline-block rounded-lg bg-emerald-600 px-4 py-2 font-semibold text-white shadow-lg shadow-emerald-900/40 transition hover:bg-emerald-500"
+              className="inline-block rounded-lg bg-emerald-700 px-4 py-2 font-semibold text-white shadow-lg shadow-emerald-900/40 transition hover:bg-emerald-800"
             >
               {t('budget.createWallet')}
             </Link>
@@ -247,7 +247,7 @@ export default function Budgets() {
               </select>
             </div>
             {overBalance && (
-              <p className="mt-1.5 text-xs text-amber-400">
+              <p className="mt-1.5 text-xs text-amber-800 dark:text-amber-400">
                 {t('budget.overBalance', { balance: money(availableBalance, currency) })}
               </p>
             )}
@@ -280,7 +280,7 @@ export default function Budgets() {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full rounded-lg bg-emerald-600 py-2.5 font-semibold text-white shadow-lg shadow-emerald-900/40 transition hover:bg-emerald-500 disabled:opacity-60"
+            className="w-full rounded-lg bg-emerald-700 py-2.5 font-semibold text-white shadow-lg shadow-emerald-900/40 transition hover:bg-emerald-800 disabled:opacity-60"
           >
             {submitting ? t('budget.saving') : t('budget.add')}
           </button>
@@ -303,7 +303,7 @@ export default function Budgets() {
             {t('budget.showExpired')}
           </label>
         </div>
-        {error && <p className="mb-3 text-sm text-red-400">{error}</p>}
+        {error && <p className="mb-3 text-sm text-red-700 dark:text-red-400">{error}</p>}
         {loading ? (
           <p className="text-neutral-500">{t('common.loading')}</p>
         ) : budgets.length === 0 ? (
@@ -331,7 +331,7 @@ export default function Budgets() {
                     />
                   </div>
                   <div className="mt-1.5 text-xs text-neutral-500">
-                    {over && <span className="mr-2 font-medium text-rose-400">{t('budget.over')}</span>}
+                    {over && <span className="mr-2 font-medium text-rose-700 dark:text-rose-400">{t('budget.over')}</span>}
                     {expired && <span className="mr-2 font-medium text-neutral-400">{t('budget.expired')}</span>}
                     {t(`period.${b.periodType}`)} · {b.startDate} → {b.endDate}
                   </div>

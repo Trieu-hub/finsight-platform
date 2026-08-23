@@ -83,7 +83,9 @@ describe('Login', () => {
     fillIn('u@vernfy.com', 'wrong')
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
 
-    expect(await screen.findByText('Invalid email or password')).toBeInTheDocument()
+    // getByRole, because e2e/journey.spec.ts finds this paragraph the same way — asserting it here
+    // means a lost `role="alert"` fails in seconds rather than in the Playwright run.
+    expect(await screen.findByRole('alert')).toHaveTextContent('Invalid email or password')
     expect(screen.queryByText('home page')).not.toBeInTheDocument()
     expect(localStorage.getItem('finsight_token')).toBeNull()
   })

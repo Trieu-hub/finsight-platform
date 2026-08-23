@@ -198,7 +198,7 @@ export default function Import() {
       </header>
 
       {loadError && (
-        <p className="rounded-lg border border-red-800 bg-neutral-900/40 px-4 py-3 text-sm text-red-400">
+        <p className="rounded-lg border border-red-800 bg-neutral-900/40 px-4 py-3 text-sm text-red-700 dark:text-red-400">
           {loadError}
         </p>
       )}
@@ -209,7 +209,7 @@ export default function Import() {
             type="file"
             accept=".csv,text/csv,text/plain"
             onChange={handleFile}
-            className={`${selectClass} file:mr-3 file:rounded-md file:border-0 file:bg-emerald-600 file:px-3 file:py-1 file:text-white`}
+            className={`${selectClass} file:mr-3 file:rounded-md file:border-0 file:bg-emerald-700 file:px-3 file:py-1 file:text-white`}
           />
         </Field>
         {fileName && (
@@ -395,11 +395,11 @@ export default function Import() {
                         {/* Beside the description, not inside the date cell: the reason a row is
                             held back is just as often the amount or the missing category. */}
                         {row.problem && (
-                          <span className="block text-xs text-red-400">{row.problem}</span>
+                          <span className="block text-xs text-red-700 dark:text-red-400">{row.problem}</span>
                         )}
                       </td>
                       <td
-                        className={`px-2 py-2 text-right ${row.type === 'EXPENSE' ? 'text-red-300' : 'text-emerald-300'}`}
+                        className={`px-2 py-2 text-right ${row.type === 'EXPENSE' ? 'text-red-700 dark:text-red-300' : 'text-emerald-800 dark:text-emerald-300'}`}
                       >
                         {row.amount === null
                           ? '—'
@@ -436,7 +436,7 @@ export default function Import() {
           )}
 
           {error && (
-            <p className="rounded-lg border border-red-800 bg-neutral-900/40 px-4 py-3 text-sm text-red-400">
+            <p className="rounded-lg border border-red-800 bg-neutral-900/40 px-4 py-3 text-sm text-red-700 dark:text-red-400">
               {error}
             </p>
           )}
@@ -445,7 +445,7 @@ export default function Import() {
             type="button"
             onClick={handleImport}
             disabled={submitting || importable.length === 0}
-            className="rounded-lg bg-emerald-600 px-4 py-2 font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-lg bg-emerald-700 px-4 py-2 font-medium text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {submitting ? t('import.importing') : t('import.import', { n: importable.length })}
           </button>
@@ -461,7 +461,7 @@ export default function Import() {
             {t('import.result', { imported: result.imported, duplicates: result.duplicates })}
           </p>
           {result.errors.length > 0 && (
-            <ul className="list-inside list-disc text-sm text-red-400">
+            <ul className="list-inside list-disc text-sm text-red-700 dark:text-red-400">
               {result.errors.map((e) => (
                 <li key={e.row}>{t('import.rowFailed', { n: e.row, message: e.message })}</li>
               ))}

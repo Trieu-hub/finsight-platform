@@ -28,7 +28,14 @@
     * Anything that must NOT flip — dark text sitting on a bright accent, a game chip's own
       colour — must avoid the neutral scale. Use `text-black` / `text-white`, or another palette
       (zinc/slate/…), which are untouched here.
-    * Accent colours (emerald, teal, rose, amber…) are untouched and read correctly on both.
+    * Accent colours (emerald, teal, rose, amber…) are NOT flipped, and therefore do NOT read
+      correctly on both — this line used to claim they did. A bright accent step is light ink by
+      construction, so on a near-white light-mode page `text-emerald-400` measured 1.77:1 and
+      `text-amber-300` 1.33:1 against AA's 4.5:1. Accent INK needs an explicit pair —
+      `text-emerald-700 dark:text-emerald-400` — which is what every call site now carries and
+      what src/contrast.test.ts enforces. The ramp is deliberately not reversed for accents: the
+      same scale also paints things that must keep their colour in both themes (the theme
+      toggle's sun, the roulette chips), and one global flip would recolour those silently.
 */
 :root {
   --color-neutral-50: #0a0a0a;
@@ -36,7 +43,19 @@
   --color-neutral-200: #262626;
   --color-neutral-300: #404040;
   --color-neutral-400: #525252;
-  --color-neutral-500: #737373;
+  /*
+    The one step that is NOT its own mirror. 500 is the muted-ink tier — timestamps, hints, the
+    footer, the "no bets yet" line — and Tailwind's #737373 measures 4.35:1 on a card in light
+    mode and 3.78:1 in dark: below WCAG AA (4.5) in BOTH themes at once, which is how it survived
+    the light-mode work. These two values were picked against every surface the app actually
+    paints (page / card / raised) and clear 4.5 on all six combinations, the worst being 4.56 on
+    light `neutral-800`. Retuning the token fixes ~46 call sites without editing one of them.
+
+    600 is deliberately left alone: it is a border/ring colour too (`border-neutral-600`,
+    `ring-neutral-600`), where the bar is 3:1, and there is no room below 500 for a second ink
+    tier that still passes — the few `text-neutral-600` labels moved up to 500 instead.
+  */
+  --color-neutral-500: #666666;
   --color-neutral-600: #a3a3a3;
   --color-neutral-700: #d4d4d4;
   --color-neutral-800: #e5e5e5;
@@ -54,7 +73,8 @@
   --color-neutral-200: #e5e5e5;
   --color-neutral-300: #d4d4d4;
   --color-neutral-400: #a3a3a3;
-  --color-neutral-500: #737373;
+  /* Same reasoning as the light block above, mirrored. */
+  --color-neutral-500: #8f8f8f;
   --color-neutral-600: #525252;
   --color-neutral-700: #404040;
   --color-neutral-800: #262626;

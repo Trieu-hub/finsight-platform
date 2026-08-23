@@ -1,0 +1,24 @@
+# Vernfy
+
+> Financial intelligence and risk monitoring. Vernfy tracks spending, budgets and wallets, then
+> flags what looks wrong — alerts, insights, anomalies and recurring charges derived from the
+> activity as it happens.
+
+The intelligence layer is **rule-based and deterministic**, not machine learning: every alert
+comes from a stated threshold that can be read and checked. The one fitted model is the spend
+forecast, which is only served after it beats the plain run-rate projection on a holdout backtest.
+
+Vernfy is a single-page app behind sign-in; only the sign-in and registration pages are public.
+The source and its documentation are open.
+
+## Product
+
+- [Vernfy](https://vernfy.com/): the app — sign in or create an account
+- [Create an account](https://vernfy.com/register): registration
+
+## Documentation
+
+- [README](https://github.com/Trieu-hub/finsight-platform#readme): what the platform does, how it is built, run and deployed
+- [Architecture](https://github.com/Trieu-hub/finsight-platform/blob/main/docs/architecture.md): service boundaries, request and event flow
+- [Intelligence](https://github.com/Trieu-hub/finsight-platform/blob/main/docs/intelligence.md): every risk rule, insight and anomaly — its trigger, severity and metric
+- [Event catalog](https://github.com/Trieu-hub/finsight-platform/blob/main/docs/event-catalog.md): every Kafka event, its producer and its consumers
