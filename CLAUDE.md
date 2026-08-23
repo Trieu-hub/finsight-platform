@@ -158,8 +158,10 @@ Authoritative docs — read these instead of re-deriving:
 - `docs/runbook.md` — startup, compose workflow, troubleshooting
 - `docs/deploy.md` — production deployment
 - `docs/security/jwt-key-rotation.md` — key rotation procedure
-- `docs/unit-testing/unit-testing-1.txt` — full test catalog (659 backend tests, 129 classes,
-  plus the frontend Vitest suite and the Playwright journeys)
+- `docs/unit-testing/unit-testing-1.txt` — full test catalog: 698 backend tests across 135 test
+  classes (plus 12 `Abstract*Test` base classes), 178 frontend Vitest tests in 24 files, and 13
+  Playwright journeys in 6 files. Do not add to these totals from memory — the file carries the
+  `grep`/`find` one-liners that recount each of them from the source.
 
 ---
 

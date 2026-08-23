@@ -36,7 +36,11 @@ export default function Login() {
       <form onSubmit={handleSubmit} className="space-y-4">
         <Field label={t('login.email')} type="email" value={email} onChange={setEmail} />
         <Field label={t('login.password')} type="password" value={password} onChange={setPassword} />
-        {error && <p className="text-sm text-red-700 dark:text-red-400">{error}</p>}
+        {error && (
+          <p role="alert" className="text-sm text-red-700 dark:text-red-400">
+            {error}
+          </p>
+        )}
         <button
           type="submit"
           disabled={loading}

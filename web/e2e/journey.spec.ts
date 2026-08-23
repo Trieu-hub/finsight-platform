@@ -63,6 +63,9 @@ test('wrong credentials are rejected with the API error, not a blank page', asyn
   await page.getByLabel('Password').fill('WrongPassword1')
   await page.getByRole('button', { name: 'Sign in' }).click()
 
-  await expect(page.locator('form p.text-red-400')).toBeVisible()
+  // By role, not by colour class. This used to read `form p.text-red-400`, which broke the day
+  // the paragraph gained a light-mode colour and its dark-mode one moved behind a `dark:` variant
+  // — the element was still there, still red, still correct, and the journey went red anyway.
+  await expect(page.locator('form').getByRole('alert')).toBeVisible()
   await expect(page).toHaveURL(/\/login$/)
 })

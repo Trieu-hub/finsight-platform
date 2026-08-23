@@ -17,7 +17,7 @@ TỔNG QUAN CON SỐ
 - Trong đó:
     * Unit / component test (chạy KHÔNG cần Docker):   483
     * Integration test (cần Docker – Testcontainers):  215 (55 lớp *IntegrationTest)
-- Frontend (Vitest, ngoài con số 698 ở trên):         176 test / 24 file
+- Frontend (Vitest, ngoài con số 698 ở trên):         178 test / 24 file
 - Frontend E2E (Playwright, cần stack đang chạy):      13 test / 6 file (mục 11)
     * 3 trong số đó chỉ chạy khi đặt `E2E_BASE_URL` (kiểm header bảo mật của một origin đã
       deploy — `vite preview` không phát header nào nên không có gì để khẳng định), và 1 là
@@ -1343,21 +1343,24 @@ của form; chỉ mock lời gọi mạng)
       `preventDefault()` là no-op im lặng và test báo "không chặn được mini-infobar" oan. Sự
       kiện thật của Chromium huỷ được ⇒ fixture phải `{ cancelable: true }`.
 
-[UNIT] src/contrast.test.ts — 4 test  (tương phản màu: bậc accent sáng + nền neutral bị đảo)
+[UNIT] src/contrast.test.ts — 6 test  (tương phản màu + selector không được bám vào class màu)
    - reads every component, so an empty glob cannot pass this file
    - never uses bright accent ink without a light-mode counterpart
    - never puts white text on a neutral surface, which reverses in light mode
    - paints the roulette table off the reversible neutral ramp
+   - reads the spec files, so an empty glob cannot pass
+   - never finds an element by the colour it happens to be painted
    📌 **Hồi quy có thật (Lighthouse, 2026-08-23 — "Màu nền trước và nền sau không có đủ tỷ lệ
       tương phản"):** light mode đảo ngược thang **neutral** (index.css) nhưng KHÔNG đảo thang
       accent, nên `text-emerald-400` (mực sáng, thiết kế cho nền tối) rơi xuống nền gần trắng.
       Đo trên chính stylesheet đang phục vụ prod: emerald-400 **1.77:1**, amber-300 **1.33:1**,
       rose-300 **1.76:1** trên card sáng — chuẩn AA cần 4.5:1. Chữ trắng trên `bg-emerald-600`
       (nút chính, cả 2 theme) **3.67:1**, hover `bg-emerald-500` **2.46:1**.
-   📌 Ba luật, không tính tương phản trong test — chỉ chốt hình dạng class:
+   📌 Bốn luật, không tính tương phản trong test — chỉ chốt hình dạng class:
       1) mực accent bậc 300/400 phải nằm sau biến thể `dark:`;
       2) `text-white` không được chung className với `bg-neutral-*` (nền đó lật thành gần trắng);
-      3) `CHIP_STYLE` và `CELL_BG` của roulette không được chứa bậc neutral nào.
+      3) `CHIP_STYLE` và `CELL_BG` của roulette không được chứa bậc neutral nào;
+      4) trong `web/e2e/*.spec.ts` không selector nào được bám vào class màu (bỏ qua comment).
       Luật 3 tồn tại vì luật 2 KHÔNG thấy được ca thật: mực nằm trong component còn nền nằm ở
       map tra cứu cách đó 200 dòng — đúng chỗ `bg-neutral-900` + `text-white` sống sót, vẽ số
       trắng lên ô gần trắng ở light mode.
@@ -1513,6 +1516,12 @@ ký dùng chung ở `e2e/support/account.ts` (không phải file test nên Playw
       → dashboard qua BFF cũng thấy)
    - a signed-out visitor is sent to the login page
    - wrong credentials are rejected with the API error, not a blank page
+     📌 **Đã đỏ trên CI ngày 2026-08-23 vì đổi màu, không phải vì hỏng chức năng.** Test tìm đoạn
+        lỗi bằng `form p.text-red-400`; khi đoạn đó nhận thêm màu cho light mode thì màu cũ lùi ra
+        sau biến thể `dark:` ⇒ class thật thành `dark:text-red-400`, selector không khớp nữa, dù
+        phần tử vẫn ở đó, vẫn đỏ, vẫn đúng. Sửa tận gốc: đoạn lỗi nhận `role="alert"` (thứ trình
+        đọc màn hình cần) và test tìm bằng `getByRole('alert')`. Class màu là kiểu dáng, không
+        phải hợp đồng — `src/contrast.test.ts` nay cấm mọi selector bám vào class màu trong `e2e/`.
 
 [E2E] e2e/money-loop.spec.ts — 3 test  (chromium)
    Vòng tiền đầy đủ: ví → ngân sách → khoản chi → các con số mọi màn hình khác suy ra

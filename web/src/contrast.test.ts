@@ -43,7 +43,10 @@ describe('theme contrast', () => {
   it('never uses bright accent ink without a light-mode counterpart', () => {
     const offenders: string[] = []
     for (const [path, src] of sources) {
-      src.split('\n').forEach((line, i) => {
+      // Split on \r?\n, not '\n'. A Windows clone checks these files out with CRLF
+      // (core.autocrlf), leaving a trailing \r on every line — and JS's `.` does not match \r, so
+      // the comment strip below silently became a no-op and this guard flagged its own comment.
+      src.split(/\r?\n/).forEach((line, i) => {
         if (THEME_INDEPENDENT.test(line)) return
         for (const m of line.matchAll(BRIGHT_INK)) offenders.push(`${path}:${i + 1} ${m[0]}`)
       })
@@ -78,6 +81,44 @@ describe('theme contrast', () => {
       const literal = body.slice(body.indexOf('{'), body.indexOf('}') + 1)
       expect(literal, `${map} must not use the neutral ramp`).not.toMatch(/-neutral-/)
     }
+  })
+})
+
+/*
+ * A colour utility is styling, not a contract. The Playwright journey used to find the sign-in
+ * error with `form p.text-red-400`; the moment that paragraph gained a light-mode colour and its
+ * dark-mode one moved behind a `dark:` variant, the class name changed and the journey failed on
+ * an element that was still present, still red and still correct. Selectors belong on roles and
+ * labels, which is also what a screen reader reads.
+ */
+describe('end-to-end selectors', () => {
+  const specs = Object.entries(
+    import.meta.glob('../e2e/*.spec.ts', { query: '?raw', import: 'default', eager: true }),
+  ) as [string, string][]
+
+  // A Tailwind colour utility used as a CSS class selector: '.text-red-400', 'p.bg-emerald-600'.
+  const COLOUR_SELECTOR =
+    /\.(?:text|bg|border|ring|from|via|to)-(?:neutral|zinc|slate|gray|emerald|teal|rose|red|amber|sky|blue|violet|green)-\d{2,3}(?![\w-])/g
+
+  it('reads the spec files, so an empty glob cannot pass', () => {
+    expect(specs.length).toBeGreaterThan(3)
+  })
+
+  it('never finds an element by the colour it happens to be painted', () => {
+    const offenders: string[] = []
+    for (const [path, src] of specs) {
+      // Split on \r?\n, not '\n'. A Windows clone checks these files out with CRLF
+      // (core.autocrlf), leaving a trailing \r on every line — and JS's `.` does not match \r, so
+      // the comment strip below silently became a no-op and this guard flagged its own comment.
+      src.split(/\r?\n/).forEach((line, i) => {
+        // A comment is not a selector — skip the ones that quote a class name, including this
+        // file's own note about the selector it replaced.
+        if (/^\s*[*]|^\s*\/\*/.test(line)) return
+        const code = line.replace(/\/\/.*$/, '')
+        for (const m of code.matchAll(COLOUR_SELECTOR)) offenders.push(`${path}:${i + 1} ${m[0]}`)
+      })
+    }
+    expect(offenders).toEqual([])
   })
 })
 
