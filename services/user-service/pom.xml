@@ -5,7 +5,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.1.0</version>
+        <version>4.1.1</version>
         <relativePath/>
     </parent>
     <groupId>com.pm</groupId>
@@ -19,7 +19,7 @@
         <testcontainers.version>2.0.5</testcontainers.version>
         <!-- Kept in sync with the versions the Spring Boot 4.1 BOM manages (grpc-bom / protobuf),
              so the protobuf-maven-plugin downloads matching protoc / protoc-gen-grpc-java binaries. -->
-        <grpc.version>1.83.1</grpc.version>
+        <grpc.version>1.84.0</grpc.version>
         <protobuf-java.version>4.34.2</protobuf-java.version>
     </properties>
 
@@ -95,7 +95,7 @@
         <dependency>
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
-            <version>3.1.0</version>
+            <version>3.1.1</version>
         </dependency>
 
         <!-- Flyway: the Boot starter provides Flyway autoconfiguration + flyway-core;
@@ -214,7 +214,7 @@
             <plugin>
                 <groupId>io.github.ascopes</groupId>
                 <artifactId>protobuf-maven-plugin</artifactId>
-                <version>5.1.8</version>
+                <version>5.1.9</version>
                 <configuration>
                     <protoc>${protobuf-java.version}</protoc>
                 </configuration>
